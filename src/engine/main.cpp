@@ -1192,6 +1192,11 @@ int getclockmillis()
     return max(millis, totalmillis);
 }
 
+// Advances the clock by exactly this many ms per main-loop iteration instead of reading
+// wall time, so a run is reproducible regardless of machine speed or frame pacing.
+VARF(fixedframe, 0, 0, 100, clockreset());
+VAR(fixedframedraw, 1, 1, 1000);
+
 VAR(numcpus, 1, 1, 16);
 MOD(VARP, minimizedframes, 0, 0, 1);
 
@@ -1395,7 +1400,14 @@ int main(int argc, char **argv)
         static int frames = 0, lastdrawmillis = 0;
         int millis = getclockmillis();
         bool draw = false;
-        ratelimit(millis, lastdrawmillis, draw);
+        if(fixedframe)
+        {
+            static int framessincedraw = 0;
+            millis = totalmillis + fixedframe;
+            draw = ++framessincedraw >= fixedframedraw;
+            if(draw) framessincedraw = 0;
+        }
+        else ratelimit(millis, lastdrawmillis, draw);
         elapsedtime = millis - totalmillis;
         static int timeerr = 0;
         int scaledtime = game::scaletime(elapsedtime) + timeerr;

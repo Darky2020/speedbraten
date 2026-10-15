@@ -430,5 +430,19 @@ namespace game
         alias(aname, nscore);
         conoutf(CON_GAMEINFO, "\f2TOTAL SCORE (time + time penalties): %d seconds (best so far: %d seconds)", score, bestscore);
     }
+
+    void hashmonsters(dethasher &h)
+    {
+        h.i(nextmonster); h.i(spawnremain); h.i(numkilled); h.i(monstertotal); h.i(mtimestart); h.i(remain);
+        loopv(monsters)
+        {
+            monster *m = monsters[i];
+            h.phys(m);
+            h.i(m->monsterstate); h.i(m->mtype); h.i(m->trigger); h.i(m->anger);
+            h.f(m->targetyaw); h.v(m->attacktarget);
+            h.i(m->health); h.i(m->gunwait); h.i(m->lastaction); h.i(m->lastpain);
+            h.i(!m->enemy ? -1 : (m->enemy == player1 ? -2 : monsters.find((monster *)m->enemy)));
+        }
+    }
 }
 

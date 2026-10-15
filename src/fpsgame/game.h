@@ -695,6 +695,23 @@ namespace entities
     extern void repammo(fpsent *d, int type, bool local = true);
 }
 
+struct dethasher
+{
+    uint h;
+    dethasher() : h(2166136261U) {}
+    void u(uint v) { h = (h ^ v) * 16777619U; }
+    void i(int v) { u(uint(v)); }
+    void f(float v) { uint b; memcpy(&b, &v, sizeof(b)); u(b); }
+    void v(const vec &p) { f(p.x); f(p.y); f(p.z); }
+    void phys(const physent *d)
+    {
+        v(d->o); v(d->newpos); v(d->vel); v(d->falling); v(d->floor);
+        f(d->yaw); f(d->pitch); f(d->roll);
+        i(d->timeinair); i(d->inwater); i(d->jumping); i(d->move); i(d->strafe);
+        i(d->physstate); i(d->state); i(d->blocked);
+    }
+};
+
 namespace game
 {
     struct clientmode
@@ -802,6 +819,7 @@ namespace game
     extern void preloadmonsters();
     extern void stackmonster(monster *d, physent *o);
     extern void updatemonsters(int curtime);
+    extern void hashmonsters(dethasher &h);
     extern void rendermonsters();
     extern void suicidemonster(monster *m);
     extern void hitmonster(int damage, monster *m, fpsent *at, const vec &vel, int gun);
@@ -816,6 +834,7 @@ namespace game
     extern void clearmovables();
     extern void stackmovable(movable *d, physent *o);
     extern void updatemovables(int curtime);
+    extern void hashmovables(dethasher &h);
     extern void rendermovables();
     extern void suicidemovable(movable *m);
     extern void hitmovable(int damage, movable *m, fpsent *at, const vec &vel, int gun);
@@ -842,6 +861,10 @@ namespace game
     extern void preloadbouncers();
     extern void removeweapons(fpsent *owner);
     extern void updateweapons(int curtime);
+    extern void hashprojectiles(dethasher &h);
+
+    // dethash
+    extern void dethashframe();
     extern void gunselect(int gun, fpsent *d);
     extern void weaponswitch(fpsent *d);
     extern void avoidweapons(ai::avoidset &obstacles, float radius);

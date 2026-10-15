@@ -329,6 +329,7 @@ namespace game
         }
         playerspeed = int(hudplayer()->vel.magnitude2());
         if(player1->clientnum>=0) c2sinfo();   // do this last, to reduce the effective frame lag
+        dethashframe();
     }
 
     float proximityscore(float x, float lower, float upper)

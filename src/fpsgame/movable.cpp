@@ -184,5 +184,15 @@ namespace game
         m->hitpush(damage, vel, at, gun);
         m->damaged(damage, at, gun);
     }
+
+    void hashmovables(dethasher &h)
+    {
+        loopv(movables)
+        {
+            movable *m = movables[i];
+            h.phys(m);
+            h.i(m->etype); h.i(m->health); h.i(m->exploding); h.i(m->dir);
+        }
+    }
 }
 

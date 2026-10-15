@@ -51,6 +51,12 @@ void seedMT(uint seed)
     next = 0;
 }
 
+uint hashMT(uint h)
+{
+    loopi(N) h = (h ^ state[i]) * 16777619U;
+    return (h ^ uint(next)) * 16777619U;
+}
+
 uint randomMT()
 {
     int cur = next;

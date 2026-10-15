@@ -1027,4 +1027,21 @@ namespace game
             obstacles.avoidnear(NULL, bnc.o.z + guns[GUN_GL].exprad + 1, bnc.o, radius + guns[GUN_GL].exprad);
         }
     }
+
+    void hashprojectiles(dethasher &h)
+    {
+        loopv(projs)
+        {
+            projectile &p = projs[i];
+            h.v(p.o); h.v(p.to); h.v(p.dir); h.v(p.offset); h.f(p.speed);
+            h.i(p.gun); h.i(p.offsetmillis); h.i(p.owner == player1);
+        }
+        loopv(bouncers)
+        {
+            bouncer &b = *bouncers[i];
+            if(b.bouncetype != BNC_GRENADE) continue;
+            h.phys(&b);
+            h.i(b.lifetime); h.i(b.bounces); h.i(b.offsetmillis); h.v(b.offset); h.i(b.owner == player1);
+        }
+    }
 };
