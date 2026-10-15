@@ -51,6 +51,7 @@ namespace game
     
         monster(int _type, int _yaw, int _tag, int _state, int _trigger, int _move) :
             monsterstate(_state), tag(_tag),
+            attacktarget(0, 0, 0),
             stacked(NULL),
             stackpos(0, 0, 0)
         {
