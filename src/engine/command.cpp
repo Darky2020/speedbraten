@@ -3544,6 +3544,11 @@ void checksleep(int millis)
     }
 }
 
+void rebasesleeps(int delta)
+{
+    loopv(sleepcmds) sleepcmds[i].millis += delta;
+}
+
 void clearsleep(bool clearoverrides)
 {
     int len = 0;

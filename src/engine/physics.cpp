@@ -1741,7 +1741,7 @@ void physicsframe()          // optimally schedule physics frames inside the gra
     if(diff <= 0) physsteps = 0;
     else
     {
-        physframetime = clamp(game::scaletime(PHYSFRAMETIME)/100, 1, PHYSFRAMETIME);
+        physframetime = simticking ? PHYSFRAMETIME : clamp(game::scaletime(PHYSFRAMETIME)/100, 1, PHYSFRAMETIME);
         physsteps = (diff + physframetime - 1)/physframetime;
         lastphysframe += physsteps * physframetime;
     }

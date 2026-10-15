@@ -588,7 +588,7 @@ namespace game
     void changemapserv(const char *name, int mode)        // forced map change from the server
     {
         if(demorecord) enddemorecord();
-        if(!multiplayer(false)) seedgame();
+        if(!multiplayer(false)) { seedgame(); resetsimclock(1000); }
         if(multiplayer(false) && !m_mp(mode))
         {
             conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);

@@ -266,9 +266,10 @@ namespace game
 
     VARFP(slowmosp, 0, 0, 1, { if(m_sp && !slowmosp) server::forcegamespeed(100); });
 
+    static int lastslowmohealth = 0;
+
     void checkslowmo()
     {
-        static int lastslowmohealth = 0;
         server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
         if(player1->health<player1->maxhealth && lastmillis-max(maptime, lastslowmohealth)>player1->health*player1->health/2)
         {
@@ -328,7 +329,7 @@ namespace game
             }
         }
         playerspeed = int(hudplayer()->vel.magnitude2());
-        if(player1->clientnum>=0) c2sinfo();   // do this last, to reduce the effective frame lag
+        if(player1->clientnum>=0) c2sinfo(simticking);   // do this last, to reduce the effective frame lag
         dethashframe();
     }
 
@@ -681,6 +682,8 @@ namespace game
 
     void startgame()
     {
+        lasthit = lastspawnattempt = lastslowmohealth = 0;
+
         clearmovables();
         clearmonsters();
 

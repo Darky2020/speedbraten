@@ -1197,6 +1197,25 @@ int getclockmillis()
 VARF(fixedframe, 0, 0, 100, clockreset());
 VAR(fixedframedraw, 1, 1, 1000);
 
+// Offline, the game advances in fixed SIMTICK steps of game time, decoupled from frame
+// rate, so identical inputs give identical results on any machine and frame pacing.
+bool simticking = false;
+static int simaccum = 0;
+static bool simclockskip = false;
+
+// Puts the game clock at a fixed value and drops the time spent until the next frame
+// (e.g. map loading), so a new local game always starts from the same clock state.
+void resetsimclock(int base)
+{
+    extern int lastphysframe;
+    int delta = base - lastmillis;
+    lastmillis = base;
+    lastphysframe = base;
+    rebasesleeps(delta);
+    simaccum = 0;
+    simclockskip = true;
+}
+
 VAR(numcpus, 1, 1, 16);
 MOD(VARP, minimizedframes, 0, 0, 1);
 
@@ -1410,11 +1429,17 @@ int main(int argc, char **argv)
         else ratelimit(millis, lastdrawmillis, draw);
         elapsedtime = millis - totalmillis;
         static int timeerr = 0;
+        simticking = !multiplayer(false);
+        if(simticking && simclockskip) { elapsedtime = 0; timeerr = 0; simclockskip = false; }
         int scaledtime = game::scaletime(elapsedtime) + timeerr;
         curtime = scaledtime/100;
         timeerr = scaledtime%100;
-        if(!multiplayer(false) && curtime>200) curtime = 200;
-        if(!game::ispaused()) lastmillis += curtime;
+        if(simticking)
+        {
+            if(curtime>200) curtime = 200;
+            if(!game::ispaused()) simaccum += curtime;
+        }
+        else if(!game::ispaused()) lastmillis += curtime;
         totalmillis = millis;
         updatetime();
  
@@ -1422,11 +1447,30 @@ int main(int argc, char **argv)
         menuprocess();
         tryedit();
 
-        if(lastmillis) game::updateworld();
+        if(simticking)
+        {
+            int simulated = 0;
+            while(simaccum >= SIMTICK && !game::ispaused())
+            {
+                simaccum -= SIMTICK;
+                curtime = SIMTICK;
+                lastmillis += SIMTICK;
+                simulated += SIMTICK;
+                game::updateworld();
+                checksleep(lastmillis);
+                serverslice(false, 0);
+                if(!simticking) break;
+            }
+            curtime = simulated;
+        }
+        else
+        {
+            if(lastmillis) game::updateworld();
 
-        checksleep(lastmillis);
+            checksleep(lastmillis);
 
-        serverslice(false, 0);
+            serverslice(false, 0);
+        }
 
         // miscellaneous general game effects
         recomputecamera();

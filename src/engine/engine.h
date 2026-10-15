@@ -410,6 +410,7 @@ extern void clearoverrides();
 extern void writecfg(const char *name = NULL);
 
 extern void checksleep(int millis);
+extern void rebasesleeps(int delta);
 extern void clearsleep(bool clearoverrides = true);
 
 extern int naturalsort(const char *a, const char *b);
