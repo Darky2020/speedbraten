@@ -998,10 +998,22 @@ namespace game
         removeprojectiles(d);
     }
 
+    // The renderer's worldpos is only refreshed on drawn frames and follows the camera, so
+    // offline the aim point is traced from the player's own view instead.
+    static vec simaimpos()
+    {
+        if(multiplayer(false)) return worldpos;
+        vec dir, target;
+        vecfromyawpitch(player1->yaw, player1->pitch, 1, 0, dir);
+        if(raycubepos(player1->o, dir, target, 0, RAY_CLIPMAT|RAY_SKIPFIRST) == -1)
+            target = vec(dir).mul(2*getworldsize()).add(player1->o);
+        return target;
+    }
+
     void updateweapons(int curtime)
     {
         updateprojectiles(curtime);
-        if(player1->clientnum>=0 && player1->state==CS_ALIVE) shoot(player1, worldpos); // only shoot when connected to server
+        if(player1->clientnum>=0 && player1->state==CS_ALIVE) shoot(player1, simaimpos()); // only shoot when connected to server
         updatebouncers(curtime); // need to do this after the player shoots so grenades don't end up inside player's BB next frame
         fpsent *following = followingplayer();
         if(!following) following = player1;
