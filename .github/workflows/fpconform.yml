@@ -1,0 +1,38 @@
+name: fpconform
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/fpconform/**'
+      - '.github/workflows/fpconform.yml'
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04,     label: linux-x64,   compilers: "clang++ g++ zig" }
+          - { os: ubuntu-24.04-arm, label: linux-arm64, compilers: "clang++ g++ zig" }
+          - { os: windows-2022,     label: win-x64,     compilers: "clang++ cl zig" }
+          - { os: macos-15-intel,   label: mac-x64,     compilers: "clang++ zig" }
+          - { os: macos-15,         label: mac-arm64,   compilers: "clang++ zig" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/fpconform
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - run: bash tools/fpconform/run.sh ${{ matrix.label }} ${{ matrix.compilers }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fpconform-${{ matrix.label }}
+          path: tools/fpconform/out/*.txt
