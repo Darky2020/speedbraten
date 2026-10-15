@@ -51,6 +51,14 @@ void seedMT(uint seed)
     next = 0;
 }
 
+uint cosmeticrandom()
+{
+    static uint s = 0;
+    if(!s) s = uint(time(NULL)) | 1;
+    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+    return s;
+}
+
 uint hashMT(uint h)
 {
     loopi(N) h = (h ^ state[i]) * 16777619U;

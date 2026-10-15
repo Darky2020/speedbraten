@@ -99,6 +99,9 @@ static inline int bitscan(uint mask)
 
 #define rnd(x) ((int)(randomMT()&0x7FFFFFFF)%(x))
 #define rndscale(x) (float((randomMT()&0x7FFFFFFF)*double(x)/double(0x7FFFFFFF)))
+// Separate stream for effects that must not consume the seeded gameplay sequence.
+#define crnd(x) ((int)(cosmeticrandom()&0x7FFFFFFF)%(x))
+#define crndscale(x) (float((cosmeticrandom()&0x7FFFFFFF)*double(x)/double(0x7FFFFFFF)))
 #define detrnd(s, x) ((int)(((((uint)(s))*1103515245+12345)>>16)%(x)))
 
 #define loop(v,m) for(int v = 0; v < int(m); ++v)
@@ -1383,6 +1386,7 @@ extern int listzipfiles(const char *dir, const char *ext, vector<char *> &files)
 extern void seedMT(uint seed);
 extern uint randomMT();
 extern uint hashMT(uint h);
+extern uint cosmeticrandom();
 
 extern void putint(ucharbuf &p, int n);
 extern void putint(packetbuf &p, int n);

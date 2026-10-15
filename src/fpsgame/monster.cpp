@@ -165,7 +165,7 @@ namespace game
                         if(raycubelos(o, enemy->o, target))
                         {
                             transition(M_HOME, 1, 500, 200);
-                            playsound(S_GRUNT1+rnd(2), &o);
+                            playsound(S_GRUNT1+crnd(2), &o);
                         }
                     }
                     break;

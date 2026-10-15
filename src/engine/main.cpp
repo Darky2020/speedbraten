@@ -201,16 +201,16 @@ void renderbackground(const char *caption, Texture *mapshot, const char *mapname
         lastw = w;
         lasth = h;
 
-        backgroundu = rndscale(1);
-        backgroundv = rndscale(1);
-        detailu = rndscale(1);
-        detailv = rndscale(1);
+        backgroundu = crndscale(1);
+        backgroundv = crndscale(1);
+        detailu = crndscale(1);
+        detailv = crndscale(1);
         numdecals = sizeof(decals)/sizeof(decals[0]);
-        numdecals = numdecals/3 + rnd((numdecals*2)/3 + 1);
+        numdecals = numdecals/3 + crnd((numdecals*2)/3 + 1);
         float maxsize = min(w, h)/16.0f;
         loopi(numdecals)
         {
-            decal d = { rndscale(w), rndscale(h), maxsize/2 + rndscale(maxsize/2), rnd(2) };
+            decal d = { crndscale(w), crndscale(h), maxsize/2 + crndscale(maxsize/2), crnd(2) };
             decals[i] = d;
         }
     }

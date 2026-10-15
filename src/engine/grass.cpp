@@ -246,7 +246,7 @@ void generategrass()
     grassgroups.setsize(0);
     grassverts.setsize(0);
 
-    if(grassoffsets[0] < 0) loopi(NUMGRASSOFFSETS) grassoffsets[i] = rnd(0x1000000)/float(0x1000000);
+    if(grassoffsets[0] < 0) loopi(NUMGRASSOFFSETS) grassoffsets[i] = crnd(0x1000000)/float(0x1000000);
 
     loopi(NUMGRASSWEDGES)
     {

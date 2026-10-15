@@ -197,8 +197,8 @@ namespace game
         switch(type)
         {
             case BNC_GRENADE: bnc.collidetype = COLLIDE_ELLIPSE_PRECISE; break;
-            case BNC_DEBRIS: case BNC_BARRELDEBRIS: bnc.variant = rnd(4); break;
-            case BNC_GIBS: bnc.variant = rnd(3); break;
+            case BNC_DEBRIS: case BNC_BARRELDEBRIS: bnc.variant = crnd(4); break;
+            case BNC_GIBS: bnc.variant = crnd(3); break;
         }
 
         vec dir(to);
@@ -227,7 +227,7 @@ namespace game
         bouncer *b = (bouncer *)d;
         if(b->bouncetype != BNC_GIBS || b->bounces >= 2) return;
         b->bounces++;
-        adddecal(DECAL_BLOOD, vec(b->o).sub(vec(surface).mul(b->radius)), surface, 2.96f/b->bounces, bvec(0x60, 0xFF, 0xFF), rnd(4));
+        adddecal(DECAL_BLOOD, vec(b->o).sub(vec(surface).mul(b->radius)), surface, 2.96f/b->bounces, bvec(0x60, 0xFF, 0xFF), crnd(4));
     }
         
     MOD(HVARP, trailcolorgrenadelauncher, 0, 0x404040, 0xFFFFFF);
@@ -339,11 +339,11 @@ namespace game
 
     void spawnbouncer(const vec &p, const vec &vel, fpsent *d, int type, entitylight *light = NULL)
     {
-        vec to(rnd(100)-50, rnd(100)-50, rnd(100)-50);
+        vec to(crnd(100)-50, crnd(100)-50, crnd(100)-50);
         if(to.iszero()) to.z += 1;
         to.normalize();
         to.add(p);
-        newbouncer(p, to, true, 0, d, type, rnd(1000)+1000, rnd(100)+20, light);
+        newbouncer(p, to, true, 0, d, type, crnd(1000)+1000, crnd(100)+20, light);
     }
 
     void gibeffect(int damage, const vec &vel, fpsent *d)
@@ -394,7 +394,7 @@ namespace game
                     damagecompass(damage, at ? at->o : f->o);
                     playsound(S_PAIN6);
                 }
-                else playsound(S_PAIN1+rnd(5), &f->o);
+                else playsound(S_PAIN1+crnd(5), &f->o);
             }
         }
     }
@@ -439,7 +439,7 @@ namespace game
         if(gun==GUN_RL) adddynlight(v, 1.15f*guns[gun].exprad, vec(2, 1.5f, 1), 700, 100, 0, guns[gun].exprad/2, vec(1, 0.75f, 0.5f));
         else if(gun==GUN_GL) adddynlight(v, 1.15f*guns[gun].exprad, vec(0.5f, 1.5f, 2), 600, 100, 0, 8, vec(0.25f, 1, 1));
         else adddynlight(v, 1.15f*guns[gun].exprad, vec(2, 1.5f, 1), 700, 100);
-        int numdebris = gun==GUN_BARREL ? rnd(max(maxbarreldebris-5, 1))+5 : rnd(maxdebris-5)+5;
+        int numdebris = gun==GUN_BARREL ? crnd(max(maxbarreldebris-5, 1))+5 : crnd(maxdebris-5)+5;
         vec debrisvel = vec(owner->o).sub(v).safenormalize(), debrisorigin(v);
         if(gun==GUN_RL) debrisorigin.add(vec(debrisvel).mul(8));
         if(numdebris)

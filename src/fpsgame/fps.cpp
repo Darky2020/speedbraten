@@ -477,7 +477,7 @@ namespace game
 
         if(d->health<=0) { if(local) killed(d, actor); }
         else if(d==h) playsound(S_PAIN6);
-        else playsound(S_PAIN1+rnd(5), &d->o);
+        else playsound(S_PAIN1+crnd(5), &d->o);
     }
 
     VARP(deathscore, 0, 1, 1);
@@ -499,14 +499,14 @@ namespace game
             d->attacking = false;
             //d->pitch = 0;
             d->roll = 0;
-            playsound(S_DIE1+rnd(2));
+            playsound(S_DIE1+crnd(2));
         }
         else
         {
             d->move = d->strafe = d->vertical = 0;
             d->resetinterp();
             d->smoothmillis = 0;
-            playsound(S_DIE1+rnd(2), &d->o);
+            playsound(S_DIE1+crnd(2), &d->o);
         }
     }
 
