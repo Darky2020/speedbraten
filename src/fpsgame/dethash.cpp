@@ -33,6 +33,7 @@ namespace game
     ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
     ICOMMAND(harnessjump, "", (), { if(canjump()) player1->jumping = true; });
     ICOMMAND(harnessattack, "i", (int *down), { doattack(*down != 0); });
+    ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
 
     void dethashframe()
     {

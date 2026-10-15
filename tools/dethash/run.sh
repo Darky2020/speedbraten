@@ -3,6 +3,7 @@
 # Runs the freshly built client <runs> times in a row with a fixed clock, each with a
 # fresh home dir, and leaves <outdir>/run-N/dethash.log for compare.py.
 # seed 0 uses a random gameplay seed, as in normal play. extra runs before the script.
+# Env: FIXED=ms per frame (default 5, 0 = wall clock), STALL=ms to freeze twice mid-run.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -21,10 +22,11 @@ t0=$(date +%s)
 for n in $(seq 1 "$runs"); do
     home=$out/run-$n
     rm -rf "$home"; mkdir -p "$home"
+    printf 'fullscreen 0\nscr_w 640\nscr_h 400\nusesound 0\n' > "$home/init.cfg"
     log=$home/dethash.log
-    echo "run $n/$runs: start (seed=$seed draw=$draw extra='$extra')" >&2
+    echo "run $n/$runs: start (seed=$seed draw=$draw extra='$extra' fixed=${FIXED:-5} stall=${STALL:-0})" >&2
     rs=$(date +%s)
-    "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; $extra; exec \"$script\"" &
+    "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; dethash_fixed = ${FIXED:-5}; dethash_stall = ${STALL:-0}; $extra; exec \"$script\"" &
     pid=$!
     while kill -0 $pid 2>/dev/null; do
         sleep 5
