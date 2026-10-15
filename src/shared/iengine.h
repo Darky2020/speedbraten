@@ -461,6 +461,7 @@ extern void flushpreloadedmodels(bool msg = true);
 
 extern void moveragdoll(dynent *d);
 extern void cleanragdoll(dynent *d);
+extern bool getragdolleye(dynent *d, vec &eye);
 
 // server
 #define MAXCLIENTS 128                 // DO NOT set this any higher

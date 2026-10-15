@@ -851,6 +851,7 @@ namespace game
     extern bool intersect(dynent *d, const vec &from, const vec &to, float &dist = intersectdist);
     extern dynent *intersectclosest(const vec &from, const vec &to, fpsent *at, float &dist = intersectdist);
     extern void clearbouncers();
+    extern void listbouncers(vector<physent *> &ents);
     extern void updatebouncers(int curtime);
     extern void removebouncers(fpsent *owner);
     extern void renderbouncers();

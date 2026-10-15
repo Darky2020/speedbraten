@@ -1248,7 +1248,7 @@ namespace ai
         else if(d->state == CS_DEAD)
         {
             if(d->ragdoll) moveragdoll(d);
-            else if(lastmillis-d->lastpain<2000)
+            if((!d->ragdoll || simticking) && lastmillis-d->lastpain<2000)
             {
                 d->move = d->strafe = 0;
                 moveplayer(d, 10, false);

@@ -132,7 +132,7 @@ struct ragdolldata
 
     ragdollskel *skel;
     int millis, collidemillis, collisions, floating, lastmove, unsticks;
-    vec offset, center;
+    vec offset, center, displayeye;
     float radius, timestep, scale;
     vert *verts;
     matrix3 *tris;
@@ -221,6 +221,7 @@ struct ragdolldata
         offset = d->o;
         offset.sub(skel->eye >= 0 ? verts[skel->eye].pos : center);
         offset.z += (d->eyeheight + d->aboveeye)/2;
+        displayeye = d->o;
     }
 
     void move(dynent *pl, float ts);
@@ -524,7 +525,17 @@ void moveragdoll(dynent *d)
     vec eye = d->ragdoll->skel->eye >= 0 ? d->ragdoll->verts[d->ragdoll->skel->eye].pos : d->ragdoll->center;
     eye.add(d->ragdoll->offset);
     float k = pow(ragdolleyesmooth, float(curtime)/ragdolleyesmoothmillis);
-    d->o.mul(k).add(eye.mul(1-k));
+    // the ragdoll only exists once the renderer has drawn the corpse, so under the fixed
+    // tick it must not feed back into gameplay
+    vec &pos = simticking ? d->ragdoll->displayeye : d->o;
+    pos.mul(k).add(eye.mul(1-k));
+}
+
+bool getragdolleye(dynent *d, vec &eye)
+{
+    if(!d->ragdoll) return false;
+    eye = d->ragdoll->displayeye;
+    return true;
 }
 
 void cleanragdoll(dynent *d)

@@ -35,6 +35,35 @@ namespace game
         ragdolls.deletecontents();
     }
 
+    static vector<physent *> displayents;
+    static vector<vec> displaysaved;
+
+    // Under the fixed tick, positions only change every SIMTICK ms. While drawing, move
+    // entities between their last two tick positions (alpha = fraction of the next tick
+    // already elapsed) and put ragdolled ones at the ragdoll's eye; enddisplay() puts the
+    // simulation positions back.
+    void begindisplay(float alpha)
+    {
+        displayents.setsize(0);
+        loopi(numdynents()) if(dynent *d = iterdynents(i)) displayents.add(d);
+        loopv(ragdolls) displayents.add(ragdolls[i]);
+        listbouncers(displayents);
+        displaysaved.setsize(0);
+        loopv(displayents)
+        {
+            physent *d = displayents[i];
+            displaysaved.add(d->o);
+            if(d->type != ENT_BOUNCE && getragdolleye((dynent *)d, d->o)) continue;
+            if(d->interpmillis == lastmillis) d->o.add(vec(d->deltapos).mul(1 - alpha));
+        }
+    }
+
+    void enddisplay()
+    {
+        loopv(displayents) displayents[i]->o = displaysaved[i];
+        displayents.setsize(0);
+    }
+
     void moveragdolls()
     {
         loopv(ragdolls)

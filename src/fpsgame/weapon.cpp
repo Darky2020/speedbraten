@@ -285,6 +285,8 @@ namespace game
 
     void clearbouncers() { bouncers.deletecontents(); }
 
+    void listbouncers(vector<physent *> &ents) { loopv(bouncers) ents.add(bouncers[i]); }
+
     struct projectile
     {
         vec dir, o, to, offset;

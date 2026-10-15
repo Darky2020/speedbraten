@@ -79,6 +79,8 @@ namespace game
     extern dynent *iterdynents(int i);
     extern int numdynents();
     extern void rendergame(bool mainpass);
+    extern void begindisplay(float alpha);
+    extern void enddisplay();
     extern void renderavatar();
     extern void renderplayerpreview(int model, int team, int weap);
     extern void writegamedata(vector<char> &extras);

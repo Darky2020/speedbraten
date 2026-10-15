@@ -1472,12 +1472,19 @@ int main(int argc, char **argv)
             serverslice(false, 0);
         }
 
+        bool display = simticking && !mainmenu;
+        if(display) game::begindisplay(simaccum/float(SIMTICK));
+
         // miscellaneous general game effects
         recomputecamera();
         updateparticles();
         updatesounds();
 
-        if(minimized && !minimizedframes) continue;
+        if(minimized && !minimizedframes)
+        {
+            if(display) game::enddisplay();
+            continue;
+        }
 
         if(draw)
         {
@@ -1497,6 +1504,8 @@ int main(int argc, char **argv)
             renderedframe = inbetweenframes = true;
             lastdrawmillis = millis;
         }
+
+        if(display) game::enddisplay();
     }
     
     ASSERT(0);   
