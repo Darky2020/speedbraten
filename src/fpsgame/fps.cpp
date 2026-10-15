@@ -668,6 +668,17 @@ namespace game
 
     VARP(showmodeinfo, 0, 1, 1);
 
+    // Non-zero forces the gameplay RNG seed, e.g. for reproducible test runs.
+    VAR(fixedgameseed, 0, 0, INT_MAX);
+    uint gameseed = 0;
+
+    void seedgame()
+    {
+        gameseed = fixedgameseed ? uint(fixedgameseed) : (uint(time(NULL)) * 2654435761U) ^ cosmeticrandom();
+        seedMT(gameseed);
+        logoutf("game seed: %u", gameseed);
+    }
+
     void startgame()
     {
         clearmovables();

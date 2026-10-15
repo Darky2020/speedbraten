@@ -17,15 +17,13 @@ namespace game
     }
     COMMAND(dethashstop, "");
 
-    // A non-zero seed reseeds the global RNG so runs start from the same sequence.
     // onstart names an alias executed after the first simulated frame, so scripted input
     // is timed from game start no matter how many frames map loading took.
-    ICOMMAND(dethashstart, "sis", (char *file, int *seed, char *onstart),
+    ICOMMAND(dethashstart, "ss", (char *file, char *onstart),
     {
         dethashstop();
         dethashfile = openutf8file(path(file, true), "w");
         if(!dethashfile) { conoutf(CON_ERROR, "dethash: could not open %s", file); return; }
-        if(*seed) seedMT(uint(*seed));
         dethashframes = 0;
         copystring(dethashonstart, onstart);
         dethashfile->printf("# frame lastmillis player monsters projectiles movables entities rng\n");

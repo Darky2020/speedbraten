@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Usage: run.sh <outdir> <runs> <seed> [drawinterval] [script]
+# Usage: run.sh <outdir> <runs> <seed> [drawinterval] [script] [extra cubescript]
 # Runs the freshly built client <runs> times in a row with a fixed clock, each with a
 # fresh home dir, and leaves <outdir>/run-N/dethash.log for compare.py.
-# seed 0 keeps the game's own time-based RNG seed.
+# seed 0 uses a random gameplay seed, as in normal play. extra runs before the script.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-out=$1; runs=$2; seed=$3; draw=${4:-4}; script=${5:-$here/dmsp_basic.cfg}
+out=$1; runs=$2; seed=$3; draw=${4:-4}; script=${5:-$here/dmsp_basic.cfg}; extra=${6:-}
 app=${SAUER_APP:-/Applications/Sauerbraten.app}
 client=$repo/src/sauer_client
 expected=6000
@@ -22,9 +22,9 @@ for n in $(seq 1 "$runs"); do
     home=$out/run-$n
     rm -rf "$home"; mkdir -p "$home"
     log=$home/dethash.log
-    echo "run $n/$runs: start (seed=$seed draw=$draw)" >&2
+    echo "run $n/$runs: start (seed=$seed draw=$draw extra='$extra')" >&2
     rs=$(date +%s)
-    "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; exec \"$script\"" &
+    "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; $extra; exec \"$script\"" &
     pid=$!
     while kill -0 $pid 2>/dev/null; do
         sleep 5

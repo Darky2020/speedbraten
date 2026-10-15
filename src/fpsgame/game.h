@@ -865,6 +865,10 @@ namespace game
 
     // dethash
     extern void dethashframe();
+
+    // fps
+    extern uint gameseed;
+    extern void seedgame();
     extern void gunselect(int gun, fpsent *d);
     extern void weaponswitch(fpsent *d);
     extern void avoidweapons(ai::avoidset &obstacles, float radius);
