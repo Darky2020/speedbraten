@@ -17,7 +17,7 @@ for cc in "$@"; do
     case $cc in
         clang++|g++) cmd="$cc -std=c++11 -O3 -ffp-contract=off fpconform.cpp -o $exe" ;;
         zig)         cmd="zig c++ -std=c++11 -O3 -ffp-contract=off fpconform.cpp -o $exe" ;;
-        cl)          cmd="cl /nologo /O2 /fp:precise /EHsc fpconform.cpp /Fe:$exe.exe" ;;
+        cl)          cmd="cl -nologo -O2 -fp:precise -EHsc fpconform.cpp -Fe:$exe.exe" ;;
         *) echo "unknown compiler $cc" >&2; continue ;;
     esac
     echo "building: $cmd" >&2
