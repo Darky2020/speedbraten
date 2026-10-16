@@ -271,12 +271,15 @@ namespace game
             if(bnc.bouncetype==BNC_GRENADE) stopped = bounce(&bnc, 0.6f, 0.5f, 0.8f) || (bnc.lifetime -= time)<0;
             else
             {
-                // cheaper variable rate physics for debris, gibs, etc.
+                // cheaper variable rate physics for debris, gibs, etc.; they are cosmetic and
+                // spawned from the unseeded cosmetic RNG, so they must not touch players or
+                // monsters: that would go through the shared dynent cache and change what the
+                // simulation sees
                 for(int rtime = time; rtime > 0;)
                 {
                     int qtime = min(30, rtime);
                     rtime -= qtime;
-                    if((bnc.lifetime -= qtime)<0 || bounce(&bnc, qtime/1000.0f, 0.6f, 0.5f, 1)) { stopped = true; break; }
+                    if((bnc.lifetime -= qtime)<0 || bounce(&bnc, qtime/1000.0f, 0.6f, 0.5f, 1, false)) { stopped = true; break; }
                 }
             }
             if(stopped)

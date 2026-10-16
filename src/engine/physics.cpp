@@ -1405,7 +1405,7 @@ bool move(physent *d, vec &dir)
     return !collided;
 }
 
-bool bounce(physent *d, float secs, float elasticity, float waterfric, float grav)
+bool bounce(physent *d, float secs, float elasticity, float waterfric, float grav, bool playercol)
 {
     // make sure bouncers don't start inside geometry
     if(d->physstate!=PHYS_BOUNCE && collide(d, vec(0, 0, 0), 0, false)) return true;
@@ -1423,7 +1423,7 @@ bool bounce(physent *d, float secs, float elasticity, float waterfric, float gra
         vec dir(d->vel);
         dir.mul(secs);
         d->o.add(dir);
-        if(!collide(d, dir, 0, true, true))
+        if(!collide(d, dir, 0, playercol, playercol))
         {
             if(collideinside)
             {
