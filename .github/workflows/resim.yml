@@ -59,14 +59,61 @@ jobs:
         with:
           name: resim-${{ matrix.target }}-zig0.15.1
           path: bin
-      - name: smoke test (no game data yet; must exit 2 without hanging)
+      - uses: actions/cache@v4
+        id: data
+        with:
+          path: resimdata-v1.tar.gz
+          key: resimdata-v1
+      - name: download game data
+        if: steps.data.outputs.cache-hit != 'true'
+        run: curl -fsSL -o resimdata-v1.tar.gz https://github.com/Darky2020/speedbraten/releases/download/resimdata-v1/resimdata-v1.tar.gz
+      - name: unpack game data
+        run: |
+          echo "cee4c89fe19a16e0bbd574e1385c1044a08a4f21b03ff0aea66c18559a09a85c  resimdata-v1.tar.gz" | (sha256sum -c - || shasum -a 256 -c -)
+          tar xzf resimdata-v1.tar.gz
+      - name: re-simulate gold replays
         run: |
           chmod +x bin/sauer_resim-* || true
-          exe=$(ls bin/sauer_resim-*)
-          mkdir -p empty home
-          cd empty
-          set +e
-          "../$exe" -q../home missing.sbr
-          code=$?
-          echo "exit $code"
-          [ $code -eq 2 ]
+          exe=$(cd bin && pwd)/$(ls bin)
+          gold=$(pwd)/tests/gold
+          mkdir -p results
+          fail=0
+          cd resimdata
+          for f in "$gold"/*.sbr; do
+            name=$(basename "$f" .sbr)
+            rm -rf ../home; mkdir -p ../home
+            start=$(date +%s)
+            set +e
+            "$exe" -q../home "$f" > "../results/$name.json" 2> "../results/$name.log"
+            code=$?
+            set -e
+            echo "$name: exit $code in $(( $(date +%s) - start ))s: $(tr -d '\r' < "../results/$name.json")"
+            [ $code -eq 0 ] || { fail=1; grep -iE "desync|could not|different version|fatal" "../results/$name.log" | head -5; }
+          done
+          exit $fail
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.target }}
+          path: results
+
+  compare:
+    needs: run
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: results
+      - name: final state hashes must match on every platform
+        shell: bash
+        run: |
+          fail=0
+          for name in $(ls results/*/ | grep '\.json$' | sort -u); do
+            hashes=$(for d in results/*/; do tr -d '\r' < "$d$name" | sed -n 's/.*"hash":"\([0-9a-f]*\)".*/\1/p'; echo; done | grep . | sort | uniq -c)
+            n=$(echo "$hashes" | wc -l)
+            echo "$name:"; echo "$hashes"
+            [ "$n" -eq 1 ] || fail=1
+          done
+          exit $fail
