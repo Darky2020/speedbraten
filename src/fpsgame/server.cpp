@@ -1795,13 +1795,13 @@ namespace server
 
         if(!m_mp(gamemode)) kicknonlocalclients(DISC_LOCAL);
 
-        sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
-
         if(m_capture) smode = &capturemode;
         else if(m_ctf) smode = &ctfmode;
         else if(m_collect) smode = &collectmode;
         else smode = NULL;
 
+        // teams go out before the map change: an offline client spawns while handling
+        // N_MAPCHANGE and picks its spawn group from its team
         clearteaminfo();
         if(m_teammode && nextteam[0])
         {
@@ -1813,7 +1813,10 @@ namespace server
             }
         }
         else if(m_teammode) autoteam();
-        nextteam[0] = '\0';
+        // a forced team is kept for a local client that connects after this map change
+        if(clients.length()) nextteam[0] = '\0';
+
+        sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
 
         if(m_timed && smapname[0]) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
         loopv(clients)
@@ -2777,8 +2780,9 @@ namespace server
         if(mastermode>=MM_LOCKED) ci->state.state = CS_SPECTATOR;
         ci->state.lasttimeplayed = lastmillis;
 
-        const char *worst = m_teammode ? chooseworstteam(NULL, ci) : NULL;
+        const char *worst = m_teammode ? (ci->local && nextteam[0] ? nextteam : chooseworstteam(NULL, ci)) : NULL;
         copystring(ci->team, worst ? worst : "good", MAXTEAMLEN+1);
+        if(ci->local) nextteam[0] = '\0';
 
         sendwelcome(ci);
         if(restorescore(ci)) sendresume(ci);

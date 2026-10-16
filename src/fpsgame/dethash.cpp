@@ -44,6 +44,20 @@ namespace game
         player1->resetinterp();
     });
     ICOMMAND(harnessstate, "", (), intret(player1->state));
+    // prints every player1 field that goes into the state hash
+    ICOMMAND(harnessplayer, "", (),
+    {
+        fpsent *d = player1;
+        conoutf("player o %.3f %.3f %.3f vel %.3f %.3f %.3f falling %.3f %.3f %.3f floor %.3f %.3f %.3f yaw %.3f pitch %.3f",
+            d->o.x, d->o.y, d->o.z, d->vel.x, d->vel.y, d->vel.z, d->falling.x, d->falling.y, d->falling.z, d->floor.x, d->floor.y, d->floor.z, d->yaw, d->pitch);
+        conoutf("player newpos %.3f %.3f %.3f timeinair %d inwater %d jumping %d move %d strafe %d physstate %d state %d blocked %d",
+            d->newpos.x, d->newpos.y, d->newpos.z, d->timeinair, d->inwater, d->jumping, d->move, d->strafe, d->physstate, d->state, d->blocked);
+        conoutf("player health %d armour %d armourtype %d gun %d gunwait %d quad %d lastaction %d lastpain %d lifesequence %d lasttaunt %d attacking %d",
+            d->health, d->armour, d->armourtype, d->gunselect, d->gunwait, d->quadmillis, d->lastaction, d->lastpain, d->lifesequence, d->lasttaunt, d->attacking);
+        string ammo = "";
+        loopi(NUMGUNS) concformatstring(ammo, " %d", d->ammo[i]);
+        conoutf("player ammo%s", ammo);
+    });
     ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
     ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });

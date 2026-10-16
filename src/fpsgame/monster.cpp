@@ -282,6 +282,17 @@ namespace game
     }
     ICOMMAND(nummonsters, "ii", (int *tag, int *state), intret(nummonsters(*tag, *state)));
 
+    // harness: lists the living monsters with a tag (-1 = any)
+    ICOMMAND(harnessmonsters, "i", (int *tag),
+    {
+        loopv(monsters)
+        {
+            monster *m = monsters[i];
+            if(m->state != CS_ALIVE || (*tag >= 0 && m->tag != *tag)) continue;
+            conoutf("monster %d (%s) tag %d at %.1f %.1f %.1f state %d", i, monstertypes[m->mtype].name, m->tag, m->o.x, m->o.y, m->o.z, m->monsterstate);
+        }
+    });
+
     void preloadmonsters()
     {
         loopi(NUMMONSTERTYPES) preloadmodel(monstertypes[i].mdlname);
@@ -320,6 +331,7 @@ namespace game
         monstertotal = 0;
         spawnremain = 0;
         remain = 0;
+        nextmonster = mtimestart = 0;
         monsterhurt = false;
         if(m_dmsp)
         {
