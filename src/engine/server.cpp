@@ -18,7 +18,9 @@ void closelogfile()
 
 FILE *getlogfile()
 {
-#ifdef WIN32
+#if defined(HEADLESS)
+    return logfile ? logfile : stderr;
+#elif defined(WIN32)
     return logfile;
 #else
     return logfile ? logfile : stdout;

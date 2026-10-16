@@ -17,6 +17,8 @@ namespace game
     static bool replaying = false, replaypending = false, havecontrols = false, recordingoff = false;
     static bool runsaved = false;
     static int lastactivetick = 0, resetarmtick = -1;
+    static int replayedticks = 0;
+    static uint lastreplayhash[DETHASH_GROUPS];
 
     static void checkpendingreset();
 
@@ -203,6 +205,8 @@ namespace game
             setcontrols(lastcontrols);
             hashgamestate(h.groups);
             checkreplayhash(h);
+            memcpy(lastreplayhash, h.groups, sizeof(lastreplayhash));
+            replayedticks++;
             return;
         }
         inputattempt &rec = recording.last();
@@ -323,7 +327,19 @@ namespace game
         server::forcenextteam(first.team);
         server::forcenextflagrun(first.flagrun);
         replaypending = true;
+        replayedticks = 0;
+        memset(lastreplayhash, 0, sizeof(lastreplayhash));
         changemap(first.map, first.mode);
+    }
+
+    bool inputreplayactive() { return replaying || replaypending; }
+
+    // first desync tick (0 = none), ticks replayed so far and the state hash after the last one
+    int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS])
+    {
+        ticks = replayedticks;
+        memcpy(hash, lastreplayhash, sizeof(lastreplayhash));
+        return replaydesync;
     }
 
     VARP(speedrunresetidle, 0, 1000, 10000);

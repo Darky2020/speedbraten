@@ -196,7 +196,8 @@ all: client server
 
 clean:
 	cd enet && make clean && cd ..
-	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) sauer_client sauer_server
+	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) sauer_client sauer_server sauer_resim
+	-$(RM) -r headless
 
 %-standalone.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -215,6 +216,24 @@ client: $(CLIENT_OBJS)
 
 server: $(SERVER_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_server $(SERVER_OBJS) $(LIBS)
+
+# Headless re-simulation binary: the client sim without a window, GL or drawing.
+RESIM_OBJS= $(addprefix headless/,$(CLIENT_OBJS)) headless/engine/nullgl.o headless/engine/nullsdl.o headless/fpsgame/resim.o
+RESIM_LIBS= $(filter-out -lGL -lopengl32 -lX11 -lSDL2_image -lSDL2_mixer OpenGL SDL2_image SDL2_mixer,$(subst -framework OpenGL,,$(subst -framework SDL2_image,,$(subst -framework SDL2_mixer,,$(CLIENT_LIBS)))))
+
+headless/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(CLIENT_INCLUDES) -DHEADLESS -MMD -MP -c -o $@ $<
+
+-include $(RESIM_OBJS:.o=.d)
+
+ifneq (,$(findstring linux,$(TARGET)))
+resim: libenet
+endif
+resim: $(RESIM_OBJS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_resim $(RESIM_OBJS) $(LIBS) $(RESIM_LIBS)
+
+.PHONY: resim
 
 install: all
 ifneq (,$(findstring windows,$(TARGET)))

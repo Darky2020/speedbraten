@@ -83,6 +83,12 @@ namespace game
         }
     }
 
+    int runtimerresult(bool &finished)
+    {
+        finished = runstate == RUN_FINISHED;
+        return runticks()*SIMTICK;
+    }
+
     ICOMMAND(runtime, "", (), intret(runticks()*SIMTICK));
     ICOMMAND(runstate, "", (), intret(runkind == RUNTIMER_NONE ? -1 : runstate));
 

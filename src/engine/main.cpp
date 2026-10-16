@@ -182,6 +182,9 @@ void bgquad(float x, float y, float w, float h, float tx = 0, float ty = 0, floa
 
 void renderbackground(const char *caption, Texture *mapshot, const char *mapname, const char *mapinfo, bool restore, bool force)
 {
+#ifdef HEADLESS
+    return;
+#endif
     if(!inbetweenframes && !force) return;
 
     if(!restore || force) stopsounds(); // stop sounds while loading
@@ -328,6 +331,9 @@ float loadprogress = 0;
 
 void renderprogress(float bar, const char *text, GLuint tex, bool background)   // also used during loading
 {
+#ifdef HEADLESS
+    return;
+#endif
     if(!inbetweenframes || drawtex) return;
 
     extern int menufps, maxfps;
@@ -475,6 +481,9 @@ VAR(sdl_xgrab_bug, 0, 0, 1);
 
 void inputgrab(bool on, bool delay = false)
 {
+#ifdef HEADLESS
+    return;
+#endif
 #ifdef SDL_VIDEO_DRIVER_X11
     bool wasrelativemouse = relativemouse;
 #endif
@@ -632,6 +641,13 @@ VARFP(vsynctear, 0, 0, 1, { if(vsync) restorevsync(); });
 
 void setupscreen()
 {
+#ifdef HEADLESS
+    if(scr_w < 0) scr_w = SCR_DEFAULTW;
+    if(scr_h < 0) scr_h = SCR_DEFAULTH;
+    screenw = scr_w;
+    screenh = scr_h;
+    return;
+#endif
     if(glcontext)
     {
         SDL_GL_DeleteContext(glcontext);
@@ -1040,6 +1056,9 @@ void checkinput()
 
 void swapbuffers(bool overlay)
 {
+#ifdef HEADLESS
+    return;
+#endif
     recorder::capture(overlay);
     gle::disable();
     SDL_GL_SwapWindow(screen);
@@ -1236,6 +1255,9 @@ int main(int argc, char **argv)
 
     int dedicated = 0;
     char *load = NULL, *initscript = NULL;
+#ifdef HEADLESS
+    const char *resimfile = NULL;
+#endif
 
     initing = INIT_RESET;
     // set home dir first
@@ -1286,6 +1308,9 @@ int main(int argc, char **argv)
 #endif
             default: if(!serveroption(argv[i])) gameargs.add(argv[i]); break;
         }
+#ifdef HEADLESS
+        else if(!resimfile) resimfile = argv[i];
+#endif
         else gameargs.add(argv[i]);
     }
     initing = NOT_INITING;
@@ -1296,7 +1321,11 @@ int main(int argc, char **argv)
     {
         logoutf("init: sdl");
 
+#ifdef HEADLESS
+        if(SDL_Init(SDL_INIT_TIMER|SDL_INIT_EVENTS)<0) fatal("Unable to initialize SDL: %s", SDL_GetError());
+#else
         if(SDL_Init(SDL_INIT_TIMER|SDL_INIT_VIDEO|SDL_INIT_AUDIO)<0) fatal("Unable to initialize SDL: %s", SDL_GetError());
+#endif
 
 #ifdef SDL_VIDEO_DRIVER_X11
         SDL_version version;
@@ -1344,8 +1373,10 @@ int main(int argc, char **argv)
     camera1 = player = game::iterdynents(0);
     emptymap(0, true, NULL, false);
 
+#ifndef HEADLESS
     logoutf("init: sound");
     initsound();
+#endif
 
     logoutf("init: cfg");
     game::writeembeddedcfgs();
@@ -1410,6 +1441,11 @@ int main(int argc, char **argv)
     }
 
     if(initscript) execute(initscript);
+
+#ifdef HEADLESS
+    fixedframe = SIMTICK;
+    if(!game::resimstart(resimfile)) exit(2);
+#endif
 
     initmumble();
     resetfpshistory();
@@ -1481,6 +1517,11 @@ int main(int argc, char **argv)
 
             serverslice(false, 0);
         }
+
+#ifdef HEADLESS
+        if(game::resimdone()) exit(game::resimreport());
+        draw = false;
+#endif
 
         bool display = simticking && !mainmenu;
         if(display) game::begindisplay(simaccum/float(SIMTICK));

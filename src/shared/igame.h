@@ -25,6 +25,11 @@ namespace entities
 namespace game
 {
     extern void parseoptions(vector<const char *> &args);
+#ifdef HEADLESS
+    extern bool resimstart(const char *file);
+    extern bool resimdone();
+    extern int resimreport();
+#endif
 
     extern void gamedisconnect(bool cleanup);
     extern void parsepacketclient(int chan, packetbuf &p);

@@ -165,9 +165,17 @@ PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays_ = NULL;
 PFNGLGENVERTEXARRAYSPROC    glGenVertexArrays_    = NULL;
 PFNGLISVERTEXARRAYPROC      glIsVertexArray_      = NULL;
 
+#ifdef HEADLESS
+extern void *nullgl_getprocaddress(const char *name);
+#endif
+
 void *getprocaddress(const char *name)
 {
+#ifdef HEADLESS
+    return nullgl_getprocaddress(name);
+#else
     return SDL_GL_GetProcAddress(name);
+#endif
 }
 
 VARP(ati_skybox_bug, 0, 0, 1);

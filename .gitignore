@@ -9,6 +9,8 @@ src/**/*.orig
 src/**/*.tmp
 src/sauer_client
 src/sauer_server
+src/sauer_resim
+src/headless/
 src/Makefile.bak
 
 patch_drafts

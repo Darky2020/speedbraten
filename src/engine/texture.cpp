@@ -1348,6 +1348,10 @@ bool canloadsurface(const char *name)
 
 SDL_Surface *loadsurface(const char *name)
 {
+#ifdef HEADLESS
+    // images are never shown; a 1x1 placeholder keeps every texture path working
+    return fixsurfaceformat(SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 24, 0x0000FF, 0x00FF00, 0xFF0000, 0));
+#endif
     SDL_Surface *s = NULL;
     stream *z = openzipfile(name, "rb");
     if(z)
