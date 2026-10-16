@@ -595,7 +595,8 @@ void cleardynentcache()
     if(!dynentframe) dynentframe = 1;
 }
 
-VARF(dynentsize, 4, 7, 12, cleardynentcache());
+// cell size of the dynent cache; part of the simulation, since it decides when cells are rebuilt
+static const int dynentsize = 7;
 
 #define DYNENTHASH(x, y) (((((x)^(y))<<5) + (((x)^(y))>>5)) & (DYNENTCACHESIZE - 1))
 
