@@ -33,7 +33,9 @@
     #include <dbghelp.h>
     #include <intrin.h>
   #endif
-  #define ZLIB_DLL
+  #ifndef HEADLESS
+    #define ZLIB_DLL
+  #endif
 #endif
 
 #ifndef STANDALONE

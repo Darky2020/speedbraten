@@ -83,6 +83,7 @@ static Uint32 convertchannel(Uint32 v, Uint32 srcmask, Uint32 dstmask, Uint32 df
 
 extern "C" {
 
+void SDLCALL SDL_SetMainReady(void) {}
 int SDLCALL SDL_Init(Uint32 flags) { return 0; }
 int SDLCALL SDL_InitSubSystem(Uint32 flags) { return 0; }
 void SDLCALL SDL_QuitSubSystem(Uint32 flags) {}

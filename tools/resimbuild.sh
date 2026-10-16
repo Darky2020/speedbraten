@@ -23,8 +23,9 @@ if [ ! -f "$deps/lib/libz.a" ]; then
     echo "$ZLIB_SHA256  $tarball" | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -) >&2
     tar xzf "$tarball" -C "$deps/build"
     zsrc=$deps/build/zlib-$ZLIB_VERSION
+    case $target in *windows*) zdefs="" ;; *) zdefs="-DZ_HAVE_UNISTD_H" ;; esac
     for f in adler32 compress crc32 deflate gzclose gzlib gzread gzwrite infback inffast inflate inftrees trees uncompr zutil; do
-        zig cc -target "$target" -O2 -c "$zsrc/$f.c" -o "$deps/build/z_$f.o"
+        zig cc -target "$target" -O2 $zdefs -c "$zsrc/$f.c" -o "$deps/build/z_$f.o"
     done
     zig ar rcs "$deps/lib/libz.a" "$deps"/build/z_*.o
     cp "$zsrc/zlib.h" "$zsrc/zconf.h" "$deps/include/"
