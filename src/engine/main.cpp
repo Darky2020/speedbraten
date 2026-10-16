@@ -1199,7 +1199,8 @@ VAR(fixedframedraw, 1, 1, 1000);
 
 // Offline, the game advances in fixed SIMTICK steps of game time, decoupled from frame
 // rate, so identical inputs give identical results on any machine and frame pacing.
-bool simticking = false;
+bool simticking = false, insimtick = false;
+static bool simrestarted = false;
 static int simaccum = 0;
 static bool simclockskip = false;
 
@@ -1214,6 +1215,7 @@ void resetsimclock(int base)
     rebasesleeps(delta);
     simaccum = 0;
     simclockskip = true;
+    simrestarted = true;
 }
 
 VAR(numcpus, 1, 1, 16);
@@ -1456,10 +1458,16 @@ int main(int argc, char **argv)
                 curtime = SIMTICK;
                 lastmillis += SIMTICK;
                 simulated += SIMTICK;
-                game::updateworld();
-                checksleep(lastmillis);
-                serverslice(false, 0);
-                if(!simticking) break;
+                // a map start inside a tick abandons the rest of it, so every way of
+                // starting a game leads to the same first tick
+                simrestarted = false;
+                insimtick = true;
+                game::begintick();
+                if(!simrestarted) game::updateworld();
+                if(!simrestarted) checksleep(lastmillis);
+                if(!simrestarted) serverslice(false, 0);
+                insimtick = false;
+                if(simrestarted || !simticking) break;
             }
             curtime = simulated;
         }

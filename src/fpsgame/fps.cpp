@@ -18,6 +18,7 @@ namespace game
 
     void taunt()
     {
+        if(deferinput(INPUT_COMMAND, 0, "taunt")) return;
         if(player1->state!=CS_ALIVE || player1->physstate<PHYS_SLOPE) return;
         if(lastmillis-player1->lasttaunt<1000) return;
         player1->lasttaunt = lastmillis;
@@ -343,6 +344,8 @@ namespace game
 
     static inline float harmonicmean(float a, float b) { return a + b > 0 ? 2 * a * b / (a + b) : 0.0f; }
 
+    static bool mapstartspawn = false;
+
     // avoid spawning near other players
     float ratespawn(dynent *d, const extentity &e)
     {
@@ -355,7 +358,7 @@ namespace game
             const fpsent *o = players[i];
             if(o == p)
             {
-                if(m_noitems || (o->state != CS_ALIVE && lastmillis - o->lastpain > 3000)) continue;
+                if(mapstartspawn || m_noitems || (o->state != CS_ALIVE && lastmillis - o->lastpain > 3000)) continue;
             }
             else if(o->state != CS_ALIVE || isteam(o->team, p->team)) continue;
 
@@ -424,6 +427,7 @@ namespace game
 
     void doattack(bool on)
     {
+        if(deferinput(INPUT_ATTACK, on ? 1 : 0)) return;
         if(!connected || intermission) return;
         if((player1->attacking = on) && attackspawn) respawn();
     }
@@ -432,6 +436,7 @@ namespace game
 
     bool canjump()
     {
+        if(deferinput(INPUT_JUMP, 1)) return false;
         if(!connected || intermission) return false;
         if(jumpspawn) respawn();
         return player1->state!=CS_DEAD;
@@ -705,6 +710,7 @@ namespace game
             d->maxhealth = 100;
             d->lifesequence = -1;
             d->respawned = d->suicided = -2;
+            d->lastpain = 0;
             d->stats.reset();
         }
 
@@ -754,8 +760,10 @@ namespace game
         ai::clearwaypoints(true);
 
         respawnent = -1; // so we don't respawn at an old spot
+        mapstartspawn = true; // where the player was before the map load is meaningless here
         if(!m_mp(gamemode)) spawnplayer(player1);
         else findplayerspawn(player1, -1);
+        mapstartspawn = false;
         entities::resetspawns();
         copystring(clientmap, name ? name : "");
 
@@ -895,7 +903,7 @@ namespace game
         else if(d->type==ENT_AI) suicidemonster((monster *)d);
         else if(d->type==ENT_INANIMATE) suicidemovable((movable *)d);
     }
-    ICOMMAND(suicide, "", (), suicide(player1));
+    ICOMMAND(suicide, "", (), { if(!deferinput(INPUT_COMMAND, 0, "suicide")) suicide(player1); });
 
     bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
 

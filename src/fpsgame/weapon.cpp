@@ -44,7 +44,11 @@ namespace game
         if(gun != player1->gunselect) gunselect(gun, player1);
         else playsound(S_NOAMMO);
     }
-    ICOMMAND(nextweapon, "ii", (int *dir, int *force), nextweapon(*dir, *force!=0));
+    ICOMMAND(nextweapon, "ii", (int *dir, int *force),
+    {
+        defformatstring(cmd, "nextweapon %d %d", *dir, *force);
+        if(!deferinput(INPUT_COMMAND, 0, cmd)) nextweapon(*dir, *force!=0);
+    });
 
     int getweapon(const char *name)
     {
@@ -61,7 +65,25 @@ namespace game
         if(force || player1->ammo[gun]) gunselect(gun, player1);
         else playsound(S_NOAMMO);
     }
-    ICOMMAND(setweapon, "si", (char *name, int *force), setweapon(name, *force!=0));
+    ICOMMAND(setweapon, "si", (char *name, int *force),
+    {
+        defformatstring(cmd, "setweapon %s %d", escapestring(name), *force);
+        if(!deferinput(INPUT_COMMAND, 0, cmd)) setweapon(name, *force!=0);
+    });
+
+    static bool deferweaponcommand(const char *name, tagval *args, int numargs)
+    {
+        vector<char> buf;
+        buf.put(name, strlen(name));
+        loopi(numargs)
+        {
+            buf.add(' ');
+            const char *arg = escapestring(args[i].getstr());
+            buf.put(arg, strlen(arg));
+        }
+        buf.add('\0');
+        return deferinput(INPUT_COMMAND, 0, buf.getbuf());
+    }
 
     void cycleweapon(int numguns, int *guns, bool force = false)
     {
@@ -81,6 +103,7 @@ namespace game
     }
     ICOMMAND(cycleweapon, "V", (tagval *args, int numargs),
     {
+         if(deferweaponcommand("cycleweapon", args, numargs)) return;
          int numguns = min(numargs, 7);
          int guns[7];
          loopi(numguns) guns[i] = getweapon(args[i].getstr());
@@ -104,6 +127,7 @@ namespace game
 
     ICOMMAND(weapon, "V", (tagval *args, int numargs),
     {
+        if(deferweaponcommand("weapon", args, numargs)) return;
         if(player1->state!=CS_ALIVE) return;
         loopi(7)
         {
@@ -1047,7 +1071,8 @@ namespace game
         loopv(projs)
         {
             projectile &p = projs[i];
-            h.v(p.o); h.v(p.to); h.v(p.dir); h.v(p.offset); h.f(p.speed);
+            // offset is cosmetic: it starts at the rendered muzzle position
+            h.v(p.o); h.v(p.to); h.v(p.dir); h.f(p.speed);
             h.i(p.gun); h.i(p.offsetmillis); h.i(p.owner == player1);
         }
         loopv(bouncers)
@@ -1055,7 +1080,7 @@ namespace game
             bouncer &b = *bouncers[i];
             if(b.bouncetype != BNC_GRENADE) continue;
             h.phys(&b);
-            h.i(b.lifetime); h.i(b.bounces); h.i(b.offsetmillis); h.v(b.offset); h.i(b.owner == player1);
+            h.i(b.lifetime); h.i(b.bounces); h.i(b.offsetmillis); h.i(b.owner == player1);
         }
     }
 };

@@ -40,6 +40,8 @@ namespace game
     extern bool ispaused();
     extern int scaletime(int t);
     extern bool allowmouselook();
+    extern bool inputlocked();
+    extern bool queuemenuinput(const char *cmd, bool scripted);
 
     extern const char *gameident();
     extern const char *savedconfig();
@@ -80,6 +82,7 @@ namespace game
     extern int numdynents();
     extern void rendergame(bool mainpass);
     extern void begindisplay(float alpha);
+    extern void begintick();
     extern void enddisplay();
     extern void renderavatar();
     extern void renderplayerpreview(int model, int team, int weap);

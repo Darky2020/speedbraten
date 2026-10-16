@@ -2014,7 +2014,7 @@ bool moveplatform(physent *p, const vec &dir)
     return true;
 }
 
-#define dir(name,v,d,s,os) ICOMMAND(name, "D", (int *down), { player->s = *down!=0; player->v = player->s ? d : (player->os ? -(d) : 0); });
+#define dir(name,v,d,s,os) ICOMMAND(name, "D", (int *down), { if(game::inputlocked()) return; player->s = *down!=0; player->v = player->s ? d : (player->os ? -(d) : 0); });
 
 dir(forward,  move,      1, k_forward,  k_backward);
 dir(backward, move,     -1, k_backward, k_forward);
@@ -2023,8 +2023,8 @@ dir(right,    strafe, -1, k_right, k_left);
 dir(up,       vertical,  1, k_up,       k_down);
 dir(down,     vertical, -1, k_down,     k_up);
 
-ICOMMAND(jump,   "D", (int *down), { if(!*down || game::canjump()) player->jumping = *down!=0; });
-ICOMMAND(hover,  "D", (int *down), { if(!*down || game::canhover()) player->hovering = *down!=0; });
+ICOMMAND(jump,   "D", (int *down), { if(!game::inputlocked() && (!*down || game::canjump())) player->jumping = *down!=0; });
+ICOMMAND(hover,  "D", (int *down), { if(!game::inputlocked() && (!*down || game::canhover())) player->hovering = *down!=0; });
 ICOMMAND(attack, "D", (int *down), { game::doattack(*down!=0); });
 
 bool entinmap(dynent *d, bool avoidplayers)        // brute force but effective way to find a free spawn spot in the map

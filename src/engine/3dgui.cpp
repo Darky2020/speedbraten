@@ -1282,11 +1282,19 @@ void g3d_resetcursor()
     cursorx = cursory = 0.5f;
 }
 
+void g3d_setcursor(float x, float y)
+{
+    cursorx = clamp(x, 0.0f, 1.0f);
+    cursory = clamp(y, 0.0f, 1.0f);
+}
+
 FVARP(guisens, 1e-3f, 1, 1e3f);
 
 bool g3d_movecursor(int dx, int dy)
 {
     if(!guis2d.length() || !hascursor) return false;
+    extern bool mapguiontop();
+    if(game::inputlocked() && mapguiontop()) return true;
     const float CURSORSCALE = 500.0f;
     cursorx = max(0.0f, min(1.0f, cursorx+guisens*dx*(screenh/(screenw*CURSORSCALE))));
     cursory = max(0.0f, min(1.0f, cursory+guisens*dy/CURSORSCALE));

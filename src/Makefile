@@ -148,6 +148,7 @@ CLIENT_OBJS= \
 	fpsgame/waypoint.o \
 	fpsgame/weapon.o \
 	fpsgame/dethash.o \
+	fpsgame/inputs.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -495,6 +496,9 @@ fpsgame/waypoint.o: fpsgame/ai.h
 fpsgame/dethash.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/dethash.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/dethash.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/inputs.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/inputs.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/inputs.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/weapon.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/weapon.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/weapon.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

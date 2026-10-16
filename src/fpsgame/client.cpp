@@ -588,7 +588,7 @@ namespace game
     void changemapserv(const char *name, int mode)        // forced map change from the server
     {
         if(demorecord) enddemorecord();
-        if(!multiplayer(false)) { seedgame(); resetsimclock(1000); }
+        if(!multiplayer(false)) { inputmapstart(name, mode); resetsimclock(1000); }
         if(multiplayer(false) && !m_mp(mode))
         {
             conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);
@@ -599,6 +599,9 @@ namespace game
         nextmode = mode;
         if(editmode) toggleedit();
         if(m_demo) { entities::resetspawns(); return; }
+        // the player spawns during the load, and must not collide with the old map's monsters
+        removemonsters();
+        removemovables();
         if((m_edit && !name[0]) || !load_world(name))
         {
             emptymap(0, true, name);
@@ -870,7 +873,7 @@ namespace game
 
     bool ispaused() { return gamepaused; }
 
-    bool allowmouselook() { return player1->state==CS_SPECTATOR || !gamepaused || !remote || m_edit; }
+    bool allowmouselook() { return !inputlocked() && (player1->state==CS_SPECTATOR || !gamepaused || !remote || m_edit); }
 
     void changegamespeed(int val)
     {

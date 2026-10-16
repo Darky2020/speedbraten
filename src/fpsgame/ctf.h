@@ -1286,7 +1286,7 @@ struct ctfclientmode : clientmode
 };
 
 extern ctfclientmode ctfmode;
-ICOMMAND(dropflag, "", (), { ctfmode.trydropflag(); });
+ICOMMAND(dropflag, "", (), { if(!deferinput(INPUT_COMMAND, 0, "dropflag")) ctfmode.trydropflag(); });
 ICOMMAND(hasflag,  "i", (int *cn), intret(ctfmode.hasflag(getclient(*cn))));
 
 #endif

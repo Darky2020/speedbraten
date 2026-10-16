@@ -17,6 +17,8 @@ namespace game
     }
     COMMAND(dethashstop, "");
 
+    bool dethashactive() { return dethashfile != NULL; }
+
     // onstart names an alias executed after the first simulated frame, so scripted input
     // is timed from game start no matter how many frames map loading took.
     ICOMMAND(dethashstart, "ss", (char *file, char *onstart),
@@ -31,14 +33,14 @@ namespace game
 
     ICOMMAND(harnessaim, "ff", (float *yaw, float *pitch), { player1->yaw = *yaw; player1->pitch = *pitch; });
     ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
-    ICOMMAND(harnessjump, "", (), { if(canjump()) player1->jumping = true; });
-    ICOMMAND(harnessattack, "i", (int *down), { doattack(*down != 0); });
+    ICOMMAND(harnessjump, "", (), queueinput(INPUT_JUMP, 1));
+    ICOMMAND(harnessattack, "i", (int *down), queueinput(INPUT_ATTACK, *down != 0 ? 1 : 0));
+    ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
 
-    void dethashframe()
+    // player, monsters, projectiles, movables, entities, rng
+    void hashgamestate(uint groups[DETHASH_GROUPS])
     {
-        if(!dethashfile) return;
-
         dethasher pl;
         pl.phys(player1);
         pl.i(player1->health); pl.i(player1->armour); pl.i(player1->armourtype);
@@ -59,8 +61,18 @@ namespace game
             en.i(e.type); en.i(e.spawned()); en.i(e.triggerstate); en.i(e.lasttrigger);
         }
 
+        groups[0] = pl.h; groups[1] = mo.h; groups[2] = pr.h; groups[3] = mv.h; groups[4] = en.h;
+        groups[5] = hashMT(2166136261U);
+    }
+
+    void dethashframe()
+    {
+        if(!dethashfile) return;
+
+        uint g[DETHASH_GROUPS];
+        hashgamestate(g);
         dethashfile->printf("%d %d %08x %08x %08x %08x %08x %08x\n",
-            dethashframes++, lastmillis, pl.h, mo.h, pr.h, mv.h, en.h, hashMT(2166136261U));
+            dethashframes++, lastmillis, g[0], g[1], g[2], g[3], g[4], g[5]);
 
         if(dethashframes == 1 && dethashonstart[0]) execident(dethashonstart);
     }

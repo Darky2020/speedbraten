@@ -301,6 +301,14 @@ namespace game
         monsters.add(new monster(type, rnd(360), 0, M_SEARCH, 1000, 1));
     }
 
+    void removemonsters()
+    {
+        removetrackedparticles();
+        removetrackeddynlights();
+        monsters.deletecontents();
+        cleardynentcache();
+    }
+
     void clearmonsters()     // called after map start or when toggling edit mode to reset/spawn all monsters to initial state
     {
         removetrackedparticles();

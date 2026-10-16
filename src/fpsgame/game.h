@@ -816,6 +816,7 @@ namespace game
     extern vector<monster *> monsters;
 
     extern void clearmonsters();
+    extern void removemonsters();
     extern void preloadmonsters();
     extern void stackmonster(monster *d, physent *o);
     extern void updatemonsters(int curtime);
@@ -832,6 +833,7 @@ namespace game
     extern vector<movable *> movables;
 
     extern void clearmovables();
+    extern void removemovables();
     extern void stackmovable(movable *d, physent *o);
     extern void updatemovables(int curtime);
     extern void hashmovables(dethasher &h);
@@ -865,11 +867,20 @@ namespace game
     extern void hashprojectiles(dethasher &h);
 
     // dethash
+    enum { DETHASH_GROUPS = 6 };
+    extern void hashgamestate(uint groups[DETHASH_GROUPS]);
     extern void dethashframe();
 
     // fps
     extern uint gameseed;
     extern void seedgame();
+
+    // inputs
+    enum { INPUT_CONTROLS = 0, INPUT_JUMP, INPUT_ATTACK, INPUT_COMMAND, INPUT_GUI, INPUT_ZOOM };
+    extern void queueinput(int type, int arg = 0, const char *cmd = NULL);
+    extern bool deferinput(int type, int arg = 0, const char *cmd = NULL);
+    extern bool dethashactive();
+    extern void inputmapstart(const char *name, int mode);
     extern void gunselect(int gun, fpsent *d);
     extern void weaponswitch(fpsent *d);
     extern void avoidweapons(ai::avoidset &obstacles, float radius);
@@ -1249,6 +1260,7 @@ namespace server
     extern const char *getdemofile(const char *file, bool init);
     extern void forcemap(const char *map, int mode);
     extern void forcepaused(bool paused);
+    extern void forcenextteam(const char *team);
     extern void forcegamespeed(int speed);
     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
     extern int msgsizelookup(int msg);

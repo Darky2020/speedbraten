@@ -80,6 +80,12 @@ namespace game
 
     vector<movable *> movables;
    
+    void removemovables()
+    {
+        cleardynentcache();
+        movables.deletecontents();
+    }
+
     void clearmovables()
     {
         if(movables.length())

@@ -3525,8 +3525,11 @@ void addsleep(int *msec, char *cmd)
 
 COMMANDN(sleep, addsleep, "is");
 
+static bool sleepsrebased = false;
+
 void checksleep(int millis)
 {
+    sleepsrebased = false;
     loopv(sleepcmds)
     {
         sleepcmd &s = sleepcmds[i];
@@ -3539,6 +3542,12 @@ void checksleep(int millis)
             execute(cmd);
             identflags = oldflags;
             delete[] cmd;
+            if(sleepsrebased)
+            {
+                // millis is from before the clock moved; the rest are checked next time
+                loopvj(sleepcmds) if(!sleepcmds[j].command) sleepcmds.remove(j--);
+                return;
+            }
             if(sleepcmds.inrange(i) && !sleepcmds[i].command) sleepcmds.remove(i--);
         }
     }
@@ -3547,6 +3556,7 @@ void checksleep(int millis)
 void rebasesleeps(int delta)
 {
     loopv(sleepcmds) sleepcmds[i].millis += delta;
+    sleepsrebased = true;
 }
 
 void clearsleep(bool clearoverrides)

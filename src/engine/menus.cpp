@@ -16,10 +16,10 @@ struct menu : g3d_callback
 {
     char *name, *header;
     uint *contents, *init, *onclear;
-    bool showtab, keeptab;
+    bool showtab, keeptab, mapgui;
     int menutab;
 
-    menu() : name(NULL), header(NULL), contents(NULL), init(NULL), onclear(NULL), showtab(true), keeptab(false), menutab(1) {}
+    menu() : name(NULL), header(NULL), contents(NULL), init(NULL), onclear(NULL), showtab(true), keeptab(false), mapgui(false), menutab(1) {}
 
     void gui(g3d_gui &g, bool firstpass)
     {
@@ -55,7 +55,8 @@ struct delayedupdate
         float f;
         char *s;
     } val;
-    delayedupdate() : type(ACTION), id(NULL) { val.s = NULL; }
+    bool scripted;
+    delayedupdate() : type(ACTION), id(NULL), scripted(false) { val.s = NULL; }
     ~delayedupdate() { if(type == STRING || type == ACTION) DELETEA(val.s); }
 
     void schedule(const char *s) { type = ACTION; val.s = newstring(s); }
@@ -106,6 +107,21 @@ struct delayedupdate
             case ID_SVAR: setsvarchecked(id, getstring()); break;
             case ID_ALIAS: alias(id->name, getstring()); break;
         }
+    }
+
+    // the same update as cubescript, so it can be recorded and run later
+    void command(vector<char> &buf) const
+    {
+        buf.setsize(0);
+        if(type == ACTION) { if(val.s) buf.put(val.s, strlen(val.s)); }
+        else if(id) switch(id->type)
+        {
+            case ID_VAR: buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(intstr(getint()), strlen(intstr(getint()))); break;
+            case ID_FVAR: { const char *v = floatstr(getfloat()); buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(v, strlen(v)); break; }
+            case ID_SVAR: { const char *v = escapestring(getstring()); buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(v, strlen(v)); break; }
+            case ID_ALIAS: { const char *v = escapestring(getstring()); buf.put(id->name, strlen(id->name)); buf.put(" = ", 3); buf.put(v, strlen(v)); break; }
+        }
+        buf.add('\0');
     }
 };
      
@@ -557,6 +573,7 @@ void newgui(char *name, char *contents, char *header, char *init)
     }
     m->contents = compilecode(contents);
     m->init = init && init[0] ? compilecode(init) : NULL;
+    m->mapgui = (identflags&IDF_OVERRIDDEN) != 0;
 }
 
 menu *guiserversmenu = NULL;
@@ -593,6 +610,50 @@ void notifywelcome()
     }
 }
  
+ICOMMAND(clearmapguis, "", (), clearguis());
+
+bool mapguiontop() { return guistack.length() && guistack.last()->mapgui; }
+
+// Open map GUIs (bottom to top) and the cursor, for recording what the player saw.
+bool getmapguistate(vector<char> &names, float &cx, float &cy)
+{
+    names.setsize(0);
+    loopv(guistack) if(guistack[i]->mapgui)
+    {
+        if(names.length()) names.add(' ');
+        const char *s = escapestring(guistack[i]->name);
+        names.put(s, strlen(s));
+    }
+    names.add('\0');
+    bool top = guistack.length() && guistack.last()->mapgui;
+    if(top) g3d_cursorpos(cx, cy);
+    else cx = cy = 0;
+    return top;
+}
+
+// Shows the recorded map GUIs without running their init or onclear scripts.
+void setmapguistate(const char *names, float cx, float cy)
+{
+    vector<char> cur;
+    float ox, oy;
+    bool top = getmapguistate(cur, ox, oy);
+    if(strcmp(cur.getbuf(), names))
+    {
+        loopvrev(guistack) if(guistack[i]->mapgui) guistack.remove(i)->clear();
+        vector<char *> want;
+        explodelist(names, want);
+        loopv(want) if(menu *m = guis.access(want[i]))
+        {
+            if(guistack.empty()) { menupos = menuinfrontofplayer(); g3d_resetcursor(); }
+            guistack.add(m);
+            menustart = totalmillis;
+        }
+        want.deletearrays();
+        top = guistack.length() && guistack.last()->mapgui;
+    }
+    if(top) g3d_setcursor(cx, cy);
+}
+
 COMMAND(newgui, "ssss");
 COMMAND(guibutton, "sss");
 COMMAND(guitext, "ss");
@@ -765,10 +826,39 @@ void clearchanges(int type)
     if(needsapply.empty()) removegui(&applymenu);
 }
 
+// Lets a script act as if a button in the top GUI was clicked.
+void schedulemenuaction(const char *action, bool scripted)
+{
+    delayedupdate &u = updatelater.add();
+    u.schedule(action);
+    u.scripted = scripted;
+}
+
+// Clicks in a map's own GUI change the game, so in a local game they go through the
+// recorded input stream instead of running between ticks.
+static bool queuemapguiupdates(int level)
+{
+    if(guistack.empty() || !guistack.last()->mapgui) return false;
+    vector<char> buf;
+    loopv(updatelater)
+    {
+        delayedupdate &u = updatelater[i];
+        u.command(buf);
+        if(!game::queuemenuinput(buf.getbuf(), u.scripted)) return false;
+    }
+    if(clearlater && level == guistack.length()) game::queuemenuinput("clearmapguis", updatelater.length() && updatelater.last().scripted);
+    return true;
+}
+
 void menuprocess()
 {
     processingmenu = true;
     int wasmain = mainmenu, level = guistack.length();
+    if(updatelater.length() && queuemapguiupdates(level))
+    {
+        updatelater.shrink(0);
+        clearlater = false;
+    }
     loopv(updatelater) updatelater[i].run();
     updatelater.shrink(0);
     if(wasmain > mainmenu || clearlater)

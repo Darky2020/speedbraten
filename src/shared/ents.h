@@ -111,6 +111,7 @@ struct physent                                  // base entity type, can be affe
         physstate = PHYS_FALL;
         vel = falling = vec(0, 0, 0);
         floor = vec(0, 0, 1);
+        blocked = false;
     }
 
     vec feetpos(float offset = 0) const { return vec(o).add(vec(0, 0, offset - eyeheight)); }

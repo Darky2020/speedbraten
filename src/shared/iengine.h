@@ -248,7 +248,7 @@ extern int getworldsize();
 
 // main
 enum { SIMTICK = 5 };
-extern bool simticking;
+extern bool simticking, insimtick;
 extern void resetsimclock(int base);
 extern int getmapversion();
 extern void renderentcone(const extentity &e, const vec &dir, float radius, float angle);
@@ -595,6 +595,10 @@ extern void g3d_addgui(g3d_callback *cb, vec &origin, int flags = 0);
 extern bool g3d_movecursor(int dx, int dy);
 extern void g3d_cursorpos(float &x, float &y);
 extern void g3d_resetcursor();
+extern void g3d_setcursor(float x, float y);
+extern void schedulemenuaction(const char *action, bool scripted);
+extern bool getmapguistate(vector<char> &names, float &cx, float &cy);
+extern void setmapguistate(const char *names, float cx, float cy);
 extern void g3d_limitscale(float scale);
 
 extern char *p1xbratenversion;

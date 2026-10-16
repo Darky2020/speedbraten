@@ -643,6 +643,11 @@ namespace server
 
     VAR(persistteams, 0, 0, 1);
 
+    static string nextteam = "";
+
+    // the next map change puts every client on this team instead of balancing teams
+    void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
+
     void autoteam()
     {
         static const char * const teamnames[2] = {"good", "evil"};
@@ -1786,7 +1791,17 @@ namespace server
         else smode = NULL;
 
         clearteaminfo();
-        if(m_teammode) autoteam();
+        if(m_teammode && nextteam[0])
+        {
+            addteaminfo(nextteam);
+            loopv(clients) if(strcmp(clients[i]->team, nextteam))
+            {
+                copystring(clients[i]->team, nextteam, MAXTEAMLEN+1);
+                sendf(-1, 1, "riisi", N_SETTEAM, clients[i]->clientnum, nextteam, -1);
+            }
+        }
+        else if(m_teammode) autoteam();
+        nextteam[0] = '\0';
 
         if(m_timed && smapname[0]) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
         loopv(clients)
@@ -1794,6 +1809,7 @@ namespace server
             clientinfo *ci = clients[i];
             ci->mapchange();
             ci->state.lasttimeplayed = lastmillis;
+            if(ci->local) ci->state.lifesequence = 0;
             if(m_mp(gamemode) && ci->state.state!=CS_SPECTATOR) sendspawn(ci);
         }
 
