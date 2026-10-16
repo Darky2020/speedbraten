@@ -53,6 +53,7 @@
 #include <zlib.h>
 
 #include "tools.h"
+#include "detmath.h"
 #include "geom.h"
 #include "ents.h"
 #include "command.h"

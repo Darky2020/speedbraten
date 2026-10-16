@@ -18,7 +18,7 @@
 namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
-    enum { REPLAYVERSION = 1, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -164,7 +164,7 @@ namespace game
         replayreader r(buf);
         r.p += sizeof(REPLAYMAGIC);
         info.version = r.var();
-        if(info.version != REPLAYVERSION) return false;
+        if(info.version < 1 || info.version > REPLAYVERSION) return false;
         info.date = r.u32();
         r.str(info.client, sizeof(info.client));
         r.str(info.player, sizeof(info.player));
@@ -177,6 +177,8 @@ namespace game
         r.str(info.map, sizeof(info.map));
         if(!r.ok) return false;
         if(!run) return true;
+        // version 1 was simulated with different float maths
+        if(info.version < REPLAYVERSION) conoutf(CON_ERROR, "replay %s was made with an older build: it will likely desync", file);
         run->clear();
         loopk(info.maps)
         {
@@ -417,6 +419,7 @@ namespace game
             result(buf);
         }
         else if(!strcmp(field, "kept")) intret(e.kept ? 1 : 0);
+        else if(!strcmp(field, "outdated")) intret(r.version < REPLAYVERSION ? 1 : 0);
         else result("");
     });
 

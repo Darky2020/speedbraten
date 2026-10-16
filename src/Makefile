@@ -22,8 +22,8 @@ else
 	CXX=clang++
 endif
 
-CFLAGS= --target=$(TARGET)
-CXXFLAGS= --target=$(TARGET) -fomit-frame-pointer -ffast-math
+CFLAGS= --target=$(TARGET) -fno-fast-math -ffp-contract=off
+CXXFLAGS= --target=$(TARGET) -fomit-frame-pointer -fno-fast-math -ffp-contract=off
 ifdef DEBUG
 	override CFLAGS+= -g3
 	override CXXFLAGS+= -O0 -g3 -DDEBUG=$$DEBUG

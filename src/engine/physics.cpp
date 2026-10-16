@@ -448,7 +448,7 @@ bool raycubelos(const vec &o, const vec &dest, vec &hitpos)
     vec ray(dest);
     ray.sub(o);
     float mag = ray.magnitude();
-    ray.mul(1/mag);
+    if(mag > 0) ray.mul(1/mag);
     float distance = raycubepos(o, ray, hitpos, mag, RAY_CLIPMAT|RAY_POLY);
     return distance >= mag;
 }
@@ -483,9 +483,11 @@ bool ellipseboxcollide(physent *d, const vec &dir, const vec &o, const vec &cent
           above = (d->o.z-d->eyeheight) - (o.z+center.z+hi);
     if(below>=0 || above>=0) return false;
 
+    vec2 rot;
+    detsincos(yaw*RAD, rot.y, rot.x);
     vec yo(d->o);
     yo.sub(o);
-    yo.rotate_around_z(-yaw*RAD);
+    yo.rotate_around_z(rot.x, -rot.y);
     yo.sub(center);
 
     float dx = clamp(yo.x, -xr, xr) - yo.x, dy = clamp(yo.y, -yr, yr) - yo.y,
@@ -497,20 +499,20 @@ bool ellipseboxcollide(physent *d, const vec &dir, const vec &o, const vec &cent
         if(dist > (yo.z < 0 ? below : above) && (sx || sy))
         {
             vec ydir(dir);
-            ydir.rotate_around_z(-yaw*RAD);
+            ydir.rotate_around_z(rot.x, -rot.y);
             if(sx*yo.x - xr > sy*yo.y - yr)
             {
                 if(dir.iszero() || sx*ydir.x < -1e-6f)
                 {
                     collidewall = vec(sx, 0, 0);
-                    collidewall.rotate_around_z(yaw*RAD);
+                    collidewall.rotate_around_z(rot);
                     return true;
                 }
             }
             else if(dir.iszero() || sy*ydir.y < -1e-6f)
             {
                 collidewall = vec(0, sy, 0);
-                collidewall.rotate_around_z(yaw*RAD);
+                collidewall.rotate_around_z(rot);
                 return true;
             }
         }
@@ -537,13 +539,17 @@ bool ellipsecollide(physent *d, const vec &dir, const vec &o, const vec &center,
     float below = (o.z+center.z-lo) - (d->o.z+d->aboveeye),
           above = (d->o.z-d->eyeheight) - (o.z+center.z+hi);
     if(below>=0 || above>=0) return false;
+    vec2 rot;
+    detsincos(yaw*RAD, rot.y, rot.x);
     vec yo(center);
-    yo.rotate_around_z(yaw*RAD);
+    yo.rotate_around_z(rot);
     yo.add(o);
     float x = yo.x - d->o.x, y = yo.y - d->o.y;
-    float angle = atan2f(y, x), dangle = angle-(d->yaw+90)*RAD, eangle = angle-(yaw+90)*RAD;
-    float dx = d->xradius*cosf(dangle), dy = d->yradius*sinf(dangle);
-    float ex = xr*cosf(eangle), ey = yr*sinf(eangle);
+    float angle = detatan2(y, x), ds, dc, es, ec;
+    detsincos(angle-(d->yaw+90)*RAD, ds, dc);
+    detsincos(angle-(yaw+90)*RAD, es, ec);
+    float dx = d->xradius*dc, dy = d->yradius*ds;
+    float ex = xr*ec, ey = yr*es;
     float dist = sqrtf(x*x + y*y) - sqrtf(dx*dx + dy*dy) - sqrtf(ex*ex + ey*ey);
     if(dist < 0)
     {
@@ -1429,8 +1435,8 @@ bool bounce(physent *d, float secs, float elasticity, float waterfric, float gra
         else if(collideplayer) break;
         d->o = old;
         game::bounced(d, collidewall);
-        float c = collidewall.dot(d->vel),
-              k = 1.0f + (1.0f-elasticity)*c/d->vel.magnitude();
+        float c = collidewall.dot(d->vel), mag = d->vel.magnitude(),
+              k = mag > 0 ? 1.0f + (1.0f-elasticity)*c/mag : 1.0f;
         d->vel.mul(k);
         d->vel.sub(vec(collidewall).mul(elasticity*2.0f*c));
     }
@@ -1547,9 +1553,12 @@ COMMAND(phystest, "");
 
 void vecfromyawpitch(float yaw, float pitch, int move, int strafe, int vertical, vec &m)
 {
-    m.x = move*-sinf(RAD*yaw)*cosf(RAD*pitch) + vertical*-sinf(RAD*pitch)*-sinf(RAD*yaw) + strafe*cosf(RAD*yaw);
-    m.y = move* cosf(RAD*yaw)*cosf(RAD*pitch) + vertical*-sinf(RAD*pitch)* cosf(RAD*yaw) + strafe*sinf(RAD*yaw);
-    m.z = move*               sinf(RAD*pitch) + vertical* cosf(RAD*pitch);
+    float sy, cy, sp, cp;
+    detsincos(RAD*yaw, sy, cy);
+    detsincos(RAD*pitch, sp, cp);
+    m.x = move*-sy*cp + vertical*-sp*-sy + strafe*cy;
+    m.y = move* cy*cp + vertical*-sp* cy + strafe*sy;
+    m.z = move*   sp  + vertical* cp;
     }
 
 void vecfromyawpitch(float yaw, float pitch, int move, int strafe, vec &m)
@@ -1562,8 +1571,8 @@ void vectoyawpitch(const vec &v, float &yaw, float &pitch)
     if(v.iszero()) yaw = pitch = 0;
     else
     {
-        yaw = -atan2(v.x, v.y)/RAD;
-        pitch = asin(v.z/v.magnitude())/RAD;
+        yaw = -detatan2(v.x, v.y)/RAD;
+        pitch = detasin(v.z/v.magnitude())/RAD;
     }
 }
 
@@ -1615,7 +1624,7 @@ void modifyvelocity(physent *pl, bool local, bool water, bool floating, int curt
             m.z = water ? max(m.z, dz) : dz;
         }
 
-        m.normalize();
+        m.safenormalize();
     }
 
     vec d(m);
@@ -1629,7 +1638,7 @@ void modifyvelocity(physent *pl, bool local, bool water, bool floating, int curt
         else if(!water && allowmove) d.mul((pl->move && !pl->strafe ? 1.3f : 1.0f) * (pl->physstate < PHYS_SLOPE ? 1.3f : 1.0f));
     }
     float fric = water && !floating ? 20.0f : (pl->physstate >= PHYS_SLOPE || floating ? 6.0f : 30.0f);
-    pl->vel.lerp(d, pl->vel, pow(1 - 1/fric, curtime/20.0f));
+    pl->vel.lerp(d, pl->vel, detfrictionpow(1 - 1/fric, curtime));
 // old fps friction
 //    float friction = water && !floating ? 20.0f : (pl->physstate >= PHYS_SLOPE || floating ? 6.0f : 30.0f);
 //    float fpsfric = min(curtime/(20.0f*friction), 1.0f);
@@ -1654,7 +1663,7 @@ void modifygravity(physent *pl, bool water, int curtime)
     {
         float fric = water ? 2.0f : 6.0f,
               c = water ? 1.0f : clamp((pl->floor.z - SLOPEZ)/(FLOORZ-SLOPEZ), 0.0f, 1.0f);
-        pl->falling.mul(pow(1 - c/fric, curtime/20.0f));
+        pl->falling.mul(detfrictionpow(1 - c/fric, curtime));
 // old fps friction
 //        float friction = water ? 2.0f : 6.0f,
 //              fpsfric = friction/curtime*20.0f,

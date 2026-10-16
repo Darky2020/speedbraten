@@ -370,7 +370,7 @@ namespace game
             float dist = dir.squaredlen();
             if(dist >= minplayerdist*minplayerdist) continue;
             dist = sqrtf(dist);
-            dir.mul(1/dist);
+            if(dist > 0) dir.mul(1/dist);
 
             // scale actual distance if not in line of sight
             if(raycube(loc, dir, dist) < dist) dist *= 1.5f;

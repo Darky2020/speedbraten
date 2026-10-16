@@ -701,12 +701,13 @@ struct dethasher
     dethasher() : h(2166136261U) {}
     void u(uint v) { h = (h ^ v) * 16777619U; }
     void i(int v) { u(uint(v)); }
-    void f(float v) { uint b; memcpy(&b, &v, sizeof(b)); u(b); }
+    // NaN sign and payload bits differ between x86 and ARM
+    void f(float v) { uint b; memcpy(&b, &v, sizeof(b)); u(v == v ? b : 0x7FC00000U); }
     void v(const vec &p) { f(p.x); f(p.y); f(p.z); }
     void phys(const physent *d)
     {
         v(d->o); v(d->newpos); v(d->vel); v(d->falling); v(d->floor);
-        f(d->yaw); f(d->pitch); f(d->roll);
+        f(d->yaw); f(d->pitch);
         i(d->timeinair); i(d->inwater); i(d->jumping); i(d->move); i(d->strafe);
         i(d->physstate); i(d->state); i(d->blocked);
     }

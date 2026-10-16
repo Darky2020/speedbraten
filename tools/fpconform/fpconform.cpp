@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "../../src/shared/detmath.h"
+
 #if defined(__x86_64__) || defined(_M_X64)
 #include <xmmintrin.h>
 #include <pmmintrin.h>
@@ -130,60 +132,34 @@ static void test_libm()
     }
 }
 
-// ---- arithmetic-only replacements ------------------------------------------
+// ---- the game's own functions (src/shared/detmath.h) -------------------------
 
-static const float PIO2_HI = 1.5707962513e+00f, PIO2_LO = 7.5497894159e-08f, TWOOPI = 6.3661977237e-01f;
-
-static float k_sin(float x) { float z = x*x; return x + x*z*(-1.6666667163e-01f + z*(8.3333337680e-03f + z*(-1.9841270114e-04f + z*2.7557314297e-06f))); }
-static float k_cos(float x) { float z = x*x; return 1.0f + z*(-0.5f + z*(4.1666667908e-02f + z*(-1.3888889225e-03f + z*2.4801587642e-05f))); }
-
-static void own_sincos(float x, float &s, float &c)
-{
-    float fk = x * TWOOPI;
-    int k = int(fk >= 0 ? fk + 0.5f : fk - 0.5f);
-    float r = (x - float(k)*PIO2_HI) - float(k)*PIO2_LO;
-    float sr = k_sin(r), cr = k_cos(r);
-    switch(k & 3)
-    {
-        case 0: s = sr;  c = cr;  break;
-        case 1: s = cr;  c = -sr; break;
-        case 2: s = -sr; c = -cr; break;
-        default: s = -cr; c = sr; break;
-    }
-}
-
-static float own_atan(float x)
-{
-    bool inv = fabsf(x) > 1.0f;
-    float t = inv ? 1.0f/x : x, z = t*t;
-    float p = t*(0.99997726f + z*(-0.33262347f + z*(0.19354346f + z*(-0.11643287f + z*(0.05265332f + z*-0.01172120f)))));
-    if(inv) p = (x > 0 ? 1.5707963268f : -1.5707963268f) - p;
-    return p;
-}
-
-static float own_atan2(float y, float x)
-{
-    if(x > 0) return own_atan(y/x);
-    if(x < 0) return own_atan(y/x) + (y >= 0 ? 3.1415926536f : -3.1415926536f);
-    return y > 0 ? 1.5707963268f : (y < 0 ? -1.5707963268f : 0.0f);
-}
-
-static void test_own()
+static void test_det()
 {
     {
         rng r(10); hasher h;
-        for(int i = 0; i < N; i++) { float x = r.range(-720.0f, 720.0f) * (PI_F/180.0f), s, c; own_sincos(x, s, c); h.addf(s); h.addf(c); }
-        report("own_sincos", h);
+        for(int i = 0; i < N; i++) { float x = r.range(-720.0f, 720.0f) * (PI_F/180.0f), s, c; detsincos(x, s, c); h.addf(s); h.addf(c); }
+        report("det_sincos", h);
+    }
+    {
+        rng r(14); hasher h;
+        for(int i = 0; i < N; i++) { float x = r.range(-1e7f, 1e7f), s, c; detsincos(x, s, c); h.addf(s); h.addf(c); }
+        report("det_sincos_large", h);
     }
     {
         rng r(11); hasher h;
-        for(int i = 0; i < N; i++) { float y = r.range(-1000, 1000), x = r.range(-1000, 1000); h.addf(own_atan2(y, x)); }
-        report("own_atan2", h);
+        for(int i = 0; i < N; i++) { float y = r.range(-1000, 1000), x = r.range(-1000, 1000); h.addf(detatan2(y, x)); }
+        report("det_atan2", h);
+    }
+    {
+        rng r(12); hasher h;
+        for(int i = 0; i < N; i++) { float x = r.range(-1.1f, 1.1f); h.addf(detasin(x)); h.addf(detacos(x)); }
+        report("det_asin_acos", h);
     }
     {
         rng r(13); hasher h;
-        for(int i = 0; i < N; i++) { float b = r.range(0.5f, 1.0f); h.addf(sqrtf(sqrtf(b))); }
-        report("own_pow_quarter_sqrtsqrt", h);
+        for(int i = 0; i < N; i++) { float b = r.range(0.5f, 1.0f); h.addf(detfrictionpow(b, 5)); }
+        report("det_frictionpow", h);
     }
 }
 
@@ -209,7 +185,7 @@ static void vecfromyawpitch(float yaw, float pitch, int move, int strafe, vec3 &
 {
     const float RAD = PI_F/180.0f;
     float sy, cy, sp, cp;
-    if(OWN) { own_sincos(RAD*yaw, sy, cy); own_sincos(RAD*pitch, sp, cp); }
+    if(OWN) { detsincos(RAD*yaw, sy, cy); detsincos(RAD*pitch, sp, cp); }
     else { sy = sinf(RAD*yaw); cy = cosf(RAD*yaw); sp = sinf(RAD*pitch); cp = cosf(RAD*pitch); }
     m.x = move*-sy*cp + strafe*cy;
     m.y = move* cy*cp + strafe*sy;
@@ -233,7 +209,7 @@ static void test_physics(const char *name)
         float speed = 100.0f * 1.3f;
         vec3 d = {m.x*speed, m.y*speed, m.z*speed};
         float fric = (tick & 64) ? 6.0f : 30.0f;
-        float t = OWN ? sqrtf(sqrtf(1 - 1/fric)) : float(pow(1 - 1/fric, 5/20.0f));
+        float t = OWN ? detfrictionpow(1 - 1/fric, 5) : float(pow(1 - 1/fric, 5/20.0f));
         vel.x = d.x + (vel.x - d.x)*t;
         vel.y = d.y + (vel.y - d.y)*t;
         vel.z = d.z + (vel.z - d.z)*t;
@@ -251,10 +227,10 @@ static void run_all(const char *mode)
     test_nan_payload();
     test_denormals();
     test_libm();
-    test_own();
+    test_det();
     test_contraction();
     test_physics<false>("physics_libm");
-    test_physics<true>("physics_own");
+    test_physics<true>("physics_det");
 }
 
 int main()

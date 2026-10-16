@@ -123,7 +123,7 @@ namespace game
                 if(targetyaw>yaw) yaw = targetyaw;
             }
             float dist = enemy->o.dist(o);
-            if(monsterstate!=M_SLEEP) pitch = dist > 0 ? asin((enemy->o.z - o.z) / dist) / RAD : 0;
+            if(monsterstate!=M_SLEEP) pitch = dist > 0 ? detasin((enemy->o.z - o.z) / dist) / RAD : 0;
 
             if(blocked)                                                              // special case: if we run into scenery
             {
@@ -139,7 +139,7 @@ namespace game
                 }
             }
             
-            float enemyyaw = -atan2(enemy->o.x - o.x, enemy->o.y - o.y)/RAD;
+            float enemyyaw = -detatan2(enemy->o.x - o.x, enemy->o.y - o.y)/RAD;
             
             switch(monsterstate)
             {

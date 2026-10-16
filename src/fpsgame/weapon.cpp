@@ -435,7 +435,7 @@ namespace game
         vec middle = o->o;
         middle.z += (o->aboveeye-o->eyeheight)/2;
         float dist = middle.dist(v, dir);
-        dir.div(dist);
+        if(dist > 0) dir.div(dist);
         if(dist<0) dist = 0;
         return dist;
     }

@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'tools/fpconform/**'
+      - 'src/shared/detmath.h'
       - '.github/workflows/fpconform.yml'
 
 jobs:
@@ -25,7 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: tools/fpconform
+          sparse-checkout: |
+            tools/fpconform
+            src/shared/detmath.h
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.14.1
@@ -36,3 +39,24 @@ jobs:
         with:
           name: fpconform-${{ matrix.label }}
           path: tools/fpconform/out/*.txt
+
+  compare:
+    needs: probe
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+      - name: detmath results must be identical everywhere
+        shell: bash
+        run: |
+          ref=""
+          fail=0
+          for f in results/*/*.txt; do
+            got=$(grep -E '^(det_|physics_det)' "$f" | sort -u)
+            if [ "$(echo "$got" | cut -d' ' -f1 | uniq -d)" ]; then echo "DIFFERS between FP modes: $f"; fail=1; fi
+            if [ -z "$ref" ]; then ref=$got; reff=$f; echo "reference: $f"; echo "$ref"
+            elif [ "$got" != "$ref" ]; then echo "DIFFERS from $reff: $f"; diff <(echo "$ref") <(echo "$got"); fail=1
+            else echo "identical: $f"; fi
+          done
+          exit $fail

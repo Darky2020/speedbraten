@@ -1463,6 +1463,7 @@ int main(int argc, char **argv)
                 // starting a game leads to the same first tick
                 simrestarted = false;
                 insimtick = true;
+                detfpmode();
                 game::begintick();
                 if(!simrestarted) game::updateworld();
                 if(!simrestarted) checksleep(lastmillis);
