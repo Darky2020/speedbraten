@@ -329,6 +329,11 @@ struct ctfclientmode : clientmode
                 returnflag(i);
                 sendf(-1, 1, "ri4", N_RETURNFLAG, ci->clientnum, i, ++f.version);
             }
+            else if(flagrunactive())
+            {
+                returnflag(i);
+                sendf(-1, 1, "ri6", N_RESETFLAG, i, ++f.version, f.spawnindex, f.team, addscore(f.team, 0));
+            }
             else
             {
                 ivec o(vec(ci->state.o).mul(DMF));
@@ -354,6 +359,7 @@ struct ctfclientmode : clientmode
 
     bool canspawn(clientinfo *ci, bool connecting) 
     { 
+        if(flagrunactive()) return true;
         return m_efficiency || !m_protect ? connecting || !ci->state.lastdeath || gamemillis+curtime-ci->state.lastdeath >= RESPAWNSECS*1000 : true;
     }
 
@@ -386,7 +392,7 @@ struct ctfclientmode : clientmode
         int team = ctfteamflag(ci->team), score = addscore(team, 1);
         if(m_hold) spawnflag(goal);
         sendf(-1, 1, "rii9", N_SCOREFLAG, ci->clientnum, relay, relay >= 0 ? ++flags[relay].version : -1, goal, ++flags[goal].version, flags[goal].spawnindex, team, score, ci->state.flags);
-        if(score >= FLAGLIMIT) startintermission();
+        if(score >= FLAGLIMIT && !flagrunactive()) startintermission();
     }
 
     void takeflag(clientinfo *ci, int i, int version)
@@ -395,6 +401,18 @@ struct ctfclientmode : clientmode
         flag &f = flags[i];
         if((m_hold ? f.spawnindex < 0 : !ctfflagteam(f.team)) || f.owner>=0 || f.version != version || (f.droptime && f.dropper == ci->clientnum && f.dropcount >= 3)) return;
         int team = ctfteamflag(ci->team);
+        if(flagrunactive())
+        {
+            int held = -1;
+            loopvj(flags) if(flags[j].owner==ci->clientnum) { held = j; break; }
+            if(held < 0)
+            {
+                ownflag(i, ci->clientnum, lastmillis);
+                sendf(-1, 1, "ri4", N_TAKEFLAG, ci->clientnum, i, ++f.version);
+            }
+            else if(flags[held].team != f.team) scoreflag(ci, i, held);
+            return;
+        }
         if(m_hold || m_protect == (f.team==team))
         {
             loopvj(flags) if(flags[j].owner==ci->clientnum) return;
@@ -934,6 +952,7 @@ struct ctfclientmode : clientmode
 
     void scoreflag(fpsent *d, int relay, int relayversion, int goal, int goalversion, int goalspawn, int team, int score, int dflags)
     {
+        runtimerflagscored(d);
         setscore(team, score);
         if(flags.inrange(goal))
         {
@@ -974,6 +993,7 @@ struct ctfclientmode : clientmode
         if(m_hold) conoutf(CON_GAMEINFO, "%s picked up the flag for %s", teamcolorname(d), teamcolor("your team", d->team, "the enemy team"));
         else if(m_protect || f.droptime) conoutf(CON_GAMEINFO, "%s picked up %s", teamcolorname(d), teamcolorflag(f));
         else conoutf(CON_GAMEINFO, "%s stole %s", teamcolorname(d), teamcolorflag(f));
+        if(!m_hold && !m_protect) runtimerflagtaken(d, i, f.droptime ? f.droploc : f.spawnloc, FLAGRADIUS);
         ownflag(i, d, lastmillis, m_hold ? ctfteamflag(d->team) : -1);
         teamsound(d, S_FLAGPICKUP);
     }
@@ -1039,6 +1059,7 @@ struct ctfclientmode : clientmode
 
     int respawnwait(fpsent *d, int delay = 0)
     {
+        if(flagrunrules()) return 0;
         return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
     }
 
@@ -1286,6 +1307,20 @@ struct ctfclientmode : clientmode
 };
 
 extern ctfclientmode ctfmode;
+bool flagheldby(int flag, fpsent *d) { return m_ctf && ctfmode.flags.inrange(flag) && ctfmode.flags[flag].owner == d; }
+// for the determinism harness: puts the player at its own (1) or the enemy (0) flag's spawn
+bool flagspawnloc(bool own, vec &loc)
+{
+    if(!m_ctf) return false;
+    loopv(ctfmode.flags)
+    {
+        const ctfclientmode::flag &f = ctfmode.flags[i];
+        if((f.team == ctfteamflag(player1->team)) != own) continue;
+        loc = f.spawnloc;
+        return true;
+    }
+    return false;
+}
 ICOMMAND(dropflag, "", (), { if(!deferinput(INPUT_COMMAND, 0, "dropflag")) ctfmode.trydropflag(); });
 ICOMMAND(hasflag,  "i", (int *cn), intret(ctfmode.hasflag(getclient(*cn))));
 

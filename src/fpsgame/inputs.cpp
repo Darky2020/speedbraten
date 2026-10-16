@@ -3,91 +3,47 @@
 // per tick, so the current attempt can be replayed exactly.
 
 #include "game.h"
+#include "inputs.h"
 
+extern int identflags;
 extern int unescapestring(char *dst, const char *src, const char *end);
 extern int zoom;
 
 namespace game
 {
-    struct inputcontrols
-    {
-        uint yaw, pitch;
-        schar move, strafe, vertical;
-        bool jumping, attacking;
-
-        bool operator==(const inputcontrols &o) const
-        {
-            return yaw == o.yaw && pitch == o.pitch && move == o.move && strafe == o.strafe &&
-                   vertical == o.vertical && jumping == o.jumping && attacking == o.attacking;
-        }
-        bool operator!=(const inputcontrols &o) const { return !(*this == o); }
-    };
-
-    struct inputevent
-    {
-        int tick, type, arg;
-        inputcontrols controls;
-        uint cursorx, cursory;
-        char *cmd;
-    };
-
-    struct tickhash { uint groups[DETHASH_GROUPS]; };
-
-    // One attempt: everything needed to replay it from its map start, plus the state hash
-    // at the start of every tick to find where a replay drifts.
-    struct inputattempt
-    {
-        vector<inputevent> events;
-        vector<tickhash> hashes;
-        uint seed;
-        string map, team;
-        int mode;
-
-        inputattempt() : seed(0), mode(0) { map[0] = team[0] = '\0'; }
-        ~inputattempt() { clear(); }
-
-        void clear()
-        {
-            loopv(events) DELETEA(events[i].cmd);
-            events.setsize(0);
-            hashes.setsize(0);
-        }
-
-        bool empty() const { return events.empty(); }
-
-        void copyto(inputattempt &dst) const
-        {
-            dst.clear();
-            loopv(events)
-            {
-                inputevent &e = dst.events.add(events[i]);
-                if(e.cmd) e.cmd = newstring(e.cmd);
-            }
-            dst.hashes = hashes;
-            dst.seed = seed;
-            copystring(dst.map, map);
-            copystring(dst.team, team);
-            dst.mode = mode;
-        }
-
-        void moveto(inputattempt &dst)
-        {
-            dst.clear();
-            loopv(events) dst.events.add(events[i]);
-            events.setsize(0);
-            dst.hashes = hashes;
-            hashes.setsize(0);
-            dst.seed = seed;
-            copystring(dst.map, map);
-            copystring(dst.team, team);
-            dst.mode = mode;
-        }
-    };
-
     static vector<inputevent> pending;
-    static inputattempt recording, previous, replaydata;
-    static int curtick = 0, replaypos = 0, replaydesync = 0;
+    static inputrun recording, previous, replaydata;
+    static int curtick = 0, replayattempt = 0, replaypos = 0, replaydesync = 0;
     static bool replaying = false, replaypending = false, havecontrols = false, recordingoff = false;
+    static bool runsaved = false;
+    static int lastactivetick = 0, resetarmtick = -1;
+
+    static void checkpendingreset();
+
+    // movement, jump or attack input from the player (aim alone does not count)
+    static void noteactivity()
+    {
+        if(player1->move || player1->strafe || player1->vertical || player1->jumping || player1->attacking) lastactivetick = curtick;
+    }
+
+    extern void saverunreplay(const inputrun &run, bool finished, int runtime);
+
+    // Writes the current run as unfinished, once, unless it is a replay or was saved finished.
+    static void saveunfinishedrun()
+    {
+        if(replaying || recordingoff || runsaved || recording.empty()) return;
+        saverunreplay(recording, false, 0);
+        runsaved = true;
+    }
+
+    void inputrunfinished(int runtime)
+    {
+        if(replaying || recordingoff || recording.empty()) return;
+        saverunreplay(recording, true, runtime);
+        runsaved = true;
+    }
+
+    void inputdisconnect() { saveunfinishedrun(); }
     static inputcontrols lastcontrols;
     static vector<char> lastgui;
     static uint lastcursorx = 0, lastcursory = 0;
@@ -147,6 +103,16 @@ namespace game
         return true;
     }
 
+    int inputtick() { return curtick; }
+
+    // A map change started by the map's own script during play continues a singleplayer run.
+    bool mapchained(int mode)
+    {
+        return insimtick && (identflags&IDF_OVERRIDDEN) && m_check(mode, M_DMSP | M_CLASSICSP);
+    }
+
+    static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
+
     bool queuemenuinput(const char *cmd, bool scripted)
     {
         if(!simticking || insimtick || !connected) return false;
@@ -170,13 +136,15 @@ namespace game
 
     static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng" };
 
-    static int replaydesyncgroups = 0;
+    static int replaydesyncgroups = 0, replayhashpos = 0;
 
     // Reports the first mismatching tick, then logs when each further group first differs.
     static void checkreplayhash(const tickhash &h)
     {
-        if(curtick > replaydata.hashes.length()) return;
-        const tickhash &want = replaydata.hashes[curtick-1];
+        const inputattempt &a = replaycur();
+        while(replayhashpos < a.hashes.length() && a.hashes[replayhashpos].tick < curtick) replayhashpos++;
+        if(replayhashpos >= a.hashes.length() || a.hashes[replayhashpos].tick != curtick) return;
+        const tickhash &want = a.hashes[replayhashpos];
         vector<char> diff;
         loopi(DETHASH_GROUPS) if(h.groups[i] != want.groups[i] && !(replaydesyncgroups & (1<<i)))
         {
@@ -199,13 +167,16 @@ namespace game
         if(!connected) { clearevents(pending); return; }
         curtick++;
         tickhash h;
-        if(replaying && curtick > replaydata.hashes.length())
+        if(replaying && curtick > replaycur().ticks)
         {
             replaying = false;
             recordingoff = true;
             if(replaydesync) conoutf(CON_ERROR, "input replay finished (desynced at tick %d)", replaydesync);
             else conoutf("input replay finished");
         }
+        noteactivity();
+        checkpendingreset();
+        if(!curtick) return;
         if(recordingoff)
         {
             // after a replay the game goes on live, but the attempt is not recorded
@@ -220,30 +191,39 @@ namespace game
         }
         if(replaying)
         {
-            while(replaypos < replaydata.events.length() && replaydata.events[replaypos].tick <= curtick)
+            inputattempt &a = replaycur();
+            if(curtick == 1 && a.mapcrc && getmapcrc() != a.mapcrc)
+                conoutf(CON_ERROR, "replay was recorded on a different version of %s (map crc %08x, loaded %08x): it will not play back correctly", a.map, a.mapcrc, getmapcrc());
+            while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick)
             {
-                applyevent(replaydata.events[replaypos++]);
-                if(!replaying) return;
+                int attempt = replayattempt;
+                applyevent(a.events[replaypos++]);
+                if(!replaying || attempt != replayattempt || !curtick) return;
             }
             setcontrols(lastcontrols);
             hashgamestate(h.groups);
             checkreplayhash(h);
             return;
         }
-        if(curtick == 1) copystring(recording.team, player1->team);
+        inputattempt &rec = recording.last();
+        if(curtick == 1)
+        {
+            copystring(rec.team, player1->team);
+            rec.mapcrc = getmapcrc();
+        }
         while(pending.length())
         {
             inputevent e = pending.remove(0);
             e.tick = curtick;
             applyevent(e);
             if(curtick != e.tick) { DELETEA(e.cmd); return; }
-            recording.events.add(e);
+            rec.events.add(e);
         }
         inputcontrols c;
         getcontrols(c);
         if(!havecontrols || c != lastcontrols)
         {
-            inputevent &e = recording.events.add();
+            inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_CONTROLS;
             e.arg = 0;
@@ -258,7 +238,7 @@ namespace game
         getmapguistate(gui, cx, cy);
         if(!haveguistate || strcmp(gui.getbuf(), lastgui.getbuf()) || floatbits(cx) != lastcursorx || floatbits(cy) != lastcursory)
         {
-            inputevent &e = recording.events.add();
+            inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_GUI;
             e.arg = 0;
@@ -272,7 +252,7 @@ namespace game
         // zooming out ends by itself (-1 -> 0), which the replay does too
         if(zoom != lastzoom && !(lastzoom < 0 && !zoom))
         {
-            inputevent &e = recording.events.add();
+            inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_ZOOM;
             e.arg = zoom;
@@ -282,77 +262,139 @@ namespace game
         }
         lastzoom = zoom;
         hashgamestate(h.groups);
-        recording.hashes.add(h);
+        h.tick = curtick;
+        rec.hashes.add(h);
+        rec.ticks = curtick;
+    }
+
+    static void seedattempt(const inputattempt &a)
+    {
+        gameseed = a.seed;
+        seedMT(gameseed);
+        logoutf("game seed: %u (replay of %s, %d events)", gameseed, a.map, a.events.length());
     }
 
     void inputmapstart(const char *name, int mode)
     {
+        bool chained = mapchained(mode) && !recordingoff;
+        if(!chained || replaypending) saveunfinishedrun();
         clearevents(pending);
         curtick = 0;
         havecontrols = haveguistate = recordingoff = false;
         lastzoom = 0;
+        lastactivetick = 0;
+        resetarmtick = -1;
+        replaypos = replayhashpos = 0;
         if(replaypending)
         {
             replaypending = false;
             replaying = true;
-            replaypos = 0;
+            replayattempt = 0;
             replaydesync = replaydesyncgroups = 0;
-            gameseed = replaydata.seed;
-            seedMT(gameseed);
-            logoutf("game seed: %u (replay, %d events)", gameseed, replaydata.events.length());
+            seedattempt(replaycur());
             return;
         }
         if(replaying)
         {
+            if(chained && replayattempt+1 < replaydata.attempts.length() && !strcmp(replaydata.attempts[replayattempt+1]->map, name))
+            {
+                replayattempt++;
+                seedattempt(replaycur());
+                return;
+            }
             replaying = false;
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
+            chained = false;
         }
         seedgame();
-        if(!recording.empty()) recording.moveto(previous);
-        recording.seed = gameseed;
-        copystring(recording.map, name);
-        recording.mode = mode;
+        if(!chained && !recording.empty()) recording.moveto(previous);
+        if(!chained) { recording.clear(); runsaved = false; }
+        inputattempt &a = recording.add();
+        a.seed = gameseed;
+        copystring(a.map, name);
+        a.mode = mode;
+        a.flagrun = server::flagrunactive() ? 1 : 0;
     }
 
-    static void startreplay(const inputattempt &src)
+    void playinputrun(const inputrun &src)
     {
         src.copyto(replaydata);
-        server::forcenextteam(replaydata.team);
+        const inputattempt &first = *replaydata.attempts[0];
+        server::forcenextteam(first.team);
+        server::forcenextflagrun(first.flagrun);
         replaypending = true;
-        changemap(replaydata.map, replaydata.mode);
+        changemap(first.map, first.mode);
     }
 
-    // 0 replays the current attempt, 1 the one before it
-    ICOMMAND(inputreplay, "i", (int *which),
+    VARP(speedrunresetidle, 0, 1000, 10000);
+
+    // Pressing speedrunreset arms a restart of the current run from its first map; it fires
+    // once the player has given no movement or attack input for speedrunresetidle ms after
+    // the press, and any such input before that cancels it. A stray press mid-run therefore
+    // never throws the run away.
+    static void checkpendingreset()
     {
-        inputattempt &src = *which ? previous : recording;
-        if(multiplayer(false) || src.empty()) { conoutf(CON_ERROR, "inputreplay: no recorded attempt"); return; }
-        startreplay(src);
+        if(resetarmtick < 0) return;
+        if(lastactivetick > resetarmtick)
+        {
+            resetarmtick = -1;
+            conoutf("\f3reset cancelled");
+            return;
+        }
+        if((curtick - resetarmtick)*SIMTICK < speedrunresetidle) return;
+        resetarmtick = -1;
+        const inputrun &run = replaying ? replaydata : recording;
+        if(run.attempts.length()) changemap(run.attempts[0]->map, run.attempts[0]->mode);
+        else changemap(getclientmap(), gamemode);
+    }
+
+    ICOMMAND(speedrunreset, "", (),
+    {
+        if(!connected || multiplayer(false)) { conoutf(CON_ERROR, "speedrunreset only works offline"); return; }
+        if(resetarmtick >= 0) return;
+        resetarmtick = curtick;
+        if(speedrunresetidle > 0) conoutf("\f2resetting in %.1f s - move or shoot to cancel", speedrunresetidle/1000.0f);
     });
 
-    // Debug text dump of an attempt (0 = current, 1 = previous), readable by inputload.
+    // 0 replays the current run, 1 the one before it
+    ICOMMAND(inputreplay, "i", (int *which),
+    {
+        inputrun &src = *which ? previous : recording;
+        if(multiplayer(false) || src.empty()) { conoutf(CON_ERROR, "inputreplay: no recorded run"); return; }
+        playinputrun(src);
+    });
+
+    // Debug text dump of a run (0 = current, 1 = previous), readable by inputload.
     ICOMMAND(inputdump, "si", (char *file, int *which),
     {
-        inputattempt &a = *which ? previous : recording;
-        if(a.empty()) { conoutf(CON_ERROR, "inputdump: no recorded attempt"); return; }
+        inputrun &run = *which ? previous : recording;
+        if(run.empty()) { conoutf(CON_ERROR, "inputdump: no recorded run"); return; }
         stream *f = openutf8file(path(file, true), "w");
         if(!f) { conoutf(CON_ERROR, "inputdump: could not open %s", file); return; }
-        f->printf("attempt 1 %u %d %s %s\n", a.seed, a.mode, escapestring(a.map), escapestring(a.team));
-        loopv(a.events)
+        int events = 0;
+        int ticks = 0;
+        loopvk(run.attempts)
         {
-            const inputevent &e = a.events[i];
-            const inputcontrols &c = e.controls;
-            f->printf("e %d %d %d %u %u %d %d %d %d %d %u %u %s\n", e.tick, e.type, e.arg, c.yaw, c.pitch,
-                c.move, c.strafe, c.vertical, c.jumping ? 1 : 0, c.attacking ? 1 : 0, e.cursorx, e.cursory,
-                escapestring(e.cmd ? e.cmd : ""));
-        }
-        loopv(a.hashes)
-        {
-            const tickhash &h = a.hashes[i];
-            f->printf("h %u %u %u %u %u %u\n", h.groups[0], h.groups[1], h.groups[2], h.groups[3], h.groups[4], h.groups[5]);
+            const inputattempt &a = *run.attempts[k];
+            f->printf("attempt %d %u %d %s %s %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks);
+            loopv(a.events)
+            {
+                const inputevent &e = a.events[i];
+                const inputcontrols &c = e.controls;
+                f->printf("e %d %d %d %u %u %d %d %d %d %d %u %u %s\n", e.tick, e.type, e.arg, c.yaw, c.pitch,
+                    c.move, c.strafe, c.vertical, c.jumping ? 1 : 0, c.attacking ? 1 : 0, e.cursorx, e.cursory,
+                    escapestring(e.cmd ? e.cmd : ""));
+            }
+            loopv(a.hashes)
+            {
+                const tickhash &h = a.hashes[i];
+                f->printf("h %d %u %u %u %u %u %u\n", h.tick, h.groups[0], h.groups[1], h.groups[2], h.groups[3], h.groups[4], h.groups[5]);
+            }
+            events += a.events.length();
+            ticks += a.ticks;
         }
         delete f;
-        conoutf("inputdump: wrote %d events, %d ticks to %s", a.events.length(), a.hashes.length(), file);
+        conoutf("inputdump: wrote %d maps, %d events, %d ticks to %s", run.attempts.length(), events, ticks, file);
     });
 
     // explodelist keeps cubescript escapes (^", ^^) inside quoted elements
@@ -375,27 +417,39 @@ namespace game
     ICOMMAND(inputload, "s", (char *file),
     {
         if(multiplayer(false)) return;
+        {
+            inputrun run;
+            replayinfo info;
+            if(readreplay(file, &run, info) && !run.empty())
+            {
+                conoutf("inputload: %d maps, starting on %s", run.attempts.length(), run.attempts[0]->map);
+                playinputrun(run);
+                return;
+            }
+        }
         stream *f = openutf8file(path(file, true), "r");
         if(!f) { conoutf(CON_ERROR, "inputload: could not open %s", file); return; }
-        inputattempt &a = previous;
-        a.clear();
+        inputrun &run = previous;
+        run.clear();
+        inputattempt *cur = NULL;
         char line[4096];
-        bool ok = false;
         while(f->getline(line, sizeof(line)))
         {
             vector<char *> w;
             explodelist(line, w);
             if(w.length() >= 6 && !strcmp(w[0], "attempt"))
             {
+                inputattempt &a = *(cur = &run.add());
                 a.seed = uint(strtoul(w[2], NULL, 10));
                 a.mode = parseint(w[3]);
                 copyunescaped(a.map, w[4]);
                 copyunescaped(a.team, w[5]);
-                ok = true;
+                a.flagrun = w.length() > 6 ? parseint(w[6]) : 0;
+                a.ticks = w.length() > 7 ? parseint(w[7]) : 0;
             }
-            else if(w.length() >= 13 && !strcmp(w[0], "e"))
+            else if(cur && w.length() >= 13 && !strcmp(w[0], "e"))
             {
-                inputevent &e = a.events.add();
+                inputevent &e = cur->events.add();
                 e.tick = parseint(w[1]);
                 e.type = parseint(w[2]);
                 e.arg = parseint(w[3]);
@@ -411,20 +465,25 @@ namespace game
                 e.cursory = uint(strtoul(w[12], NULL, 10));
                 e.cmd = unescaped(w.length() > 13 ? w[13] : "");
             }
-            else if(w.length() >= 7 && !strcmp(w[0], "h"))
+            else if(cur && w.length() >= 7 && !strcmp(w[0], "h"))
             {
-                tickhash &h = a.hashes.add();
-                loopi(DETHASH_GROUPS) h.groups[i] = uint(strtoul(w[i+1], NULL, 10));
+                // older dumps have one hash per tick and no tick number
+                bool hastick = w.length() >= 8;
+                tickhash &h = cur->hashes.add();
+                h.tick = hastick ? parseint(w[1]) : cur->hashes.length();
+                loopi(DETHASH_GROUPS) h.groups[i] = uint(strtoul(w[i+(hastick ? 2 : 1)], NULL, 10));
+                if(!hastick) cur->ticks = max(cur->ticks, h.tick);
             }
             w.deletearrays();
         }
         delete f;
-        if(!ok || a.empty()) { conoutf(CON_ERROR, "inputload: %s is not an input dump", file); a.clear(); return; }
-        conoutf("inputload: %d events, %d ticks on %s", a.events.length(), a.hashes.length(), a.map);
-        startreplay(a);
+        if(run.empty()) { conoutf(CON_ERROR, "inputload: %s is not an input dump", file); run.clear(); return; }
+        conoutf("inputload: %d maps, starting on %s", run.attempts.length(), run.attempts[0]->map);
+        playinputrun(run);
     });
 
-    ICOMMAND(inputevents, "", (), intret(replaying ? replaydata.events.length() : recording.events.length()));
+    ICOMMAND(inputevents, "", (), intret(replaying ? replaycur().events.length() : (recording.attempts.empty() ? 0 : recording.last().events.length())));
+    ICOMMAND(inputmaps, "i", (int *which), intret((*which ? previous : recording).attempts.length()));
     ICOMMAND(inputdesync, "", (), intret(replaydesync));
     ICOMMAND(getclientmap, "", (), result(getclientmap()));
     static void getmapguis()

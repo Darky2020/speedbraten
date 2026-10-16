@@ -2,9 +2,9 @@
 #include "embedded_cfgs.h"
 
 namespace game {
-    struct embeddedfile<17212> menus_cfg = {
+    struct embeddedfile<17267> menus_cfg = {
         "data/p1xbraten/menus.cfg.gz",
-        0xa4e860c1,
+        0x0515e953,
         {
             #include "../../data/p1xbraten/menus.cfg.gz.xxd"
         }
@@ -31,6 +31,14 @@ namespace game {
         0xfd4470e9,
         {
             #include "../../data/p1xbraten/keymap.cfg.gz.xxd"
+        }
+    };
+
+    struct embeddedfile<1674> speedbraten_cfg = {
+        "data/p1xbraten/speedbraten.cfg.gz",
+        0xe9a3be11,
+        {
+            #include "../../data/p1xbraten/speedbraten.cfg.gz.xxd"
         }
     };
 
@@ -66,6 +74,9 @@ namespace game {
 
         err = update(&keymap_cfg);
         if(err) { conoutf("\f6error updating %s (error code %d)!", keymap_cfg.name, err); return err; }
+
+        err = update(&speedbraten_cfg);
+        if(err) { conoutf("\f6error updating %s (error code %d)!", speedbraten_cfg.name, err); return err; }
 
         return 0;
     }

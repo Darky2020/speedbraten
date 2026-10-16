@@ -35,6 +35,15 @@ namespace game
     ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
     ICOMMAND(harnessjump, "", (), queueinput(INPUT_JUMP, 1));
     ICOMMAND(harnessattack, "i", (int *down), queueinput(INPUT_ATTACK, *down != 0 ? 1 : 0));
+    ICOMMAND(harnessflag, "if", (int *own, float *dx),
+    {
+        vec loc;
+        if(!flagspawnloc(*own != 0, loc)) { conoutf(CON_ERROR, "harnessflag: no flag"); return; }
+        player1->o = loc.add(vec(*dx, 0, player1->eyeheight));
+        player1->vel = vec(0, 0, 0);
+        player1->resetinterp();
+    });
+    ICOMMAND(harnessstate, "", (), intret(player1->state));
     ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
     ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });

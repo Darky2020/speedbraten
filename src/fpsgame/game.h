@@ -881,6 +881,22 @@ namespace game
     extern bool deferinput(int type, int arg = 0, const char *cmd = NULL);
     extern bool dethashactive();
     extern void inputmapstart(const char *name, int mode);
+    extern int inputtick();
+    extern void inputrunfinished(int runtime);
+    extern void inputdisconnect();
+
+    // runtimer
+    extern void runtimermapstart(int mode, bool local);
+    extern void runtimerendsp();
+    extern void runtimerflagtaken(fpsent *d, int flag, const vec &loc, float radius);
+    extern void runtimerflagscored(fpsent *d);
+    extern void runtimertick();
+    extern void drawruntimer(int w, int h);
+    extern void drawspeedometer(int w, int h);
+    extern bool flagheldby(int flag, fpsent *d);
+    extern bool flagspawnloc(bool own, vec &loc);
+    extern bool flagrunrules();
+    extern bool mapchained(int mode);
     extern void gunselect(int gun, fpsent *d);
     extern void weaponswitch(fpsent *d);
     extern void avoidweapons(ai::avoidset &obstacles, float radius);
@@ -1261,6 +1277,8 @@ namespace server
     extern void forcemap(const char *map, int mode);
     extern void forcepaused(bool paused);
     extern void forcenextteam(const char *team);
+    extern bool flagrunactive();
+    extern void forcenextflagrun(int on);
     extern void forcegamespeed(int speed);
     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
     extern int msgsizelookup(int msg);

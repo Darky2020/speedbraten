@@ -645,6 +645,15 @@ namespace server
 
     static string nextteam = "";
 
+    // Flagrun practice rules for CTF: a dropped flag returns at once, respawn is immediate,
+    // either flag can be taken and scored at the other one, and there is no capture limit.
+    // Latched at each map change, so a game keeps the rules it started with.
+    VAR(flagrun, 0, 0, 1);
+    static bool flagrunon = false;
+    static int nextflagrun = -1;
+    bool flagrunactive() { return flagrunon; }
+    void forcenextflagrun(int on) { nextflagrun = on; }
+
     // the next map change puts every client on this team instead of balancing teams
     void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
 
@@ -1766,6 +1775,9 @@ namespace server
         aiman::clearai();
 
         gamemode = mode;
+        // before N_MAPCHANGE: a local client handles that message at once and reads this
+        flagrunon = m_ctf_only && (nextflagrun >= 0 ? nextflagrun : flagrun) != 0;
+        nextflagrun = -1;
         gamemillis = 0;
         gamelimit = gamelimitnextmatch;
         interm = 0;

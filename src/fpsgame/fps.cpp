@@ -281,6 +281,8 @@ namespace game
 
     VAR(playerspeed, 0, 0, -1);
 
+    void respawn();
+
     void updateworld()        // main game update loop
     {
         if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
@@ -308,6 +310,7 @@ namespace game
         {
             if(player1->state == CS_DEAD)
             {
+                if(flagrunrules()) respawn();
                 if(player1->ragdoll) moveragdoll(player1);
                 if((!player1->ragdoll || simticking) && lastmillis-player1->lastpain<2000)
                 {
@@ -331,6 +334,7 @@ namespace game
         }
         playerspeed = int(hudplayer()->vel.magnitude2());
         if(player1->clientnum>=0) c2sinfo(simticking);   // do this last, to reduce the effective frame lag
+        runtimertick();
         dethashframe();
     }
 
@@ -419,7 +423,16 @@ namespace game
             }
         }
     }
-    COMMAND(respawn, "");
+    ICOMMAND(respawn, "", (), { if(!deferinput(INPUT_COMMAND, 0, "respawn")) respawn(); });
+
+    // suicide and respawn in the same tick (respawn waits of the mode still apply)
+    ICOMMAND(speedrunrespawn, "", (),
+    {
+        if(deferinput(INPUT_COMMAND, 0, "speedrunrespawn")) return;
+        if(!connected || intermission) return;
+        if(player1->state == CS_ALIVE) suicide(player1);
+        respawn();
+    });
 
     // inputs
 
@@ -689,8 +702,13 @@ namespace game
     {
         lasthit = lastspawnattempt = lastslowmohealth = 0;
 
+        // monsters and movables that overlap at their map spots get nudged randomly; offline,
+        // use a per-map sequence so every attempt on a map starts with them in the same places
+        bool local = !multiplayer(false);
+        if(local) seedMT(getmapcrc() ^ 0x5eedU);
         clearmovables();
         clearmonsters();
+        if(local) seedMT(gameseed);
 
         clearprojectiles();
         clearbouncers();
@@ -1173,6 +1191,8 @@ namespace game
             if(hudscore) drawhudscore(w, h);
             if(hudfragmessages==1 || (hudfragmessages==2 && !m_insta)) drawfragmessages(w, h);
         }
+        drawruntimer(w, h);
+        drawspeedometer(w, h);
     }
 
     int clipconsole(int w, int h)

@@ -121,6 +121,9 @@ namespace game
     int lastping = 0;
 
     bool connected = false, remote = false, demoplayback = false, gamepaused = false;
+
+    bool flagrunrules() { return connected && !remote && server::flagrunactive(); }
+    ICOMMAND(flagrunrules, "", (), intret(flagrunrules() ? 1 : 0));
     int sessionid = 0, mastermode = MM_OPEN, gamespeed = 100;
     string servdesc = "", servauth = "", connectpass = "";
 
@@ -588,6 +591,7 @@ namespace game
     void changemapserv(const char *name, int mode)        // forced map change from the server
     {
         if(demorecord) enddemorecord();
+        runtimermapstart(mode, !multiplayer(false));
         if(!multiplayer(false)) { inputmapstart(name, mode); resetsimclock(1000); }
         if(multiplayer(false) && !m_mp(mode))
         {
@@ -976,6 +980,7 @@ namespace game
 
     void gamedisconnect(bool cleanup)
     {
+        if(!remote) inputdisconnect();
 #ifdef ANTICHEAT
         endanticheatsession();
         player1->anticheatverified = false;

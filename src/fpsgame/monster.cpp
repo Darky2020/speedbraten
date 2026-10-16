@@ -352,6 +352,7 @@ namespace game
     {
         conoutf(CON_GAMEINFO, allkilled ? "\f2you have cleared the map!" : "\f2you reached the exit!");
         monstertotal = 0;
+        runtimerendsp();
         forceintermission();
     }
     ICOMMAND(endsp, "", (), endsp(false));
@@ -395,11 +396,14 @@ namespace game
         if(monsterwashurt) monsterhurt = false;
     }
 
+    VARP(hidedeadmonsters, 0, 0, 1);
+
     void rendermonsters()
     {
         loopv(monsters)
         {
             monster &m = *monsters[i];
+            if(m.state==CS_DEAD && hidedeadmonsters) continue;
             if(m.state!=CS_DEAD || lastmillis-m.lastpain<10000)
             {
                 modelattach vwep[2];

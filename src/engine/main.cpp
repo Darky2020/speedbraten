@@ -1360,6 +1360,7 @@ int main(int argc, char **argv)
     execfile(gamecfgname);
     if(game::savedservers()) execfile(game::savedservers(), false);
     execfile("data/p1xbraten/gamehud.cfg.gz");
+    execfile("data/p1xbraten/speedbraten.cfg.gz");
     
     identflags |= IDF_PERSIST;
     

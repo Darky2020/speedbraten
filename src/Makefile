@@ -149,6 +149,9 @@ CLIENT_OBJS= \
 	fpsgame/weapon.o \
 	fpsgame/dethash.o \
 	fpsgame/inputs.o \
+	fpsgame/runtimer.o \
+	fpsgame/speedometer.o \
+	fpsgame/replayfile.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -499,6 +502,17 @@ fpsgame/dethash.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/inputs.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/inputs.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/inputs.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/inputs.o: fpsgame/inputs.h
+fpsgame/replayfile.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/replayfile.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/replayfile.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/replayfile.o: fpsgame/inputs.h
+fpsgame/runtimer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/runtimer.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/runtimer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/weapon.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/weapon.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/weapon.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
@@ -529,6 +543,7 @@ p1xbraten/embedded_cfgs.o: ../data/p1xbraten/menus.cfg.gz.xxd
 p1xbraten/embedded_cfgs.o: ../data/p1xbraten/master.cfg.gz.xxd
 p1xbraten/embedded_cfgs.o: ../data/p1xbraten/gamehud.cfg.gz.xxd
 p1xbraten/embedded_cfgs.o: ../data/p1xbraten/keymap.cfg.gz.xxd
+p1xbraten/embedded_cfgs.o: ../data/p1xbraten/speedbraten.cfg.gz.xxd
 p1xbraten/fragmessages.o: fpsgame/game.h shared/cube.h shared/tools.h
 p1xbraten/fragmessages.o: shared/geom.h shared/ents.h shared/command.h
 p1xbraten/fragmessages.o: shared/glexts.h shared/glemu.h shared/iengine.h

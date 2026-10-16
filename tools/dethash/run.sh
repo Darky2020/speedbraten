@@ -13,7 +13,7 @@ out=$1; runs=$2; seed=$3; draw=${4:-4}; script=${5:-$here/dmsp_basic.cfg}; extra
 app=${SAUER_APP:-/Applications/Sauerbraten.app}
 client=$repo/src/sauer_client
 expected=6000
-timeout=300
+timeout=${TIMEOUT:-300}
 
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
