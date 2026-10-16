@@ -53,10 +53,10 @@ jobs:
           ref=""
           fail=0
           for f in results/*/*.txt; do
-            got=$(grep -E '^(det_|physics_det)' "$f" | sort -u)
+            got=$(tr -d '\r' < "$f" | grep -E '^(det_|physics_det)' | sort -u)
             if [ "$(echo "$got" | cut -d' ' -f1 | uniq -d)" ]; then echo "DIFFERS between FP modes: $f"; fail=1; fi
             if [ -z "$ref" ]; then ref=$got; reff=$f; echo "reference: $f"; echo "$ref"
-            elif [ "$got" != "$ref" ]; then echo "DIFFERS from $reff: $f"; diff <(echo "$ref") <(echo "$got"); fail=1
+            elif [ "$got" != "$ref" ]; then echo "DIFFERS from $reff: $f"; diff <(echo "$ref") <(echo "$got") || true; fail=1
             else echo "identical: $f"; fi
           done
           exit $fail
