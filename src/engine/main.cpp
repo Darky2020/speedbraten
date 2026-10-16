@@ -68,11 +68,17 @@ void fatal(const char *s, ...)    // failure exit
                 #endif
             }
             SDL_Quit();
+#ifndef HEADLESS
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cube 2: Sauerbraten fatal error", msg, NULL);
+#endif
         }
     }
 
+#ifdef HEADLESS
+    exit(2);
+#else
     exit(EXIT_FAILURE);
+#endif
 }
 
 int curtime = 0, lastmillis = 1, elapsedtime = 0, totalmillis = 1, curframetime = 0;

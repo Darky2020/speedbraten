@@ -1,0 +1,70 @@
+name: resim
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**'
+      - 'tools/resimbuild.sh'
+      - 'tests/gold/**'
+      - '.github/workflows/resim.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-linux-gnu, aarch64-linux-gnu, x86_64-windows-gnu, x86_64-macos, aarch64-macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - run: bash tools/resimbuild.sh ${{ matrix.target }} out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resim-${{ matrix.target }}
+          path: out/sauer_resim-*
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: buildlog-${{ matrix.target }}
+          path: out/build-*.log
+
+  run:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04,     target: x86_64-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-linux-gnu }
+          - { os: windows-2022,     target: x86_64-windows-gnu }
+          - { os: macos-15-intel,   target: x86_64-macos }
+          - { os: macos-15,         target: aarch64-macos }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tests
+            tools
+      - uses: actions/download-artifact@v4
+        with:
+          name: resim-${{ matrix.target }}
+          path: bin
+      - name: smoke test (no game data yet; must exit 2 without hanging)
+        run: |
+          chmod +x bin/sauer_resim-* || true
+          exe=$(ls bin/sauer_resim-*)
+          mkdir -p empty home
+          cd empty
+          set +e
+          "../$exe" -q../home missing.sbr
+          code=$?
+          echo "exit $code"
+          [ $code -eq 2 ]

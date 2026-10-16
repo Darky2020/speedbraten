@@ -219,19 +219,37 @@ server: $(SERVER_OBJS)
 
 # Headless re-simulation binary: the client sim without a window, GL or drawing.
 RESIM_OBJS= $(addprefix headless/,$(CLIENT_OBJS)) headless/engine/nullgl.o headless/engine/nullsdl.o headless/fpsgame/resim.o
-RESIM_LIBS= $(filter-out -lGL -lopengl32 -lX11 -lSDL2_image -lSDL2_mixer OpenGL SDL2_image SDL2_mixer,$(subst -framework OpenGL,,$(subst -framework SDL2_image,,$(subst -framework SDL2_mixer,,$(CLIENT_LIBS)))))
+ifneq (,$(findstring macos,$(TARGET)))
+RESIM_INCLUDES= $(CLIENT_INCLUDES)
+else
+RESIM_INCLUDES= -Iwindows/include/SDL2
+endif
+# RESIM_DEPS: a folder with include/ and lib/ holding zlib and enet built for TARGET
+# (tools/resimbuild.sh), used instead of the platform's libraries
+ifdef RESIM_DEPS
+RESIM_CXXINCLUDES= -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include $(RESIM_INCLUDES)
+RESIM_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
+ifneq (,$(findstring windows,$(TARGET)))
+RESIM_LINK+= -lws2_32 -lwinmm
+endif
+else
+RESIM_CXXINCLUDES= $(INCLUDES) $(RESIM_INCLUDES)
+RESIM_LINK= $(LIBS)
+endif
 
 headless/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(CLIENT_INCLUDES) -DHEADLESS -MMD -MP -c -o $@ $<
+	$(CXX) $(CXXFLAGS) $(RESIM_CXXINCLUDES) -DHEADLESS -MMD -MP -c -o $@ $<
 
 -include $(RESIM_OBJS:.o=.d)
 
 ifneq (,$(findstring linux,$(TARGET)))
+ifndef RESIM_DEPS
 resim: libenet
 endif
+endif
 resim: $(RESIM_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_resim $(RESIM_OBJS) $(LIBS) $(RESIM_LIBS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_resim $(RESIM_OBJS) $(RESIM_LINK)
 
 .PHONY: resim
 
