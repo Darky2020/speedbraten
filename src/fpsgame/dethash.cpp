@@ -35,6 +35,7 @@ namespace game
     ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
     ICOMMAND(harnessjump, "", (), queueinput(INPUT_JUMP, 1));
     ICOMMAND(harnessattack, "i", (int *down), queueinput(INPUT_ATTACK, *down != 0 ? 1 : 0));
+    ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
     ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
 

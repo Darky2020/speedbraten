@@ -206,7 +206,18 @@ namespace game
             if(replaydesync) conoutf(CON_ERROR, "input replay finished (desynced at tick %d)", replaydesync);
             else conoutf("input replay finished");
         }
-        if(recordingoff) return;
+        if(recordingoff)
+        {
+            // after a replay the game goes on live, but the attempt is not recorded
+            while(pending.length())
+            {
+                inputevent e = pending.remove(0);
+                applyevent(e);
+                DELETEA(e.cmd);
+                if(!recordingoff) return;
+            }
+            return;
+        }
         if(replaying)
         {
             while(replaypos < replaydata.events.length() && replaydata.events[replaypos].tick <= curtick)
