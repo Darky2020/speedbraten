@@ -31,7 +31,7 @@ jobs:
             src/shared/detmath.h
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.1
+          version: 0.15.1
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
       - run: bash tools/fpconform/run.sh ${{ matrix.label }} ${{ matrix.compilers }}

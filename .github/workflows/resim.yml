@@ -15,11 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64-linux-gnu, aarch64-linux-gnu, x86_64-windows-gnu, x86_64-macos, aarch64-macos]
-        zig: [0.14.1]
-        include:
-          - { target: aarch64-macos, zig: 0.15.1 }
+        zig: [0.15.1]
     runs-on: ubuntu-24.04
-    continue-on-error: ${{ matrix.zig != '0.14.1' }}
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
@@ -60,7 +57,7 @@ jobs:
             tools
       - uses: actions/download-artifact@v4
         with:
-          name: resim-${{ matrix.target }}-zig0.14.1
+          name: resim-${{ matrix.target }}-zig0.15.1
           path: bin
       - name: smoke test (no game data yet; must exit 2 without hanging)
         run: |
