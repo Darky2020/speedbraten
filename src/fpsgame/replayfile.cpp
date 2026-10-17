@@ -305,12 +305,13 @@ namespace game
         return buf;
     }
 
-    // autosaved unfinished replays are named ..._dnf or ..._dnf_<n>
+    // autosaved unfinished replays are named ..._dnf, ..._dnf_seg (with state loads), plus _<n>
     static bool autounfinished(const char *name)
     {
         const char *dnf = strstr(name, "_dnf");
         if(!dnf) return false;
         dnf += 4;
+        if(!strncmp(dnf, "_seg", 4)) dnf += 4;
         if(!*dnf) return true;
         if(*dnf++ != '_' || !*dnf) return false;
         for(; *dnf; dnf++) if(!isdigit(uchar(*dnf))) return false;
