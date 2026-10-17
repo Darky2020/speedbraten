@@ -33,6 +33,19 @@ namespace game
         s.i(d.lastnode);
     }
 
+    // Bots are restored in place; the header makes sure the players match.
+    static void snapbots(snapio &s)
+    {
+        loopv(players)
+        {
+            fpsent &d = *players[i];
+            if(&d == player1) continue;
+            snapfpsent(s, d);
+            if(d.ai) ai::snapaiinfo(s, *d.ai);
+        }
+        ai::snapai(s);
+    }
+
     static void snapentities(snapio &s)
     {
         const vector<extentity *> &ents = entities::getents();
@@ -88,9 +101,18 @@ namespace game
         string map;
         copystring(map, getclientmap());
         s.u(magic); s.i(version); s.str(map, sizeof(map)); s.u(crc); s.i(mode); s.i(ents);
+        // the same players and bots, with the same client numbers
+        int n = s.count(players.length(), MAXCLIENTS + MAXBOTS);
+        bool sameplayers = n == players.length();
+        loopi(n)
+        {
+            int cn = !s.loading ? players[i]->clientnum : 0, ai = !s.loading && players[i]->ai ? 1 : 0;
+            s.i(cn); s.i(ai);
+            if(s.loading && (!sameplayers || cn != players[i]->clientnum || ai != (players[i]->ai ? 1 : 0))) sameplayers = false;
+        }
         if(!s.loading) return true;
         return s.ok && magic == SNAPMAGIC && version == SNAPVERSION && !strcmp(map, getclientmap()) &&
-               crc == getmapcrc() && mode == gamemode && ents == entities::getents().length();
+               crc == getmapcrc() && mode == gamemode && ents == entities::getents().length() && sameplayers;
     }
 
     static void snapall(snapio &s)
@@ -103,12 +125,15 @@ namespace game
         s.tag(snaptag("CLK ")); snapgameclock(s);
         s.tag(snaptag("RNG ")); snaprng(s);
         s.tag(snaptag("PLY ")); snapfpsent(s, *player1);
+        s.tag(snaptag("BOTS")); snapbots(s);
+        if(!s.ok) return;
         s.tag(snaptag("ENT ")); snapentities(s);
         s.tag(snaptag("SHOT")); snapshots(s);
         s.tag(snaptag("SERV")); server::snapstate(s);
         s.tag(snaptag("MODE")); snapclientmodes(s);
         s.tag(snaptag("DYNC")); snapdynentcache(s);
         s.tag(snaptag("SCRP")); snapscripts(s);
+        s.tag(snaptag("MSGS")); snapmessages(s);
         s.tag(snaptag("RUN ")); snapruntimer(s);
         s.tag(snaptag("REC ")); snaprecorder(s);
         s.tag(snaptag("END "));
@@ -203,7 +228,7 @@ namespace game
             else if(inputreplayactive()) conoutf(CON_ERROR, "savestates do not work during a replay");
             else if(readsnapshot(savedstate)) conoutf("state loaded (tick %d)", inputtick());
             else if(snapshotrefusal()) conoutf(CON_ERROR, "%s", snapshotrefusal());
-            else conoutf(CON_ERROR, "the saved state belongs to another map or mode");
+            else conoutf(CON_ERROR, "the saved state belongs to another map, mode or set of bots");
         }
         else if(op == SNAP_REPLAY)
         {

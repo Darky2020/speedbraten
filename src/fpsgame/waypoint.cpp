@@ -419,12 +419,13 @@ namespace ai
 
     static inline float heapscore(waypoint *q) { return q->score(); }
 
+    static ushort routeid = 1;
+
     bool route(fpsent *d, int node, int goal, vector<int> &route, const avoidset &obstacles, int retries)
     {
         if(waypoints.empty() || !iswaypoint(node) || !iswaypoint(goal) || goal == node || !waypoints[node].links[0])
             return false;
 
-        static ushort routeid = 1;
         static vector<waypoint *> queue;
 
         if(!routeid)
@@ -804,5 +805,34 @@ namespace ai
         clearwpcache();
     }
     ICOMMAND(movewaypoints, "iii", (int *dx, int *dy, int *dz), movewaypoints(vec(*dx, *dy, *dz)));
-}
 
+    // Waypoints grow while the player runs a map without a waypoint file, and the search caches
+    // and route stamps change what later searches find, so all of them are saved as they are.
+    void snapwaypoints(snapio &s)
+    {
+        s.str(loadedwaypoints, sizeof(loadedwaypoints));
+        int n = s.count(waypoints.length(), MAXWAYPOINTS);
+        if(s.loading) { waypoints.setsize(0); loopi(n) waypoints.add(waypoint(vec(0, 0, 0))); }
+        loopv(waypoints)
+        {
+            waypoint &wp = waypoints[i];
+            s.v(wp.o); s.f(wp.curscore); s.f(wp.estscore); s.i(wp.weight); s.n(wp.route); s.n(wp.prev);
+            loopk(MAXWAYPOINTLINKS) s.n(wp.links[k]);
+        }
+        s.n(routeid);
+        loopi(NUMWPCACHES)
+        {
+            wpcache &c = wpcaches[i];
+            int nodes = s.count(c.nodes.length(), 1<<24);
+            if(s.loading) { c.nodes.setsize(0); loopj(nodes) c.nodes.add(); }
+            loopvj(c.nodes)
+            {
+                wpcache::node &nd = c.nodes[j];
+                s.f(nd.split[0]); s.f(nd.split[1]); s.u(nd.child[0]); s.u(nd.child[1]);
+            }
+            s.i(c.firstwp); s.i(c.lastwp); s.v(c.bbmin); s.v(c.bbmax);
+        }
+        s.i(invalidatedwpcaches); s.i(clearedwpcaches); s.i(numinvalidatewpcaches); s.i(lastwpcache);
+        snapavoidset(s, wpavoid);
+    }
+}

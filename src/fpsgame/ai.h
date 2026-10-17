@@ -1,4 +1,5 @@
 struct fpsent;
+struct snapio;
 
 #define MAXBOTS 32
 
@@ -130,6 +131,8 @@ namespace ai
 
     extern bool route(fpsent *d, int node, int goal, vector<int> &route, const avoidset &obstacles, int retries = 0);
     extern void navigate();
+    extern void snapavoidset(snapio &s, avoidset &a);
+    extern void snapwaypoints(snapio &s);
     extern void clearwaypoints(bool full = false);
     extern void seedwaypoints();
     extern void loadwaypoints(bool force = false, const char *mname = NULL);
@@ -291,6 +294,8 @@ namespace ai
 
     extern void init(fpsent *d, int at, int on, int sk, int bn, int pm, const char *name, const char *team);
     extern void update();
+    extern void snapaiinfo(snapio &s, aiinfo &a);
+    extern void snapai(snapio &s);
     extern void resetupdates();
     extern void avoid();
     extern void think(fpsent *d, bool run);

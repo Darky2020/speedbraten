@@ -10,6 +10,54 @@ namespace ai
     int updatemillis = 0, iteration = 0, itermillis = 0, forcegun = -1;
     vec aitarget(0, 0, 0);
 
+    // obstacle owners are dynents or NULL
+    void snapavoidset(snapio &s, avoidset &a)
+    {
+        int n = s.count(a.obstacles.length(), 1<<16);
+        if(s.loading) { a.obstacles.setsize(0); loopi(n) a.obstacles.add(avoidset::obstacle(NULL)); }
+        loopv(a.obstacles)
+        {
+            avoidset::obstacle &o = a.obstacles[i];
+            int owner = s.loading ? -1 : dynentindex((physent *)o.owner);
+            s.i(owner);
+            if(s.loading) o.owner = dynentat(owner);
+            s.i(o.numwaypoints); s.f(o.above);
+        }
+        n = s.count(a.waypoints.length(), 1<<20);
+        if(s.loading) { a.waypoints.setsize(0); loopi(n) a.waypoints.add(0); }
+        loopv(a.waypoints) s.i(a.waypoints[i]);
+    }
+
+    void snapaiinfo(snapio &s, aiinfo &a)
+    {
+        int n = s.count(a.state.length(), 1<<12);
+        if(s.loading) { a.state.setsize(0); loopi(n) a.state.add(aistate(0, 0)); }
+        loopv(a.state)
+        {
+            aistate &b = a.state[i];
+            s.i(b.type); s.i(b.millis); s.i(b.targtype); s.i(b.target); s.i(b.idle); s.n(b.override);
+        }
+        n = s.count(a.route.length(), 1<<16);
+        if(s.loading) { a.route.setsize(0); loopi(n) a.route.add(0); }
+        loopv(a.route) s.i(a.route[i]);
+        s.v(a.target); s.v(a.spot);
+        s.i(a.enemy); s.i(a.enemyseen); s.i(a.enemymillis); s.i(a.weappref);
+        loopi(NUMPREVNODES) s.i(a.prevnodes[i]);
+        s.i(a.targnode); s.i(a.targlast); s.i(a.targtime); s.i(a.targseq);
+        s.i(a.lastrun); s.i(a.lasthunt); s.i(a.lastaction); s.i(a.lastcheck);
+        s.i(a.jumpseed); s.i(a.jumprand); s.i(a.blocktime); s.i(a.huntseq); s.i(a.blockseq); s.i(a.lastaimrnd);
+        s.f(a.targyaw); s.f(a.targpitch);
+        loopi(3) { s.f(a.views[i]); s.f(a.aimrnd[i]); }
+        s.n(a.dontmove); s.n(a.becareful); s.n(a.tryreset); s.n(a.trywipe);
+    }
+
+    void snapai(snapio &s)
+    {
+        s.i(updatemillis); s.i(iteration); s.i(itermillis); s.i(forcegun);
+        snapavoidset(s, obstacles);
+        snapwaypoints(s);
+    }
+
     // Called at every map start, which may run before the map's clock is reset, so the timers
     // go back to their values at program start rather than to the current lastmillis.
     void resetupdates()

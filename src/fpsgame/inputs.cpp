@@ -683,6 +683,7 @@ namespace game
     ICOMMAND(inputevents, "", (), intret(replaying ? replaycur().events.length() : (recording.attempts.empty() ? 0 : recording.last().events.length())));
     ICOMMAND(inputmaps, "i", (int *which), intret((*which ? previous : recording).attempts.length()));
     ICOMMAND(inputdesync, "", (), intret(replaydesync));
+    ICOMMAND(inputreplayed, "", (), intret(replayedticks));
     ICOMMAND(getclientmap, "", (), result(getclientmap()));
     static void getmapguis()
     {

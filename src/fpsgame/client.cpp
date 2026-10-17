@@ -921,6 +921,17 @@ namespace game
         }
     }
 
+    // Messages queued after the tick's c2sinfo, such as the reply to a spawn, wait in the queue
+    // until the next tick.
+    void snapmessages(snapio &s)
+    {
+        s.n(senditemstoserver); s.n(sendcrc);
+        int n = s.count(messages.length(), 1<<20);
+        if(s.loading) { messages.setsize(0); loopi(n) messages.add(0); }
+        loopv(messages) s.n(messages[i]);
+        s.i(messagecn); s.i(messagereliable);
+    }
+
     void snapclientmodes(snapio &s)
     {
         int ctf = m_ctf ? 1 : 0;

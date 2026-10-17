@@ -759,8 +759,11 @@ namespace server
     }
 
     // The clients (and later the bots) must already match the saved ones by client number.
+    static void snapaiman(snapio &s);
+
     void snapstate(snapio &s)
     {
+        snapaiman(s);
         s.n(notgotitems); s.i(gamemillis); s.i(gamelimit); s.i(nextexceeded); s.i(gamespeed);
         s.n(gamepaused); s.n(shouldstep); s.i(interm); s.n(flagrunon); s.n(raceruleson);
 
@@ -3881,5 +3884,7 @@ namespace server
     }
 
     #include "aiman.h"
+
+    static void snapaiman(snapio &s) { s.n(aiman::dorefresh); s.n(aiman::botbalance); }
 }
 
