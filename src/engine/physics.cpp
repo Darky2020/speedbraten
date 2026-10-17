@@ -610,6 +610,56 @@ void hashphysicsstate(uint &h)
     }
 }
 
+static int dynentindex(const physent *d)
+{
+    loopi(game::numdynents()) if(game::iterdynents(i) == d) return i;
+    return -1;
+}
+
+// Savestates: the cache epoch, then for each live cell its slot, x, y, entry count and the
+// entries as iterdynents indices. Returns false if an entry is not a dynent.
+bool savedynentcache(vector<int> &v)
+{
+    v.add(int(dynentframe));
+    loopi(DYNENTCACHESIZE)
+    {
+        const dynentcacheentry &dec = dynentcache[i];
+        if(dec.frame != dynentframe) continue;
+        v.add(i); v.add(dec.x); v.add(dec.y); v.add(dec.dynents.length());
+        loopvj(dec.dynents)
+        {
+            int idx = dynentindex(dec.dynents[j]);
+            if(idx < 0) return false;
+            v.add(idx);
+        }
+    }
+    return true;
+}
+
+bool loaddynentcache(const vector<int> &v)
+{
+    if(v.empty() || !v[0]) return false;
+    dynentframe = uint(v[0]);
+    loopi(DYNENTCACHESIZE) { dynentcache[i].frame = 0; dynentcache[i].dynents.setsize(0); }
+    for(int p = 1; p < v.length();)
+    {
+        if(p + 4 > v.length()) return false;
+        int slot = v[p], n = v[p+3];
+        if(slot < 0 || slot >= DYNENTCACHESIZE || n < 0 || p + 4 + n > v.length()) return false;
+        dynentcacheentry &dec = dynentcache[slot];
+        dec.x = v[p+1]; dec.y = v[p+2]; dec.frame = dynentframe;
+        p += 4;
+        loopi(n)
+        {
+            dynent *d = v[p] >= 0 && v[p] < game::numdynents() ? game::iterdynents(v[p]) : NULL;
+            if(!d) return false;
+            dec.dynents.add(d);
+            p++;
+        }
+    }
+    return true;
+}
+
 void cleardynentcache()
 {
     dynentframe++;

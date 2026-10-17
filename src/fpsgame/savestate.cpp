@@ -61,6 +61,16 @@ namespace game
         if(s.loading && s.ok) loadMT(st, cur);
     }
 
+    static void snapdynentcache(snapio &s)
+    {
+        vector<int> v;
+        if(!s.loading && !savedynentcache(v)) v.setsize(0);
+        int n = s.count(v.length(), 1<<22);
+        if(s.loading) loopi(n) v.add(0);
+        loopv(v) s.i(v[i]);
+        if(s.loading && s.ok && !loaddynentcache(v)) s.ok = false;
+    }
+
     // Header fields that must match the running game; checked before any state is touched.
     static bool snapheader(snapio &s)
     {
@@ -82,6 +92,9 @@ namespace game
         s.tag(snaptag("PLY ")); snapfpsent(s, *player1);
         s.tag(snaptag("ENT ")); snapentities(s);
         s.tag(snaptag("SHOT")); snapshots(s);
+        s.tag(snaptag("SERV")); server::snapstate(s);
+        s.tag(snaptag("MODE")); snapclientmodes(s);
+        s.tag(snaptag("DYNC")); snapdynentcache(s);
         s.tag(snaptag("RUN ")); snapruntimer(s);
         s.tag(snaptag("REC ")); snaprecorder(s);
         s.tag(snaptag("END "));
@@ -129,9 +142,11 @@ namespace game
         return writesnapshot(buf) ? bufdigest(buf) : 0;
     }
 
-    enum { SNAP_NONE = 0, SNAP_SAVE, SNAP_LOAD };
+    enum { SNAP_NONE = 0, SNAP_SAVE, SNAP_LOAD, SNAP_REPLAY };
     static vector<uchar> savedstate;
     static int pendingsnap = SNAP_NONE;
+
+    static bool restoresavedstate() { return readsnapshot(savedstate); }
     static int cycleticks = 0, cyclemismatches = 0;
 
     void savestatemapstart()
@@ -176,11 +191,19 @@ namespace game
             else if(snapshotrefusal()) conoutf(CON_ERROR, "%s", snapshotrefusal());
             else conoutf(CON_ERROR, "the saved state belongs to another map or mode");
         }
+        else if(op == SNAP_REPLAY)
+        {
+            if(savedstate.empty()) conoutf(CON_ERROR, "no saved state");
+            else if(inputreplayfromstate(restoresavedstate)) conoutf("state loaded (tick %d), replaying the recorded input from there", inputtick());
+            else conoutf(CON_ERROR, "could not replay from the saved state");
+        }
         if(snapcycle) cyclestate();
     }
 
     ICOMMAND(savestate, "", (), pendingsnap = SNAP_SAVE);
     ICOMMAND(loadstate, "", (), pendingsnap = SNAP_LOAD);
+    // harness: rewinds to the saved state and replays the current recording from it
+    ICOMMAND(loadstatereplay, "", (), pendingsnap = SNAP_REPLAY);
     void snapcyclereport()
     {
         if(snapcycle) conoutf("snapcycle: %d ticks saved and restored, %d mismatches", cycleticks, cyclemismatches);

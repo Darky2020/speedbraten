@@ -285,6 +285,7 @@ namespace game
         s.i(maptime); s.i(maplimit); s.n(intermission); s.i(respawnent);
         s.i(lastslowmohealth); s.i(lastspawnattempt);
         loopi(NUMGUNS) s.i(savedammo[i]);
+        s.i(gamespeed);
     }
 
     void checkslowmo()

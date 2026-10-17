@@ -938,6 +938,7 @@ namespace game
     extern int dethashdetail;
     extern void snapshots(snapio &s);
     extern void snapgameclock(snapio &s);
+    extern void snapclientmodes(snapio &s);
 
     // savestate
     extern void snapfpsent(snapio &s, fpsent &d);
@@ -969,6 +970,7 @@ namespace game
     extern void inputrunfinished(int runtime);
     extern void inputdisconnect();
     extern void snaprecorder(snapio &s);
+    extern bool inputreplayfromstate(bool (*restore)());
 
     // runtimer
     extern void runtimermapstart(int mode, bool local);
@@ -1059,6 +1061,9 @@ namespace server
         virtual bool flush(clientinfo *ci, int fmillis);
         virtual void process(clientinfo *ci) {}
         virtual void hash(dethasher &h) const { h.i(0); }
+        // savestates: the type id selects the class when the event is restored
+        virtual int snaptype() const { return 0; }
+        virtual void snap(snapio &s) {}
 
         virtual bool keepable() const { return false; }
     };
@@ -1067,6 +1072,8 @@ namespace server
     struct timedevent : gameevent
     {
         void hash(dethasher &h) const { h.i(1); h.i(millis); }
+        int snaptype() const { return 1; }
+        void snap(snapio &s) { s.i(millis); }
         int millis;
 
         bool flush(clientinfo *ci, int fmillis);
@@ -1079,11 +1086,22 @@ namespace server
         int rays;
         float dist;
         vec dir;
+
+        void snap(snapio &s) { s.i(target); s.i(lifesequence); s.i(rays); s.f(dist); s.v(dir); }
     };
+
+    static inline void snaphits(snapio &s, vector<hitinfo> &hits)
+    {
+        int n = s.count(hits.length(), 1<<16);
+        if(s.loading) { hits.setsize(0); loopi(n) hits.add(); }
+        loopv(hits) hits[i].snap(s);
+    }
 
     struct shotevent : timedevent
     {
         void hash(dethasher &h) const { h.i(2); h.i(millis); h.i(id); h.i(gun); h.v(from); h.v(to); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
+        int snaptype() const { return 2; }
+        void snap(snapio &s) { timedevent::snap(s); s.i(id); s.i(gun); s.v(from); s.v(to); snaphits(s, hits); }
         int id, gun;
         vec from, to;
         vector<hitinfo> hits;
@@ -1094,6 +1112,8 @@ namespace server
     struct explodeevent : timedevent
     {
         void hash(dethasher &h) const { h.i(3); h.i(millis); h.i(id); h.i(gun); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
+        int snaptype() const { return 3; }
+        void snap(snapio &s) { timedevent::snap(s); s.i(id); s.i(gun); snaphits(s, hits); }
         int id, gun;
         vector<hitinfo> hits;
 
@@ -1105,12 +1125,15 @@ namespace server
     struct suicideevent : gameevent
     {
         void hash(dethasher &h) const { h.i(4); }
+        int snaptype() const { return 4; }
         void process(clientinfo *ci);
     };
 
     struct pickupevent : gameevent
     {
         void hash(dethasher &h) const { h.i(5); h.i(ent); }
+        int snaptype() const { return 5; }
+        void snap(snapio &s) { s.i(ent); }
         int ent;
 
         void process(clientinfo *ci);
@@ -1376,6 +1399,7 @@ namespace server
     extern void forcenextflagrun(int on);
     extern bool racerulesactive();
     extern void hashstate(dethasher &h);
+    extern void snapstate(snapio &s);
     extern void forcenextracerules(int on);
     extern void forcegamespeed(int speed);
     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);

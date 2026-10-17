@@ -921,6 +921,27 @@ namespace game
         }
     }
 
+    void snapclientmodes(snapio &s)
+    {
+        int ctf = m_ctf ? 1 : 0;
+        s.i(ctf);
+        if(ctf != (m_ctf ? 1 : 0)) { s.ok = false; return; }
+        if(!ctf) return;
+        int n = s.count(ctfmode.flags.length(), MAXTEAMS*16);
+        if(s.loading) { ctfmode.flags.setsize(0); loopi(n) ctfmode.flags.add(); }
+        loopv(ctfmode.flags)
+        {
+            ctfclientmode::flag &f = ctfmode.flags[i];
+            s.i(f.id); s.i(f.version); s.i(f.spawnindex); s.v(f.droploc); s.v(f.spawnloc);
+            s.i(f.team); s.i(f.droptime); s.i(f.owntime); s.i(f.holdtime);
+            int owner = s.loading ? -1 : dynentindex(f.owner);
+            s.i(owner);
+            if(s.loading) f.owner = (fpsent *)dynentat(owner);
+            s.f(f.dropangle); s.f(f.spawnangle); s.v(f.interploc); s.f(f.interpangle); s.i(f.interptime); s.i(f.vistime);
+        }
+        s.i(ctfmode.scores[0]); s.i(ctfmode.scores[1]);
+    }
+
     bool addmsg(int type, const char *fmt, ...)
     {
         if(!connected) return false;

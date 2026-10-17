@@ -290,6 +290,25 @@ namespace game
         rec.ticks = min(rec.ticks, curtick);
     }
 
+    // Restores a state saved earlier in the current recording and replays the recorded input
+    // from the restored tick, checking the state hashes against the recording.
+    bool inputreplayfromstate(bool (*restore)())
+    {
+        if(replaying || replaypending || recordingoff || recording.attempts.empty()) return false;
+        recording.copyto(replaydata);
+        if(!restore()) { replaydata.clear(); return false; }
+        replaying = true;
+        replayattempt = replaydata.attempts.length()-1;
+        const inputattempt &a = replaycur();
+        replaypos = 0;
+        while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick) replaypos++;
+        replayhashpos = 0;
+        replaydesync = replaydesyncgroups = 0;
+        replayedticks = 0;
+        memset(lastreplayhash, 0, sizeof(lastreplayhash));
+        return true;
+    }
+
     void begintick()
     {
         if(!connected) { clearevents(pending); return; }

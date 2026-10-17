@@ -400,6 +400,8 @@ extern bool overlapsdynent(const vec &o, float radius);
 extern bool movecamera(physent *pl, const vec &dir, float dist, float stepdist);
 extern void physicsframe();
 extern void hashphysicsstate(uint &h);
+extern bool savedynentcache(vector<int> &v);
+extern bool loaddynentcache(const vector<int> &v);
 extern void hashsleeps(uint &h);
 extern void fakephysicsframe();
 extern void dropenttofloor(entity *e);
