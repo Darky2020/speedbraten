@@ -19,6 +19,7 @@ namespace game
     static int lastactivetick = 0, resetarmtick = -1;
     static int replayedticks = 0;
     static bool replaystartstate = false;
+    static int splicetextuntil = 0;
     static uint lastreplayhash[DETHASH_GROUPS];
 
     static void checkpendingreset();
@@ -633,6 +634,15 @@ namespace game
             }
             if(settingsforced) readsettings(cursettings);
             setcontrols(lastcontrols);
+            // a splice at tick T: the player loaded the state of T, so T+1 is the first tick after
+            int loads = 0;
+            loopv(a.splices) if(a.splices[i].tick == curtick-1) loads++;
+            if(loads)
+            {
+                if(loads > 1) conoutf("\f6splice at %.3f s: a state was loaded here (%d times)", (curtick-1)*SIMTICK/1000.0f, loads);
+                else conoutf("\f6splice at %.3f s: a state was loaded here", (curtick-1)*SIMTICK/1000.0f);
+                splicetextuntil = totalmillis + 1500;
+            }
             hashgamestate(h.groups);
             checkreplayhash(h);
             memcpy(lastreplayhash, h.groups, sizeof(lastreplayhash));
@@ -819,13 +829,15 @@ namespace game
         if(speedrunresetidle > 0) conoutf("\f2resetting in %.1f s - move or shoot to cancel", speedrunresetidle/1000.0f);
     });
 
-    // small countdowns under the crosshair: the hold after a load, an armed run reset
+    // small text under the crosshair: the hold after a load, an armed run reset, a splice in a
+    // replay
     void drawinputtimers(int w, int h)
     {
         string buf = "";
         if(holduntil && totalmillis - holduntil < 0) formatstring(buf, "resuming in %.1f s", (holduntil - totalmillis)/1000.0f);
         else if(resetarmtick >= 0 && speedrunresetidle > 0)
             formatstring(buf, "resetting in %.1f s", max(speedrunresetidle - (curtick - resetarmtick)*SIMTICK, 0)/1000.0f);
+        else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
         if(!buf[0]) return;
         const float scale = 0.4f;
         int tw = 0, th = 0;
