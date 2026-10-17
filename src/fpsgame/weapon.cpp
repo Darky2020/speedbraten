@@ -1082,6 +1082,39 @@ namespace game
         loopv(bouncers) if(bouncers[i]->bouncetype == BNC_GRENADE) { h.i(bouncers[i]->id); h.i(bouncers[i]->local); }
     }
 
+    enum { MAXSNAPSHOTS = 1<<16 };
+
+    // shot owners are stored as their iterdynents index
+    static void snapowner(snapio &s, fpsent *&owner)
+    {
+        int i = s.loading ? -1 : dynentindex(owner);
+        s.i(i);
+        if(s.loading) owner = (fpsent *)dynentat(i);
+    }
+
+    void snapshots(snapio &s)
+    {
+        int n = s.count(projs.length(), MAXSNAPSHOTS);
+        if(s.loading) { projs.setsize(0); loopi(n) projs.add(); }
+        loopv(projs)
+        {
+            projectile &p = projs[i];
+            s.v(p.dir); s.v(p.o); s.v(p.to); s.v(p.offset); s.f(p.speed);
+            snapowner(s, p.owner);
+            s.i(p.gun); s.n(p.local); s.i(p.offsetmillis); s.i(p.id);
+        }
+        n = s.count(bouncers.length(), MAXSNAPSHOTS);
+        if(s.loading) { clearbouncers(); loopi(n) bouncers.add(new bouncer); }
+        loopv(bouncers)
+        {
+            bouncer &b = *bouncers[i];
+            s.phys(b);
+            s.i(b.lifetime); s.i(b.bounces); s.f(b.lastyaw); s.f(b.roll); s.n(b.local);
+            snapowner(s, b.owner);
+            s.i(b.bouncetype); s.i(b.variant); s.v(b.offset); s.i(b.offsetmillis); s.f(b.offsetheight); s.i(b.id);
+        }
+    }
+
     void hashprojectiles(dethasher &h)
     {
         loopv(projs)

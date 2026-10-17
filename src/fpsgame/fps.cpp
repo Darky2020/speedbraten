@@ -1,6 +1,8 @@
 #include "game.h"
 #include "weaponstats.h"
 
+extern int lastphysframe;
+
 namespace game
 {
     bool intermission = false;
@@ -272,9 +274,17 @@ namespace game
     void hashgameclock(dethasher &h)
     {
         h.i(lastmillis); h.i(maptime); h.i(maplimit); h.i(intermission); h.i(respawnent);
-        h.i(lastslowmohealth); h.i(lastspawnattempt);
+        h.i(lastslowmohealth);
         loopi(NUMGUNS) h.i(savedammo[i]);
-        if(dethashdetail) conoutf("dethashdetail clock: lastmillis %d maptime %d maplimit %d intermission %d respawnent %d lastslowmohealth %d lastspawnattempt %d savedammo %d %d %d %d %d %d %d", lastmillis, maptime, maplimit, intermission, respawnent, lastslowmohealth, lastspawnattempt, savedammo[0], savedammo[1], savedammo[2], savedammo[3], savedammo[4], savedammo[5], savedammo[6]);
+        if(dethashdetail) conoutf("dethashdetail clock: lastmillis %d maptime %d maplimit %d intermission %d respawnent %d lastslowmohealth %d savedammo %d %d %d %d %d %d %d", lastmillis, maptime, maplimit, intermission, respawnent, lastslowmohealth, savedammo[0], savedammo[1], savedammo[2], savedammo[3], savedammo[4], savedammo[5], savedammo[6]);
+    }
+
+    void snapgameclock(snapio &s)
+    {
+        s.i(lastmillis); s.i(lastphysframe);
+        s.i(maptime); s.i(maplimit); s.n(intermission); s.i(respawnent);
+        s.i(lastslowmohealth); s.i(lastspawnattempt);
+        loopi(NUMGUNS) s.i(savedammo[i]);
     }
 
     void checkslowmo()
@@ -788,6 +798,7 @@ namespace game
         ai::clearwaypoints(true);
 
         respawnent = -1; // so we don't respawn at an old spot
+        savestatemapstart();
         mapstartspawn = true; // where the player was before the map load is meaningless here
         if(!m_mp(gamemode)) spawnplayer(player1);
         else findplayerspawn(player1, -1);
@@ -856,6 +867,15 @@ namespace game
         if(i<movables.length()) return (dynent *)movables[i];
         return NULL;
     }
+
+    // position in iterdynents order, -1 for none
+    int dynentindex(const physent *d)
+    {
+        if(d) loopi(numdynents()) if(iterdynents(i) == d) return i;
+        return -1;
+    }
+
+    dynent *dynentat(int i) { return i >= 0 ? iterdynents(i) : NULL; }
 
     bool duplicatename(fpsent *d, const char *name = NULL, const char *alt = NULL)
     {

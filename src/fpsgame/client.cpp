@@ -711,6 +711,7 @@ namespace game
 
     void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
     {
+        noteworldedit();
         if(m_edit) switch(op)
         {
             case EDIT_FLIP:

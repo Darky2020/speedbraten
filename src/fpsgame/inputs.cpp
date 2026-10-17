@@ -265,9 +265,35 @@ namespace game
         else logoutf("replay desync spreads at tick %d (%.3f s): %s", curtick, (curtick-1)*SIMTICK/1000.0f, diff.getbuf());
     }
 
+    // On load during a recording, the attempt is cut back to the restored tick, so it still
+    // replays from map start: the restored state is the state it had at that tick.
+    void snaprecorder(snapio &s)
+    {
+        int tick = curtick;
+        s.i(tick);
+        s.u(lastcontrols.yaw); s.u(lastcontrols.pitch);
+        s.n(lastcontrols.move); s.n(lastcontrols.strafe); s.n(lastcontrols.vertical);
+        s.n(lastcontrols.jumping); s.n(lastcontrols.attacking);
+        s.n(havecontrols);
+        s.bytes(lastgui);
+        s.u(lastcursorx); s.u(lastcursory); s.n(haveguistate);
+        s.i(lastzoom); s.i(zoom);
+        loopi(NUMSIMSETTINGS) s.i(cursettings[i]);
+        s.i(lastactivetick);
+        if(!s.loading || !s.ok) return;
+        curtick = tick;
+        resetarmtick = -1;
+        if(replaying || recordingoff || recording.attempts.empty()) return;
+        inputattempt &rec = recording.last();
+        while(rec.events.length() && rec.events.last().tick > curtick) DELETEA(rec.events.pop().cmd);
+        while(rec.hashes.length() && rec.hashes.last().tick > curtick) rec.hashes.pop();
+        rec.ticks = min(rec.ticks, curtick);
+    }
+
     void begintick()
     {
         if(!connected) { clearevents(pending); return; }
+        savestatetick();
         curtick++;
         tickhash h;
         if(replaying && curtick > replaycur().ticks)

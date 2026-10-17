@@ -20,6 +20,12 @@ namespace game
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
 
+    void snapruntimer(snapio &s)
+    {
+        s.i(runkind); s.i(runstate); s.i(runbase); s.i(runstart); s.i(runend); s.i(runflag);
+        s.v(runflagloc); s.f(runflagradius);
+    }
+
     static int runticks()
     {
         if(runstate < RUN_RUNNING) return 0;

@@ -14,6 +14,7 @@ namespace game
         if(!dethashfile) return;
         DELETEP(dethashfile);
         conoutf("dethash: wrote %d frames", dethashframes);
+        snapcyclereport();
     }
     COMMAND(dethashstop, "");
 
@@ -158,7 +159,8 @@ namespace game
         // with dethashdetail, each part of the world group is also hashed on its own and logged
         dethasher wents, wclock, wclient;
         uint wsleeps = 2166136261U, wphys = 2166136261U;
-        loopv(ents) wents.i(ents[i]->flags);
+        // the renderer and the sound system set EF_RENDER and EF_SOUND
+        loopv(ents) wents.i(ents[i]->flags & ~(EF_RENDER | EF_SOUND));
         hashgameclock(wclock);
         hashclientstate(wclient);
         hashsleeps(wsleeps);

@@ -153,6 +153,7 @@ CLIENT_OBJS= \
 	fpsgame/runtimer.o \
 	fpsgame/speedometer.o \
 	fpsgame/replayfile.o \
+	fpsgame/savestate.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -548,6 +549,10 @@ fpsgame/replayfile.o: fpsgame/inputs.h
 fpsgame/runtimer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/runtimer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/runtimer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/savestate.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/savestate.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/savestate.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/savestate.o: fpsgame/inputs.h
 fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

@@ -65,6 +65,18 @@ uint hashMT(uint h)
     return (h ^ uint(next)) * 16777619U;
 }
 
+void saveMT(uint *dst, int &cur)
+{
+    memcpy(dst, state, sizeof(state));
+    cur = next;
+}
+
+void loadMT(const uint *src, int cur)
+{
+    memcpy(state, src, sizeof(state));
+    next = cur;
+}
+
 uint randomMT()
 {
     int cur = next;

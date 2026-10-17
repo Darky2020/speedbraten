@@ -1386,6 +1386,9 @@ extern int listzipfiles(const char *dir, const char *ext, vector<char *> &files)
 extern void seedMT(uint seed);
 extern uint randomMT();
 extern uint hashMT(uint h);
+enum { MTSTATESIZE = 624 };
+extern void saveMT(uint *dst, int &cur);
+extern void loadMT(const uint *src, int cur);
 extern uint cosmeticrandom();
 
 extern void putint(ucharbuf &p, int n);
