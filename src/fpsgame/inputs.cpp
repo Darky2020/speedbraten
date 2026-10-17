@@ -318,6 +318,7 @@ namespace game
         copystring(a.map, name);
         a.mode = mode;
         a.flagrun = server::flagrunactive() ? 1 : 0;
+        a.race = server::racerulesactive() ? 1 : 0;
     }
 
     void playinputrun(const inputrun &src)
@@ -326,6 +327,7 @@ namespace game
         const inputattempt &first = *replaydata.attempts[0];
         server::forcenextteam(first.team);
         server::forcenextflagrun(first.flagrun);
+        server::forcenextracerules(first.race);
         replaypending = true;
         replayedticks = 0;
         memset(lastreplayhash, 0, sizeof(lastreplayhash));
@@ -392,7 +394,7 @@ namespace game
         loopvk(run.attempts)
         {
             const inputattempt &a = *run.attempts[k];
-            f->printf("attempt %d %u %d %s %s %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks);
+            f->printf("attempt %d %u %d %s %s %d %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks, a.race);
             loopv(a.events)
             {
                 const inputevent &e = a.events[i];
@@ -462,6 +464,7 @@ namespace game
                 copyunescaped(a.team, w[5]);
                 a.flagrun = w.length() > 6 ? parseint(w[6]) : 0;
                 a.ticks = w.length() > 7 ? parseint(w[7]) : 0;
+                a.race = w.length() > 8 ? parseint(w[8]) : 0;
             }
             else if(cur && w.length() >= 13 && !strcmp(w[0], "e"))
             {

@@ -41,9 +41,9 @@ namespace game
         vector<tickhash> hashes;
         uint seed, mapcrc;
         string map, team;
-        int mode, flagrun, ticks;
+        int mode, flagrun, race, ticks;
 
-        inputattempt() : seed(0), mapcrc(0), mode(0), flagrun(0), ticks(0) { map[0] = team[0] = '\0'; }
+        inputattempt() : seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0) { map[0] = team[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -70,6 +70,7 @@ namespace game
             copystring(dst.team, team);
             dst.mode = mode;
             dst.flagrun = flagrun;
+            dst.race = race;
             dst.ticks = ticks;
         }
     };
@@ -105,9 +106,9 @@ namespace game
         int version;
         uint date;
         string client, player, map;
-        int mode, flagrun, finished, runtime, ticks, maps;
+        int mode, flagrun, race, finished, runtime, ticks, maps;
 
-        replayinfo() : version(0), date(0), mode(0), flagrun(0), finished(0), runtime(0), ticks(0), maps(0)
+        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), finished(0), runtime(0), ticks(0), maps(0)
         {
             client[0] = player[0] = map[0] = '\0';
         }

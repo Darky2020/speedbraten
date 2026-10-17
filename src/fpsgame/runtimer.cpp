@@ -5,12 +5,14 @@
 // the map's own script carries the time over to the next map, load time excluded.
 // Flagrun (CTF with flagrun rules): starts once the player holds a flag and has left its
 // pickup sphere, ends when the player scores; losing the flag first re-arms it.
+// Race (ffa or coop edit with race rules): starts at every spawn, ends when the player's feet
+// touch any flag entity; entering edit mode voids the attempt.
 
 #include "game.h"
 
 namespace game
 {
-    enum { RUNTIMER_NONE = 0, RUNTIMER_SP, RUNTIMER_FLAG };
+    enum { RUNTIMER_NONE = 0, RUNTIMER_SP, RUNTIMER_FLAG, RUNTIMER_RACE };
     enum { RUN_IDLE = 0, RUN_HOLDING, RUN_RUNNING, RUN_FINISHED };
 
     static int runkind = RUNTIMER_NONE, runstate = RUN_IDLE;
@@ -40,6 +42,7 @@ namespace game
         runflag = -1;
         if(sp) { runkind = RUNTIMER_SP; runstate = RUN_RUNNING; }
         else if(local && m_checkonly(mode, M_CTF, M_PROTECT | M_HOLD) && server::flagrunactive()) { runkind = RUNTIMER_FLAG; runstate = RUN_IDLE; }
+        else if(local && server::racerulesactive()) { runkind = RUNTIMER_RACE; runstate = RUN_IDLE; }
         else { runkind = RUNTIMER_NONE; runstate = RUN_IDLE; }
     }
 
@@ -71,9 +74,39 @@ namespace game
         if(d == player1 && runkind == RUNTIMER_FLAG && runstate == RUN_RUNNING) finishrun();
     }
 
+    static const float RACEFLAGRADIUS = 16;
+
+    void runtimerspawned(fpsent *d)
+    {
+        if(d != player1 || runkind != RUNTIMER_RACE) return;
+        runstate = RUN_RUNNING;
+        runbase = runend = 0;
+        runstart = inputtick();
+    }
+
+    void runtimeredittoggled(bool on)
+    {
+        if(!on || runkind != RUNTIMER_RACE || runstate != RUN_RUNNING) return;
+        runstate = RUN_IDLE;
+        conoutf(CON_GAMEINFO, "\f3race attempt voided: edit mode used");
+    }
+
+    static void racetick()
+    {
+        if(runstate != RUN_RUNNING || player1->state != CS_ALIVE) return;
+        vec feet = player1->feetpos();
+        const vector<extentity *> &ents = entities::getents();
+        loopv(ents) if(ents[i]->type == FLAG && feet.dist(ents[i]->o) < RACEFLAGRADIUS)
+        {
+            finishrun();
+            return;
+        }
+    }
+
     // called at the end of every simulated tick
     void runtimertick()
     {
+        if(runkind == RUNTIMER_RACE) { racetick(); return; }
         if(runkind != RUNTIMER_FLAG || (runstate != RUN_HOLDING && runstate != RUN_RUNNING)) return;
         if(!flagheldby(runflag, player1)) { runstate = RUN_IDLE; return; }
         if(runstate == RUN_HOLDING && player1->feetpos().dist(runflagloc) >= runflagradius)

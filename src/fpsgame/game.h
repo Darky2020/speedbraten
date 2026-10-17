@@ -892,6 +892,8 @@ namespace game
     extern void runtimerflagtaken(fpsent *d, int flag, const vec &loc, float radius);
     extern void runtimerflagscored(fpsent *d);
     extern void runtimertick();
+    extern void runtimerspawned(fpsent *d);
+    extern void runtimeredittoggled(bool on);
     extern void drawruntimer(int w, int h);
     extern void drawspeedometer(int w, int h);
     extern bool flagheldby(int flag, fpsent *d);
@@ -1280,6 +1282,8 @@ namespace server
     extern void forcenextteam(const char *team);
     extern bool flagrunactive();
     extern void forcenextflagrun(int on);
+    extern bool racerulesactive();
+    extern void forcenextracerules(int on);
     extern void forcegamespeed(int speed);
     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
     extern int msgsizelookup(int msg);

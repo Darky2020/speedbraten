@@ -541,6 +541,15 @@ namespace server
 
     bool canspawnitem(int type) { return !m_noitems && (type>=I_SHELLS && type<=I_QUAD && (!m_noammo || type<I_SHELLS || type>I_CARTRIDGES)); }
 
+    // Race rules for ffa and coop edit: picked-up items are back at once, your own shots do
+    // no damage to you (they still push you) and there is no time limit. Latched at each map
+    // change.
+    VAR(racerules, 0, 0, 1);
+    static bool raceruleson = false;
+    static int nextracerules = -1;
+    bool racerulesactive() { return raceruleson; }
+    void forcenextracerules(int on) { nextracerules = on; }
+
     int spawntime(int type)
     {
         if(m_classicsp) return INT_MAX;
@@ -590,7 +599,7 @@ namespace server
             return false;
         }
         sents[i].spawned = false;
-        sents[i].spawntime = spawntime(sents[i].type);
+        sents[i].spawntime = raceruleson ? 1 : spawntime(sents[i].type);
         sendf(-1, 1, "ri3", N_ITEMACC, i, sender);
         ci->state.pickup(sents[i].type);
         return true;
@@ -1778,8 +1787,10 @@ namespace server
         // before N_MAPCHANGE: a local client handles that message at once and reads this
         flagrunon = m_ctf_only && (nextflagrun >= 0 ? nextflagrun : flagrun) != 0;
         nextflagrun = -1;
+        raceruleson = (gamemode == 0 || gamemode == 1) && (nextracerules >= 0 ? nextracerules : racerules) != 0;
+        nextracerules = -1;
         gamemillis = 0;
-        gamelimit = gamelimitnextmatch;
+        gamelimit = raceruleson ? INT_MAX/2 : gamelimitnextmatch;
         interm = 0;
         nextexceeded = 0;
         copystring(smapname, s);
@@ -1818,7 +1829,7 @@ namespace server
 
         sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
 
-        if(m_timed && smapname[0]) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
+        if(m_timed && smapname[0] && !raceruleson) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
         loopv(clients)
         {
             clientinfo *ci = clients[i];
@@ -2017,6 +2028,7 @@ namespace server
     void dodamage(clientinfo *target, clientinfo *actor, int damage, int gun, const vec &hitpush = vec(0, 0, 0))
     {
         gamestate &ts = target->state;
+        if(target==actor && raceruleson) damage = 0;
         ts.dodamage(damage);
         if(target!=actor && !isteam(target->team, actor->team)) actor->state.damage += damage;
         sendf(-1, 1, "ri6", N_DAMAGE, target->clientnum, actor->clientnum, damage, ts.armour, ts.health);

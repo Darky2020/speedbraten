@@ -276,6 +276,7 @@ namespace game
 
     void edittoggled(bool on)
     {
+        runtimeredittoggled(on);
         addmsg(N_EDITMODE, "ri", on ? 1 : 0);
         if(player1->state==CS_DEAD) deathstate(player1, true);
         else if(player1->state==CS_EDITING && player1->editstate==CS_DEAD) showscores(false);
@@ -1599,6 +1600,7 @@ namespace game
                     showscores(false);
                     lasthit = 0;
                 }
+                runtimerspawned(s);
                 if(cmode) cmode->respawned(s);
 				ai::spawned(s);
                 addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);

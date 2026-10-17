@@ -3,9 +3,9 @@
 //
 // Layout (all integers little endian, "var" = unsigned LEB128, "svar" = zigzag LEB128):
 //   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
-//   var finished, var runtime ms, var ticks, var maps, str first map
-//   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun, var ticks,
-//            var events, events, var hashes, hashes
+//   [v3+: var race], var finished, var runtime ms, var ticks, var maps, str first map
+//   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
+//            [v3+: var race], var ticks, var events, events, var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
 //            (command), u32 cursor x, u32 cursor y, str (gui)
@@ -18,7 +18,8 @@
 namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
-    enum { REPLAYVERSION = 2, REPLAYHASHSTEP = 10 };
+    // REPLAYSIMVERSION: oldest version recorded with the current simulation
+    enum { REPLAYVERSION = 3, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -96,6 +97,7 @@ namespace game
         w.str(info.player);
         w.svar(info.mode);
         w.var(info.flagrun);
+        w.var(info.race);
         w.var(info.finished);
         w.var(info.runtime);
         w.var(info.ticks);
@@ -110,6 +112,7 @@ namespace game
             w.str(a.team);
             w.svar(a.mode);
             w.var(a.flagrun);
+            w.var(a.race);
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -170,6 +173,7 @@ namespace game
         r.str(info.player, sizeof(info.player));
         info.mode = r.svar();
         info.flagrun = r.var();
+        info.race = info.version >= 3 ? r.var() : 0;
         info.finished = r.var();
         info.runtime = r.var();
         info.ticks = r.var();
@@ -177,8 +181,7 @@ namespace game
         r.str(info.map, sizeof(info.map));
         if(!r.ok) return false;
         if(!run) return true;
-        // version 1 was simulated with different float maths
-        if(info.version < REPLAYVERSION) conoutf(CON_ERROR, "replay %s was made with an older build: it will likely desync", file);
+        if(info.version < REPLAYSIMVERSION) conoutf(CON_ERROR, "replay %s was made with an older build: it will likely desync", file);
         run->clear();
         loopk(info.maps)
         {
@@ -189,6 +192,7 @@ namespace game
             r.str(a.team, sizeof(a.team));
             a.mode = r.svar();
             a.flagrun = r.var();
+            a.race = info.version >= 3 ? r.var() : 0;
             a.ticks = r.var();
             int events = r.var(), tick = 0;
             loopi(events)
@@ -286,6 +290,7 @@ namespace game
         copystring(info.player, player1->name);
         info.mode = first.mode;
         info.flagrun = first.flagrun;
+        info.race = first.race;
         info.finished = finished ? 1 : 0;
         info.runtime = finished ? runtime : 0;
         info.ticks = 0;
@@ -398,6 +403,7 @@ namespace game
         else if(!strcmp(field, "maps")) intret(r.maps);
         else if(!strcmp(field, "mode")) result(server::modename(r.mode, "?"));
         else if(!strcmp(field, "flagrun")) intret(r.flagrun);
+        else if(!strcmp(field, "race")) intret(r.race);
         else if(!strcmp(field, "player")) result(r.player);
         else if(!strcmp(field, "finished")) intret(r.finished);
         else if(!strcmp(field, "runtime"))
@@ -419,7 +425,7 @@ namespace game
             result(buf);
         }
         else if(!strcmp(field, "kept")) intret(e.kept ? 1 : 0);
-        else if(!strcmp(field, "outdated")) intret(r.version < REPLAYVERSION ? 1 : 0);
+        else if(!strcmp(field, "outdated")) intret(r.version < REPLAYSIMVERSION ? 1 : 0);
         else result("");
     });
 

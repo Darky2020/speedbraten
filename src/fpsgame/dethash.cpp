@@ -59,6 +59,23 @@ namespace game
         conoutf("player ammo%s", ammo);
     });
     ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
+    // moves player1 onto the n-th entity of the given type; not recorded, so a replay of the
+    // attempt does not reproduce it
+    ICOMMAND(harnessgotoent, "ii", (int *type, int *n),
+    {
+        const vector<extentity *> &ents = entities::getents();
+        int k = 0;
+        loopv(ents) if(ents[i]->type == *type && k++ == *n)
+        {
+            player1->o = player1->newpos = ents[i]->o;
+            player1->o.z += player1->eyeheight;
+            player1->newpos.z += player1->eyeheight;
+            player1->vel = vec(0, 0, 0);
+            conoutf("harnessgotoent: type %d #%d at %.1f %.1f %.1f", *type, *n, ents[i]->o.x, ents[i]->o.y, ents[i]->o.z);
+            return;
+        }
+        conoutf(CON_ERROR, "harnessgotoent: no entity #%d of type %d", *n, *type);
+    });
     ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
 

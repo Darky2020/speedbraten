@@ -26,6 +26,9 @@ Open **speedrun..** in the main menu for the settings.
   out of its base and end when you score.
 - **Flagrun rules** for offline CTF: instant flag return and respawn, either flag scores, no
   capture limit.
+- **Race rules** for offline ffa and coop edit: the timer starts at every spawn and stops when
+  you touch any flag, items respawn at once, and your own shots push you without damaging you.
+  Entering edit mode voids the attempt.
 - **Replays** of every run, saved automatically. The replay browser lists, filters, sorts,
   renames, keeps and plays them. A replay checks the game state while it plays, so a replay
   that does not match its recording says so ("replay desync at tick ...").
