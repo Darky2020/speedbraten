@@ -46,12 +46,14 @@ namespace game
         vector<inputevent> events;
         vector<tickhash> hashes;
         vector<inputsetting> settings; // values at the start of the attempt; empty before v5
+        vector<uchar> snapshot;          // saved state the attempt starts from instead of map start
+        int starttick;                   // tick of the snapshot, 0 without one
         uint seed, mapcrc;
         string map, team;
         int mode, flagrun, race, ticks;
         int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS for replays made before v4
 
-        inputattempt() : seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
+        inputattempt() : starttick(0), seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -60,6 +62,8 @@ namespace game
             events.setsize(0);
             hashes.setsize(0);
             settings.setsize(0);
+            snapshot.setsize(0);
+            starttick = 0;
         }
 
         bool empty() const { return events.empty(); }
@@ -74,6 +78,8 @@ namespace game
             }
             dst.hashes = hashes;
             dst.settings = settings;
+            dst.snapshot = snapshot;
+            dst.starttick = starttick;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             copystring(dst.map, map);
@@ -126,6 +132,7 @@ namespace game
     };
 
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);
+    extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
     extern void playinputrun(const inputrun &run);
     extern bool inputreplayactive();

@@ -183,7 +183,19 @@ namespace game
 
     enum { SNAP_NONE = 0, SNAP_SAVE, SNAP_LOAD, SNAP_REPLAY };
     static vector<uchar> savedstate;
+    static int savedtick = 0;
     static int pendingsnap = SNAP_NONE;
+
+    const vector<uchar> &savedstatedata(int &tick) { tick = savedtick; return savedstate; }
+
+    // starts a replay from a saved state: the player's own sleeps keep counting from now
+    bool restorereplaystart(vector<uchar> &buf)
+    {
+        int oldmillis = lastmillis;
+        if(!readsnapshot(buf)) return false;
+        shiftusersleeps(lastmillis - oldmillis);
+        return true;
+    }
 
     static bool restoresavedstate() { return readsnapshot(savedstate); }
     static int cycleticks = 0, cyclemismatches = 0;
@@ -219,7 +231,7 @@ namespace game
         pendingsnap = SNAP_NONE;
         if(op == SNAP_SAVE)
         {
-            if(writesnapshot(savedstate)) conoutf("state saved at tick %d (%d bytes)", inputtick(), savedstate.length());
+            if(writesnapshot(savedstate)) { savedtick = inputtick(); conoutf("state saved at tick %d (%d bytes)", inputtick(), savedstate.length()); }
             else conoutf(CON_ERROR, "%s", snapshotrefusal());
         }
         else if(op == SNAP_LOAD)

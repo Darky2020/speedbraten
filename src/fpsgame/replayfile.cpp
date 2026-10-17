@@ -6,6 +6,7 @@
 //   [v3+: var race], var finished, var runtime ms, var ticks, var maps, str first map
 //   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
 //            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
+//            [v6+: var snapshot length, snapshot bytes, var start tick (with a snapshot)],
 //            var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
@@ -20,7 +21,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 5, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 6, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -116,6 +117,8 @@ namespace game
             w.var(a.race);
             w.var(a.settings.length());
             loopv(a.settings) { w.str(a.settings[i].name); w.svar(a.settings[i].value); }
+            w.var(a.snapshot.length());
+            if(a.snapshot.length()) { w.buf.put(a.snapshot.getbuf(), a.snapshot.length()); w.var(a.starttick); }
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -209,6 +212,14 @@ namespace game
                     s.value = r.svar();
                 }
             }
+            if(info.version >= 6)
+            {
+                uint len = r.var();
+                if(len > uint(r.end - r.p)) { r.ok = false; break; }
+                a.snapshot.put(r.p, len);
+                r.p += len;
+                if(len) a.starttick = r.var();
+            }
             a.ticks = r.var();
             int events = r.var(), tick = 0;
             loopi(events)
@@ -299,11 +310,9 @@ namespace game
         files.deletearrays();
     }
 
-    void saverunreplay(const inputrun &run, bool finished, int runtime)
+    void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info)
     {
-        if(!replayautosave || run.empty()) return;
         const inputattempt &first = *run.attempts[0];
-        replayinfo info;
         info.version = REPLAYVERSION;
         info.date = uint(time(NULL));
         copystring(info.client, "speedbraten");
@@ -314,8 +323,16 @@ namespace game
         info.finished = finished ? 1 : 0;
         info.runtime = finished ? runtime : 0;
         info.ticks = 0;
-        loopv(run.attempts) info.ticks += run.attempts[i]->ticks;
+        loopv(run.attempts) info.ticks += run.attempts[i]->ticks - run.attempts[i]->starttick;
         copystring(info.map, first.map);
+    }
+
+    void saverunreplay(const inputrun &run, bool finished, int runtime)
+    {
+        if(!replayautosave || run.empty()) return;
+        const inputattempt &first = *run.attempts[0];
+        replayinfo info;
+        fillreplayinfo(run, finished, runtime, info);
 
         time_t t = time(NULL);
         tm *lt = localtime(&t);

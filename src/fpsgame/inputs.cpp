@@ -18,6 +18,7 @@ namespace game
     static bool runsaved = false;
     static int lastactivetick = 0, resetarmtick = -1;
     static int replayedticks = 0;
+    static bool replaystartstate = false;
     static uint lastreplayhash[DETHASH_GROUPS];
 
     static void checkpendingreset();
@@ -318,6 +319,25 @@ namespace game
     void begintick()
     {
         if(!connected) { clearevents(pending); return; }
+        if(replaystartstate && replaying)
+        {
+            replaystartstate = false;
+            inputattempt &a = replaycur();
+            if(!restorereplaystart(a.snapshot))
+            {
+                conoutf(CON_ERROR, "the replay's saved state does not fit this map or build: replay stopped");
+                replaying = false;
+                recordingoff = true;
+                restoresettings();
+            }
+            else
+            {
+                replaypos = 0;
+                while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick) replaypos++;
+                replayhashpos = 0;
+            }
+        }
+        replaystartstate = false;
         savestatetick();
         curtick++;
         tickhash h;
@@ -459,6 +479,7 @@ namespace game
             seedattempt(replaycur());
             restoresettings();
             forcesettings(replaycur());
+            replaystartstate = !replaycur().snapshot.empty();
             return;
         }
         if(replaying)
@@ -468,6 +489,7 @@ namespace game
                 replayattempt++;
                 seedattempt(replaycur());
                 forcesettings(replaycur());
+                replaystartstate = !replaycur().snapshot.empty();
                 return;
             }
             replaying = false;
@@ -548,6 +570,37 @@ namespace game
         playinputrun(src);
     });
 
+    // Harness: writes the current attempt (of the recording, or of the replay that is playing)
+    // as a replay that starts from the state saved with savestate: the state, then the input
+    // and hashes after its tick.
+    static void inputsavefromstate(const char *file)
+    {
+        int tick = 0;
+        const vector<uchar> &state = savedstatedata(tick);
+        const inputattempt *src = replaying ? &replaycur() : (recording.attempts.empty() ? NULL : &recording.last());
+        if(state.empty() || !src || src->ticks < tick)
+        {
+            conoutf(CON_ERROR, "inputsavefromstate: no saved state in the current attempt");
+            return;
+        }
+        inputrun run;
+        inputattempt &a = run.add();
+        src->copyto(a);
+        a.snapshot = state;
+        a.starttick = tick;
+        int n = 0;
+        loopv(a.events) if(a.events[i].tick <= tick) { DELETEA(a.events[i].cmd); n++; } else break;
+        a.events.remove(0, n);
+        n = 0;
+        loopv(a.hashes) if(a.hashes[i].tick <= tick) n++; else break;
+        a.hashes.remove(0, n);
+        replayinfo info;
+        fillreplayinfo(run, false, 0, info);
+        if(writereplay(file, run, info)) conoutf("inputsavefromstate: wrote %s (ticks %d-%d, %d events)", file, tick+1, a.ticks, a.events.length());
+        else conoutf(CON_ERROR, "inputsavefromstate: could not write %s", file);
+    }
+    COMMAND(inputsavefromstate, "s");
+
     // Debug text dump of a run (0 = current, 1 = previous), readable by inputload.
     ICOMMAND(inputdump, "si", (char *file, int *which),
     {
@@ -562,6 +615,14 @@ namespace game
             const inputattempt &a = *run.attempts[k];
             f->printf("attempt %d %u %d %s %s %d %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks, a.race);
             loopv(a.settings) f->printf("s %s %d\n", escapestring(a.settings[i].name), a.settings[i].value);
+            // the saved state as hex, 1024 bytes per line
+            if(a.snapshot.length()) f->printf("snap %d\n", a.starttick);
+            for(int pos = 0; pos < a.snapshot.length(); pos += 1024)
+            {
+                f->printf("sb ");
+                for(int j = pos; j < min(pos + 1024, a.snapshot.length()); j++) f->printf("%02x", a.snapshot[j]);
+                f->printf("\n");
+            }
             loopv(a.events)
             {
                 const inputevent &e = a.events[i];
@@ -634,6 +695,16 @@ namespace game
                 a.flagrun = w.length() > 6 ? parseint(w[6]) : 0;
                 a.ticks = w.length() > 7 ? parseint(w[7]) : 0;
                 a.race = w.length() > 8 ? parseint(w[8]) : 0;
+            }
+            else if(cur && w.length() >= 2 && !strcmp(w[0], "snap")) cur->starttick = parseint(w[1]);
+            else if(cur && w.length() >= 2 && !strcmp(w[0], "sb"))
+            {
+                for(const char *c = w[1]; c[0] && c[1]; c += 2)
+                {
+                    char hex[3];
+                    hex[0] = c[0]; hex[1] = c[1]; hex[2] = '\0';
+                    cur->snapshot.add(uchar(strtoul(hex, NULL, 16)));
+                }
             }
             else if(cur && w.length() >= 3 && !strcmp(w[0], "s"))
             {

@@ -953,6 +953,8 @@ namespace game
     extern void savestatemapstart();
     extern uint snapshotdigest();
     extern void snapcyclereport();
+    extern const vector<uchar> &savedstatedata(int &tick);
+    extern bool restorereplaystart(vector<uchar> &buf);
 
     // dethash
     // the first DETHASH_LEGACYGROUPS groups are hashed exactly as in replay versions 1-3

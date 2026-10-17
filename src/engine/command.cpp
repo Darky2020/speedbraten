@@ -3567,6 +3567,12 @@ void checksleep(int millis)
     }
 }
 
+// moves the player's own sleeps (not the map's) with the game clock
+void shiftusersleeps(int delta)
+{
+    loopv(sleepcmds) if(!(sleepcmds[i].flags&IDF_OVERRIDDEN)) sleepcmds[i].millis += delta;
+}
+
 void rebasesleeps(int delta)
 {
     loopv(sleepcmds) sleepcmds[i].millis += delta;
