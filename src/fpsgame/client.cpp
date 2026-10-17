@@ -124,6 +124,7 @@ namespace game
 
     bool flagrunrules() { return connected && !remote && server::flagrunactive(); }
     ICOMMAND(flagrunrules, "", (), intret(flagrunrules() ? 1 : 0));
+    bool racerules() { return connected && !remote && server::racerulesactive(); }
     int sessionid = 0, mastermode = MM_OPEN, gamespeed = 100;
     string servdesc = "", servauth = "", connectpass = "";
 

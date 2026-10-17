@@ -74,7 +74,7 @@ namespace game
         if(d == player1 && runkind == RUNTIMER_FLAG && runstate == RUN_RUNNING) finishrun();
     }
 
-    static const float RACEFLAGRADIUS = 16;
+    static const float RACEFLAGRADIUS = 24;
 
     void runtimerspawned(fpsent *d)
     {

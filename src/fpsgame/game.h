@@ -899,6 +899,7 @@ namespace game
     extern bool flagheldby(int flag, fpsent *d);
     extern bool flagspawnloc(bool own, vec &loc);
     extern bool flagrunrules();
+    extern bool racerules();
     extern bool mapchained(int mode);
     extern void gunselect(int gun, fpsent *d);
     extern void weaponswitch(fpsent *d);
