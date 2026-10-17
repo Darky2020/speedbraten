@@ -35,17 +35,97 @@ namespace game
     enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
     static void readsettings(int *vals);
 
-    // A saved state with the setting values in effect when it was taken.
+    // A saved state with the setting values in effect when it was taken, and the branch of the
+    // recording it was taken on.
     struct statestart
     {
         vector<uchar> state;
-        int tick;
+        int tick, branch;
         int settings[NUMSIMSETTINGS];
 
-        statestart() : tick(-1) {}
+        statestart() : tick(-1), branch(-1) {}
         bool valid() const { return tick >= 0; }
-        void clear() { state.setsize(0); tick = -1; }
+        void clear() { state.setsize(0); tick = branch = -1; }
     };
+
+    // Segmented recordings form a tree: every live load starts a new branch at the loaded
+    // state's tick, on the branch that state was taken on. A branch holds the input recorded
+    // after its fork; the recording of the current attempt is always the current branch's
+    // whole chain, so a state's history is its own chain however many loads came between.
+    struct inputbranch
+    {
+        int parent, forktick, discarded;
+        vector<inputevent> events;
+        vector<tickhash> hashes;
+
+        inputbranch(int parent, int forktick, int discarded) : parent(parent), forktick(forktick), discarded(discarded) {}
+        ~inputbranch() { loopv(events) DELETEA(events[i].cmd); }
+    };
+    static vector<inputbranch *> branches;
+    static int curbranch = -1;
+
+    static void resetbranches()
+    {
+        branches.deletecontents();
+        branches.add(new inputbranch(-1, 0, 0));
+        curbranch = 0;
+    }
+
+    // true if tick of branch b lies on the chain that ends at tick headtick of branch head
+    static bool onchain(int b, int tick, int head, int headtick)
+    {
+        for(int c = head, limit = headtick; c >= 0; limit = branches[c]->forktick, c = branches[c]->parent)
+            if(c == b) return tick <= limit;
+        return false;
+    }
+
+    // last tick shared by the chains that end at (a, atick) and (b, btick)
+    static int commontick(int a, int atick, int b, int btick)
+    {
+        for(int c = a, limit = atick; c >= 0; limit = branches[c]->forktick, c = branches[c]->parent)
+            for(int d = b, dlimit = btick; d >= 0; dlimit = branches[d]->forktick, d = branches[d]->parent)
+                if(c == d) return min(limit, dlimit);
+        return 0;
+    }
+
+    static void addchain(inputattempt &a, int b, int limit)
+    {
+        if(b < 0) return;
+        const inputbranch &br = *branches[b];
+        addchain(a, br.parent, br.forktick);
+        loopv(br.events) if(br.events[i].tick <= limit)
+        {
+            inputevent &e = a.events.add(br.events[i]);
+            if(e.cmd) e.cmd = newstring(e.cmd);
+        }
+        loopv(br.hashes) if(br.hashes[i].tick <= limit) a.hashes.add(br.hashes[i]);
+        if(br.parent >= 0)
+        {
+            inputsplice &sp = a.splices.add();
+            sp.tick = br.forktick;
+            sp.discarded = br.discarded;
+        }
+    }
+
+    // Moves the current branch's input out of the recording into the tree, starts a branch at
+    // tick of branch from, and makes the recording that branch's chain.
+    static void forkrecording(int from, int tick)
+    {
+        if(recording.attempts.empty() || curbranch < 0) return;
+        inputattempt &rec = recording.last();
+        inputbranch &cur = *branches[curbranch];
+        loopv(rec.events) if(rec.events[i].tick > cur.forktick) { cur.events.add(rec.events[i]); rec.events[i].cmd = NULL; }
+        loopv(rec.hashes) if(rec.hashes[i].tick > cur.forktick) cur.hashes.add(rec.hashes[i]);
+        int discarded = rec.ticks - commontick(curbranch, rec.ticks, from, tick);
+        curbranch = branches.length();
+        branches.add(new inputbranch(from, tick, max(discarded, 0)));
+        loopv(rec.events) DELETEA(rec.events[i].cmd);
+        rec.events.setsize(0);
+        rec.hashes.setsize(0);
+        rec.splices.setsize(0);
+        addchain(rec, curbranch, tick);
+        rec.ticks = tick;
+    }
 
     // The attempt from a saved state on: the state, then the events and hashes after its tick.
     static void cutattempt(inputattempt &a, const inputattempt &src, const statestart &from)
@@ -99,6 +179,43 @@ namespace game
         return false;
     }
 
+    // A live load keeps the keys the player holds now: the state's movement and attack belong
+    // to the moment it was saved, and the keys pressed then are not held any more.
+    static bool loadlivestate(statestart &st)
+    {
+        fpsent &d = *player1;
+        bool keys[6] = { d.k_left, d.k_right, d.k_forward, d.k_backward, d.k_up, d.k_down };
+        schar move = d.move, strafe = d.strafe, vertical = d.vertical;
+        bool jumping = d.jumping, attacking = d.attacking;
+        if(!restorestate(st.state)) return false;
+        if(!replaying && !recordingoff) forkrecording(st.branch, st.tick);
+        if(lifestart.valid() && !onchain(lifestart.branch, lifestart.tick, st.branch, st.tick)) lifestart.clear();
+        while(autostates.length() && autostates.last()->tick > st.tick) delete autostates.pop();
+        d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
+        d.move = move; d.strafe = strafe; d.vertical = vertical;
+        d.jumping = jumping; d.attacking = attacking;
+        return true;
+    }
+
+    static void loadautostate();
+
+    bool loadsavedstate() { return savedstart.valid() && loadlivestate(savedstart); }
+
+    // the save and load requests of savestate, loadstate and loadautostate, at a tick boundary
+    void runstateops()
+    {
+        if(!connected) return;
+        if(savestatetick())
+        {
+            int tick = 0;
+            savedstart.state = savedstatedata(tick);
+            savedstart.tick = tick;
+            savedstart.branch = curbranch;
+            readsettings(savedstart.settings);
+        }
+        if(autoloadpending) { autoloadpending = false; loadautostate(); }
+    }
+
     static bool havebots()
     {
         loopv(players) if(players[i]->ai) return true;
@@ -111,6 +228,7 @@ namespace game
         lifestart.clear();
         if(!replaylifeonly || havebots() || !takesnapshot(lifestart.state)) { lifestart.clear(); return; }
         lifestart.tick = curtick;
+        lifestart.branch = curbranch;
         readsettings(lifestart.settings);
     }
 
@@ -140,6 +258,7 @@ namespace game
         statestart *st = new statestart;
         if(!takesnapshot(st->state)) { delete st; return; }
         st->tick = curtick;
+        st->branch = curbranch;
         readsettings(st->settings);
         autostates.add(st);
         while(autostates.length() > autostatecount) delete autostates.remove(0);
@@ -153,7 +272,7 @@ namespace game
         for(int i = autostates.length()-1; i >= 0; i--) if(autostates[i]->tick <= curtick - margin)
         {
             int back = curtick - autostates[i]->tick;
-            if(restorestate(autostates[i]->state))
+            if(loadlivestate(*autostates[i]))
             {
                 conoutf("auto state loaded (%.1f s back)", back*SIMTICK/1000.0f);
                 holdafterload();
@@ -162,7 +281,7 @@ namespace game
         }
         conoutf(CON_ERROR, "no earlier auto state");
     }
-    ICOMMAND(loadautostate, "", (), autoloadpending = true);
+    ICOMMAND(loadautostate, "", (), { autoloadpending = true; if(!insimtick) runstateops(); });
 
     // Writes the current run as unfinished, once, unless it is a replay or was saved finished;
     // per life, the current life if its run started.
@@ -418,21 +537,6 @@ namespace game
         if(!s.loading || !s.ok) return;
         curtick = tick;
         resetarmtick = -1;
-        if(lifestart.tick > curtick) lifestart.clear();
-        while(autostates.length() && autostates.last()->tick > curtick) delete autostates.pop();
-        if(replaying || recordingoff || recording.attempts.empty()) return;
-        inputattempt &rec = recording.last();
-        int discarded = rec.ticks - curtick;
-        while(rec.events.length() && rec.events.last().tick > curtick) DELETEA(rec.events.pop().cmd);
-        while(rec.hashes.length() && rec.hashes.last().tick > curtick) rec.hashes.pop();
-        while(rec.splices.length() && rec.splices.last().tick > curtick) rec.splices.pop();
-        rec.ticks = min(rec.ticks, curtick);
-        if(discarded > 0)
-        {
-            inputsplice &sp = rec.splices.add();
-            sp.tick = curtick;
-            sp.discarded = discarded;
-        }
     }
 
     // Restores a state saved earlier in the current recording, or in the replay that is
@@ -483,14 +587,8 @@ namespace game
         }
         replaystartstate = false;
         if(lifepending) takelifestate();
-        if(savestatetick())
-        {
-            int tick = 0;
-            savedstart.state = savedstatedata(tick);
-            savedstart.tick = tick;
-            readsettings(savedstart.settings);
-        }
-        if(autoloadpending) { autoloadpending = false; loadautostate(); }
+        runstateops();
+        snapcycletick();
         takeautostate();
         curtick++;
         tickhash h;
@@ -620,6 +718,8 @@ namespace game
         lifepending = lifesaved = false;
         autostates.deletecontents();
         autoloadpending = false;
+        savedstart.clear();
+        resetbranches();
         clearevents(pending);
         curtick = 0;
         havecontrols = haveguistate = recordingoff = false;

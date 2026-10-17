@@ -249,7 +249,7 @@ namespace game
         {
             if(savedstate.empty()) conoutf(CON_ERROR, "no saved state");
             else if(inputreplayactive()) conoutf(CON_ERROR, "savestates do not work during a replay");
-            else if(readsnapshot(savedstate)) { conoutf("state loaded (tick %d)", inputtick()); holdafterload(); }
+            else if(loadsavedstate()) { conoutf("state loaded (tick %d)", inputtick()); holdafterload(); }
             else if(snapshotrefusal()) conoutf(CON_ERROR, "%s", snapshotrefusal());
             else conoutf(CON_ERROR, "the saved state belongs to another map, mode or set of bots");
         }
@@ -259,12 +259,20 @@ namespace game
             else if(inputreplayfromstate(restoresavedstate)) conoutf("state loaded (tick %d), replaying the recorded input from there", inputtick());
             else conoutf(CON_ERROR, "could not replay from the saved state");
         }
-        if(snapcycle) cyclestate();
         return saved;
     }
 
-    ICOMMAND(savestate, "", (), pendingsnap = SNAP_SAVE);
-    ICOMMAND(loadstate, "", (), pendingsnap = SNAP_LOAD);
+    void snapcycletick() { if(snapcycle) cyclestate(); }
+
+    // Between ticks the game is at a tick boundary, so a request from a key runs at once (also
+    // while the game holds after a load); scripts running inside a tick wait for the next one.
+    static void requestsnap(int op)
+    {
+        pendingsnap = op;
+        if(!insimtick) runstateops();
+    }
+    ICOMMAND(savestate, "", (), requestsnap(SNAP_SAVE));
+    ICOMMAND(loadstate, "", (), requestsnap(SNAP_LOAD));
     // harness: rewinds to the saved state and replays the current recording from it
     ICOMMAND(loadstatereplay, "", (), pendingsnap = SNAP_REPLAY);
     void snapcyclereport()

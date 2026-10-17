@@ -952,6 +952,9 @@ namespace game
     extern bool takesnapshot(vector<uchar> &buf);
     extern bool restorestate(vector<uchar> &buf);
     extern void holdafterload();
+    extern void runstateops();
+    extern void snapcycletick();
+    extern bool loadsavedstate();
     extern void drawinputtimers(int w, int h);
     extern void noteworldedit();
     extern void savestatemapstart();

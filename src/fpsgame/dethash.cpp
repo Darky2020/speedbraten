@@ -45,6 +45,11 @@ namespace game
         player1->resetinterp();
     });
     ICOMMAND(harnessstate, "", (), intret(player1->state));
+    ICOMMAND(harnessinput, "", (),
+    {
+        defformatstring(res, "move=%d strafe=%d attacking=%d", player1->move, player1->strafe, player1->attacking ? 1 : 0);
+        result(res);
+    });
     // prints every player1 field that goes into the state hash
     ICOMMAND(harnessplayer, "", (),
     {
