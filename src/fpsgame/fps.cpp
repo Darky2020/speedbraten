@@ -269,6 +269,14 @@ namespace game
 
     static int lastslowmohealth = 0;
 
+    void hashgameclock(dethasher &h)
+    {
+        h.i(lastmillis); h.i(maptime); h.i(maplimit); h.i(intermission); h.i(respawnent);
+        h.i(lastslowmohealth); h.i(lastspawnattempt);
+        loopi(NUMGUNS) h.i(savedammo[i]);
+        if(dethashdetail) conoutf("dethashdetail clock: lastmillis %d maptime %d maplimit %d intermission %d respawnent %d lastslowmohealth %d lastspawnattempt %d savedammo %d %d %d %d %d %d %d", lastmillis, maptime, maplimit, intermission, respawnent, lastslowmohealth, lastspawnattempt, savedammo[0], savedammo[1], savedammo[2], savedammo[3], savedammo[4], savedammo[5], savedammo[6]);
+    }
+
     void checkslowmo()
     {
         server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
@@ -701,6 +709,7 @@ namespace game
     void startgame()
     {
         lasthit = lastspawnattempt = lastslowmohealth = 0;
+        memset(savedammo, 0, sizeof(savedammo));
 
         // monsters and movables that overlap at their map spots get nudged randomly; offline,
         // use a per-map sequence so every attempt on a map starts with them in the same places

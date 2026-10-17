@@ -399,6 +399,8 @@ extern void avoidcollision(physent *d, const vec &dir, physent *obstacle, float 
 extern bool overlapsdynent(const vec &o, float radius);
 extern bool movecamera(physent *pl, const vec &dir, float dist, float stepdist);
 extern void physicsframe();
+extern void hashphysicsstate(uint &h);
+extern void hashsleeps(uint &h);
 extern void fakephysicsframe();
 extern void dropenttofloor(entity *e);
 extern bool droptofloor(vec &o, float radius, float height);

@@ -42,8 +42,9 @@ namespace game
         uint seed, mapcrc;
         string map, team;
         int mode, flagrun, race, ticks;
+        int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS for replays made before v4
 
-        inputattempt() : seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0) { map[0] = team[0] = '\0'; }
+        inputattempt() : seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -71,6 +72,7 @@ namespace game
             dst.mode = mode;
             dst.flagrun = flagrun;
             dst.race = race;
+            dst.hashgroups = hashgroups;
             dst.ticks = ticks;
         }
     };

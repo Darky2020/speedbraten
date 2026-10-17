@@ -867,9 +867,14 @@ namespace game
     extern void removeweapons(fpsent *owner);
     extern void updateweapons(int curtime);
     extern void hashprojectiles(dethasher &h);
+    extern void hashshotids(dethasher &h);
+    extern void hashclientstate(dethasher &h);
+    extern void hashgameclock(dethasher &h);
+    extern int dethashdetail;
 
     // dethash
-    enum { DETHASH_GROUPS = 6 };
+    // the first DETHASH_LEGACYGROUPS groups are hashed exactly as in replay versions 1-3
+    enum { DETHASH_GROUPS = 9, DETHASH_LEGACYGROUPS = 6 };
     extern void hashgamestate(uint groups[DETHASH_GROUPS]);
     extern void dethashframe();
 
@@ -974,6 +979,7 @@ namespace server
 
         virtual bool flush(clientinfo *ci, int fmillis);
         virtual void process(clientinfo *ci) {}
+        virtual void hash(dethasher &h) const { h.i(0); }
 
         virtual bool keepable() const { return false; }
     };
@@ -981,6 +987,7 @@ namespace server
 
     struct timedevent : gameevent
     {
+        void hash(dethasher &h) const { h.i(1); h.i(millis); }
         int millis;
 
         bool flush(clientinfo *ci, int fmillis);
@@ -997,6 +1004,7 @@ namespace server
 
     struct shotevent : timedevent
     {
+        void hash(dethasher &h) const { h.i(2); h.i(millis); h.i(id); h.i(gun); h.v(from); h.v(to); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
         int id, gun;
         vec from, to;
         vector<hitinfo> hits;
@@ -1006,6 +1014,7 @@ namespace server
 
     struct explodeevent : timedevent
     {
+        void hash(dethasher &h) const { h.i(3); h.i(millis); h.i(id); h.i(gun); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
         int id, gun;
         vector<hitinfo> hits;
 
@@ -1016,11 +1025,13 @@ namespace server
 
     struct suicideevent : gameevent
     {
+        void hash(dethasher &h) const { h.i(4); }
         void process(clientinfo *ci);
     };
 
     struct pickupevent : gameevent
     {
+        void hash(dethasher &h) const { h.i(5); h.i(ent); }
         int ent;
 
         void process(clientinfo *ci);
@@ -1202,7 +1213,7 @@ namespace server
             events.deletecontents();
             overflow = 0;
             timesync = false;
-            lastevent = 0;
+            gameoffset = lastevent = 0;
             exceeded = 0;
             pushed = 0;
             clientmap[0] = '\0';
@@ -1216,7 +1227,7 @@ namespace server
             state.reassign();
             events.deletecontents();
             timesync = false;
-            lastevent = 0;
+            gameoffset = lastevent = 0;
         }
 
         void cleanclipboard(bool fullclean = true)
@@ -1285,6 +1296,7 @@ namespace server
     extern bool flagrunactive();
     extern void forcenextflagrun(int on);
     extern bool racerulesactive();
+    extern void hashstate(dethasher &h);
     extern void forcenextracerules(int on);
     extern void forcegamespeed(int speed);
     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);

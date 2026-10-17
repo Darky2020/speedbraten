@@ -8,7 +8,7 @@ where lastmillis goes back; -1 = last) against the start of each other log.
 """
 import sys
 
-GROUPS = ['player', 'monsters', 'projectiles', 'movables', 'entities', 'rng']
+GROUPS = ['player', 'monsters', 'projectiles', 'movables', 'entities', 'rng', 'server', 'actors', 'world']
 
 
 def load(path):

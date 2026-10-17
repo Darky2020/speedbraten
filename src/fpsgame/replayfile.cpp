@@ -5,11 +5,11 @@
 //   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
 //   [v3+: var race], var finished, var runtime ms, var ticks, var maps, str first map
 //   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
-//            [v3+: var race], var ticks, var events, events, var hashes, hashes
+//            [v3+: var race], var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
 //            (command), u32 cursor x, u32 cursor y, str (gui)
-//   hash:    var tick delta, 6 x u32
+//   hash:    var tick delta, groups x u32 (6 before v4)
 //   str:     var length, bytes
 
 #include "game.h"
@@ -19,7 +19,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 3, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 4, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -132,13 +132,14 @@ namespace game
             }
             vector<const tickhash *> hashes;
             loopv(a.hashes) if(a.hashes[i].tick % REPLAYHASHSTEP == 0 || a.hashes[i].tick == a.ticks) hashes.add(&a.hashes[i]);
+            w.var(a.hashgroups);
             w.var(hashes.length());
             last = 0;
             loopv(hashes)
             {
                 w.var(hashes[i]->tick - last);
                 last = hashes[i]->tick;
-                loopj(DETHASH_GROUPS) w.u32(hashes[i]->groups[j]);
+                loopj(a.hashgroups) w.u32(hashes[i]->groups[j]);
             }
         }
         stream *f = opengzfile(path(file, true), "wb");
@@ -211,6 +212,8 @@ namespace game
                     default: e.arg = r.svar(); break;
                 }
             }
+            a.hashgroups = info.version >= 4 ? r.var() : int(DETHASH_LEGACYGROUPS);
+            if(a.hashgroups < 1 || a.hashgroups > DETHASH_GROUPS) { r.ok = false; break; }
             int hashes = r.var();
             tick = 0;
             loopi(hashes)
@@ -219,7 +222,8 @@ namespace game
                 tickhash &h = a.hashes.add();
                 tick += r.var();
                 h.tick = tick;
-                loopj(DETHASH_GROUPS) h.groups[j] = r.u32();
+                memset(h.groups, 0, sizeof(h.groups));
+                loopj(a.hashgroups) h.groups[j] = r.u32();
             }
             if(!r.ok) break;
         }

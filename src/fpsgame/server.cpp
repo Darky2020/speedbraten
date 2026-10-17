@@ -663,6 +663,51 @@ namespace server
     bool flagrunactive() { return flagrunon; }
     void forcenextflagrun(int on) { nextflagrun = on; }
 
+    template<int N> static void hashprojectilestate(dethasher &h, const projectilestate<N> &p)
+    {
+        h.i(p.numprojs);
+        loopi(p.numprojs) h.i(p.projs[i]);
+    }
+
+    // everything the local server keeps between ticks that later shapes the game
+    void hashstate(dethasher &h)
+    {
+        h.i(gamemillis); h.i(gamelimit); h.i(interm); h.i(gamemode); h.i(gamepaused);
+        h.i(flagrunon); h.i(raceruleson);
+        h.i(sents.length());
+        loopv(sents) { h.i(sents[i].type); h.i(sents[i].spawned); h.i(sents[i].spawntime); }
+        h.i(clients.length());
+        loopv(clients)
+        {
+            const clientinfo &ci = *clients[i];
+            const gamestate &gs = ci.state;
+            h.i(ci.clientnum); h.i(ci.ownernum); h.i(ci.timesync); h.i(ci.gameoffset); h.i(ci.lastevent);
+            h.i(gs.state); h.i(gs.editstate); h.v(gs.o);
+            h.i(gs.health); h.i(gs.maxhealth); h.i(gs.armour); h.i(gs.armourtype); h.i(gs.quadmillis);
+            h.i(gs.gunselect); h.i(gs.gunwait);
+            loopj(NUMGUNS) h.i(gs.ammo[j]);
+            h.i(gs.lastdeath); h.i(gs.deadflush); h.i(gs.lastspawn); h.i(gs.lifesequence); h.i(gs.lastshot);
+            hashprojectilestate(h, gs.rockets); hashprojectilestate(h, gs.grenades);
+            h.i(gs.frags); h.i(gs.flags); h.i(gs.deaths); h.i(gs.teamkills); h.i(gs.shotdamage); h.i(gs.damage);
+            h.i(ci.events.length());
+            loopvj(ci.events) ci.events[j]->hash(h);
+#ifndef STANDALONE
+            if(game::dethashdetail) conoutf("dethashdetail server client %d: owner %d timesync %d gameoffset %d lastevent %d state %d health %d armour %d gun %d gunwait %d lastdeath %d deadflush %d lastspawn %d lifeseq %d lastshot %d frags %d events %d o %.3f %.3f %.3f",
+                ci.clientnum, ci.ownernum, ci.timesync, ci.gameoffset, ci.lastevent, gs.state, gs.health, gs.armour, gs.gunselect, gs.gunwait, gs.lastdeath, gs.deadflush, gs.lastspawn, gs.lifesequence, gs.lastshot, gs.frags, ci.events.length(), gs.o.x, gs.o.y, gs.o.z);
+#endif
+        }
+        if(smode == &ctfmode)
+        {
+            loopv(ctfmode.flags)
+            {
+                const ctfservmode::flag &f = ctfmode.flags[i];
+                h.i(f.id); h.i(f.version); h.i(f.spawnindex); if(f.droptime) h.v(f.droploc); h.v(f.spawnloc);
+                h.i(f.team); h.i(f.droptime); h.i(f.owntime); h.i(f.owner); h.i(f.dropcount); h.i(f.dropper);
+            }
+            h.i(ctfmode.scores[0]); h.i(ctfmode.scores[1]);
+        }
+    }
+
     // the next map change puts every client on this team instead of balancing teams
     void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
 
@@ -1619,7 +1664,7 @@ namespace server
         sendstring(smapname, p);
         putint(p, gamemode);
         putint(p, notgotitems ? 1 : 0);
-        if(!ci || (m_timed && smapname[0]))
+        if(!raceruleson && (!ci || (m_timed && smapname[0])))
         {
             putint(p, N_TIMEUP);
             putint(p, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);

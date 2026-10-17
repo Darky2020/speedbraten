@@ -136,7 +136,7 @@ namespace game
         }
     }
 
-    static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng" };
+    static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng", "server", "actors", "world" };
 
     static int replaydesyncgroups = 0, replayhashpos = 0;
 
@@ -148,7 +148,7 @@ namespace game
         if(replayhashpos >= a.hashes.length() || a.hashes[replayhashpos].tick != curtick) return;
         const tickhash &want = a.hashes[replayhashpos];
         vector<char> diff;
-        loopi(DETHASH_GROUPS) if(h.groups[i] != want.groups[i] && !(replaydesyncgroups & (1<<i)))
+        loopi(a.hashgroups) if(h.groups[i] != want.groups[i] && !(replaydesyncgroups & (1<<i)))
         {
             replaydesyncgroups |= 1<<i;
             if(diff.length()) diff.add(' ');
@@ -406,7 +406,9 @@ namespace game
             loopv(a.hashes)
             {
                 const tickhash &h = a.hashes[i];
-                f->printf("h %d %u %u %u %u %u %u\n", h.tick, h.groups[0], h.groups[1], h.groups[2], h.groups[3], h.groups[4], h.groups[5]);
+                f->printf("h %d", h.tick);
+                loopj(a.hashgroups) f->printf(" %u", h.groups[j]);
+                f->printf("\n");
             }
             events += a.events.length();
             ticks += a.ticks;
@@ -486,11 +488,15 @@ namespace game
             }
             else if(cur && w.length() >= 7 && !strcmp(w[0], "h"))
             {
-                // older dumps have one hash per tick and no tick number
-                bool hastick = w.length() >= 8;
+                // the oldest dumps have one hash per tick, no tick number and 6 groups
+                bool hastick = w.length() != 1 + DETHASH_LEGACYGROUPS;
+                int first = hastick ? 2 : 1;
+                int groups = min(w.length() - first, int(DETHASH_GROUPS));
+                if(cur->hashes.empty()) cur->hashgroups = groups;
                 tickhash &h = cur->hashes.add();
                 h.tick = hastick ? parseint(w[1]) : cur->hashes.length();
-                loopi(DETHASH_GROUPS) h.groups[i] = uint(strtoul(w[i+(hastick ? 2 : 1)], NULL, 10));
+                memset(h.groups, 0, sizeof(h.groups));
+                loopi(groups) h.groups[i] = uint(strtoul(w[i+first], NULL, 10));
                 if(!hastick) cur->ticks = max(cur->ticks, h.tick);
             }
             w.deletearrays();

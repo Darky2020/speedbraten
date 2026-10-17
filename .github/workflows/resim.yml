@@ -113,7 +113,7 @@ jobs:
           [ "$(ls -d results/*/ | wc -l)" -eq $platforms ] || { echo "expected results from $platforms platforms, got: $(ls results)"; exit 1; }
           fail=0
           for name in $(ls results/*/ | grep '\.json$' | sort -u); do
-            hashes=$(for d in results/*/; do [ -f "$d$name" ] && tr -d '\r' < "$d$name" | sed -n 's/.*"hash":"\([0-9a-f]\{48\}\)".*/\1/p'; done)
+            hashes=$(for d in results/*/; do [ -f "$d$name" ] && tr -d '\r' < "$d$name" | sed -n 's/.*"hash":"\([0-9a-f]\{48,\}\)".*/\1/p'; done)
             count=$(echo "$hashes" | grep -c .)
             distinct=$(echo "$hashes" | grep . | sort -u | wc -l)
             echo "$name: $count/$platforms hashes, $distinct distinct: $(echo "$hashes" | grep . | sort -u | tr '\n' ' ')"

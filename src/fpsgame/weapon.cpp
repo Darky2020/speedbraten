@@ -1075,6 +1075,13 @@ namespace game
         }
     }
 
+    // shot ids are matched against the server's record of live rockets and grenades
+    void hashshotids(dethasher &h)
+    {
+        loopv(projs) { h.i(projs[i].id); h.i(projs[i].local); }
+        loopv(bouncers) if(bouncers[i]->bouncetype == BNC_GRENADE) { h.i(bouncers[i]->id); h.i(bouncers[i]->local); }
+    }
+
     void hashprojectiles(dethasher &h)
     {
         loopv(projs)

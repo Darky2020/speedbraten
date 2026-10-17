@@ -3514,6 +3514,20 @@ struct sleepcmd
 };
 vector<sleepcmd> sleepcmds;
 
+// only map-script sleeps are part of the game; the player's own scripts are outside input
+void hashsleeps(uint &h)
+{
+    loopv(sleepcmds)
+    {
+        const sleepcmd &s = sleepcmds[i];
+        if(!(s.flags&IDF_OVERRIDDEN)) continue;
+        h = (h ^ uint(s.delay)) * 16777619U;
+        h = (h ^ uint(s.millis)) * 16777619U;
+        h = (h ^ uint(s.flags)) * 16777619U;
+        for(const char *c = s.command; c && *c; c++) h = (h ^ uchar(*c)) * 16777619U;
+    }
+}
+
 void addsleep(int *msec, char *cmd)
 {
     sleepcmd &s = sleepcmds.add();

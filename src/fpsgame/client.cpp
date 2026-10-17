@@ -900,6 +900,26 @@ namespace game
     vector<uchar> messages;
     int messagecn = -1, messagereliable = false;
 
+    void hashclientstate(dethasher &h)
+    {
+        // The outgoing message queue is left out: map-start messages are queued at different
+        // points of the first tick depending on how the map was loaded, and what reaches the
+        // local server shows up in its own hash group.
+        if(dethashdetail) conoutf("dethashdetail client: messages %d cn %d reliable %d senditems %d sendcrc %d", messages.length(), messagecn, messagereliable, senditemstoserver, sendcrc);
+        if(m_ctf)
+        {
+            loopv(ctfmode.flags)
+            {
+                const ctfclientmode::flag &f = ctfmode.flags[i];
+                // droploc is only read while the flag is dropped, and is left stale otherwise
+                h.i(f.id); h.i(f.version); h.i(f.spawnindex); if(f.droptime) h.v(f.droploc); h.v(f.spawnloc);
+                h.i(f.team); h.i(f.droptime); h.i(f.owntime); h.i(f.owner ? f.owner->clientnum : -1);
+                if(dethashdetail) conoutf("dethashdetail flag %d: version %d spawnindex %d team %d droptime %d owntime %d owner %d droploc %.3f %.3f %.3f spawnloc %.3f %.3f %.3f", f.id, f.version, f.spawnindex, f.team, f.droptime, f.owntime, f.owner ? f.owner->clientnum : -1, f.droploc.x, f.droploc.y, f.droploc.z, f.spawnloc.x, f.spawnloc.y, f.spawnloc.z);
+            }
+            h.i(ctfmode.scores[0]); h.i(ctfmode.scores[1]);
+        }
+    }
+
     bool addmsg(int type, const char *fmt, ...)
     {
         if(!connected) return false;
@@ -1142,7 +1162,8 @@ namespace game
             messagereliable = false;
             messagecn = -1;
         }
-        if(totalmillis-lastping>250)
+        // offline the ping is meaningless and its wall-clock timing would vary between replays
+        if(remote && totalmillis-lastping>250)
         {
             putint(p, N_PING);
             putint(p, totalmillis);

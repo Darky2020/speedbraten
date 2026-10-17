@@ -28,7 +28,7 @@ namespace game
         if(!dethashfile) { conoutf(CON_ERROR, "dethash: could not open %s", file); return; }
         dethashframes = 0;
         copystring(dethashonstart, onstart);
-        dethashfile->printf("# frame lastmillis player monsters projectiles movables entities rng\n");
+        dethashfile->printf("# frame lastmillis player monsters projectiles movables entities rng server actors world\n");
     });
 
     ICOMMAND(harnessaim, "ff", (float *yaw, float *pitch), { player1->yaw = *yaw; player1->pitch = *pitch; });
@@ -113,7 +113,9 @@ namespace game
         }
     }
 
-    // player, monsters, projectiles, movables, entities, rng
+    VAR(dethashdetail, 0, 0, 1);
+
+    // player, monsters, projectiles, movables, entities, rng, server, actors, world
     void hashgamestate(uint groups[DETHASH_GROUPS])
     {
         dethasher pl;
@@ -139,6 +141,32 @@ namespace game
 
         groups[0] = pl.h; groups[1] = mo.h; groups[2] = pr.h; groups[3] = mv.h; groups[4] = en.h;
         groups[5] = hashMT(2166136261U);
+
+        dethasher sv, ac, wo;
+        server::hashstate(sv);
+
+        loopv(players)
+        {
+            fpsent *d = players[i];
+            if(d != player1 && !d->ai) continue;
+            ac.i(d->clientnum); ac.v(d->deltapos); ac.i(d->lastpickup); ac.i(d->lastpickupmillis);
+            ac.i(d->flagpickup); ac.i(d->maxhealth); ac.i(d->vertical); ac.i(d->hovering);
+            ac.i(d->respawned); ac.i(d->suicided);
+        }
+        hashshotids(ac);
+
+        // with dethashdetail, each part of the world group is also hashed on its own and logged
+        dethasher wents, wclock, wclient;
+        uint wsleeps = 2166136261U, wphys = 2166136261U;
+        loopv(ents) wents.i(ents[i]->flags);
+        hashgameclock(wclock);
+        hashclientstate(wclient);
+        hashsleeps(wsleeps);
+        hashphysicsstate(wphys);
+        wo.u(wents.h); wo.u(wclock.h); wo.u(wclient.h); wo.u(wsleeps); wo.u(wphys);
+        if(dethashdetail) conoutf("dethashdetail tick %d world: ents %08x clock %08x client %08x sleeps %08x phys %08x", inputtick(), wents.h, wclock.h, wclient.h, wsleeps, wphys);
+
+        groups[6] = sv.h; groups[7] = ac.h; groups[8] = wo.h;
     }
 
     void dethashframe()
@@ -147,8 +175,9 @@ namespace game
 
         uint g[DETHASH_GROUPS];
         hashgamestate(g);
-        dethashfile->printf("%d %d %08x %08x %08x %08x %08x %08x\n",
-            dethashframes++, lastmillis, g[0], g[1], g[2], g[3], g[4], g[5]);
+        dethashfile->printf("%d %d", dethashframes++, lastmillis);
+        loopi(DETHASH_GROUPS) dethashfile->printf(" %08x", g[i]);
+        dethashfile->printf("\n");
 
         if(dethashframes == 1 && dethashonstart[0]) execident(dethashonstart);
     }

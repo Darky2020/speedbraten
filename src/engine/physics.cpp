@@ -588,6 +588,28 @@ static struct dynentcacheentry
     vector<physent *> dynents;
 } dynentcache[DYNENTCACHESIZE];
 
+static inline void fnv(uint &h, uint v) { h = (h ^ v) * 16777619U; }
+static inline void fnvf(uint &h, float v) { uint b; memcpy(&b, &v, sizeof(b)); fnv(h, v == v ? b : 0x7FC00000U); }
+
+// Live cells of the dynent cache are read by collisions before the next tick clears them;
+// entries are identified by their position, not their address.
+void hashphysicsstate(uint &h)
+{
+    extern int lastphysframe;
+    fnv(h, uint(lastphysframe));
+    loopi(DYNENTCACHESIZE)
+    {
+        const dynentcacheentry &dec = dynentcache[i];
+        if(dec.frame != dynentframe) continue;
+        fnv(h, uint(i)); fnv(h, uint(dec.x)); fnv(h, uint(dec.y)); fnv(h, uint(dec.dynents.length()));
+        loopvj(dec.dynents)
+        {
+            const physent *d = dec.dynents[j];
+            fnv(h, uint(d->type)); fnvf(h, d->o.x); fnvf(h, d->o.y); fnvf(h, d->o.z);
+        }
+    }
+}
+
 void cleardynentcache()
 {
     dynentframe++;
