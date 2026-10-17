@@ -402,6 +402,8 @@ extern void physicsframe();
 extern void hashphysicsstate(uint &h);
 extern bool savedynentcache(vector<int> &v);
 extern bool loaddynentcache(const vector<int> &v);
+extern void savescriptstate(vector<char> &b);
+extern bool loadscriptstate(const vector<char> &b);
 extern void hashsleeps(uint &h);
 extern void fakephysicsframe();
 extern void dropenttofloor(entity *e);

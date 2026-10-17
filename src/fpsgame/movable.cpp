@@ -80,6 +80,27 @@ namespace game
 
     vector<movable *> movables;
    
+    // Movables only come and go at map start and when edit mode is toggled, so a saved
+    // state restores them in place.
+    void snapmovables(snapio &s)
+    {
+        int n = s.count(movables.length(), movables.length());
+        if(n != movables.length()) { s.ok = false; return; }
+        loopv(movables)
+        {
+            movable &m = *movables[i];
+            int etype = m.etype;
+            s.i(etype);
+            if(etype != m.etype) { s.ok = false; return; }
+            s.phys(m);
+            s.i(m.mapmodel); s.i(m.health); s.i(m.weight); s.i(m.exploding); s.i(m.tag); s.i(m.dir);
+            s.v(m.stackpos);
+            int stacked = s.loading ? -1 : dynentindex(m.stacked);
+            s.i(stacked);
+            if(s.loading) m.stacked = dynentat(stacked);
+        }
+    }
+
     void removemovables()
     {
         cleardynentcache();

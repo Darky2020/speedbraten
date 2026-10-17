@@ -455,6 +455,40 @@ namespace game
         conoutf(CON_GAMEINFO, "\f2TOTAL SCORE (time + time penalties): %d seconds (best so far: %d seconds)", score, bestscore);
     }
 
+    enum { MAXSNAPMONSTERS = 1<<16 };
+
+    // Recreates the saved monsters (asleep, so the constructor neither spawns them nor draws
+    // random numbers); their fields are filled by snapmonsterfields once every dynent exists.
+    void snapmonsters(snapio &s)
+    {
+        s.n(monsterhurt); s.v(monsterhurtpos);
+        s.i(nextmonster); s.i(spawnremain); s.i(numkilled); s.i(monstertotal); s.i(mtimestart); s.i(remain);
+        int n = s.count(monsters.length(), MAXSNAPMONSTERS);
+        vector<int> types;
+        loopi(n) types.add(s.loading ? 0 : monsters[i]->mtype);
+        loopv(types) { s.i(types[i]); if(types[i] < 0 || types[i] >= NUMMONSTERTYPES) s.ok = false; }
+        if(!s.loading || !s.ok) return;
+        removetrackedparticles();
+        removetrackeddynlights();
+        monsters.deletecontents();
+        loopv(types) monsters.add(new monster(types[i], 0, 0, M_SLEEP, 0, 0));
+    }
+
+    void snapmonsterfields(snapio &s)
+    {
+        loopv(monsters)
+        {
+            monster &m = *monsters[i];
+            snapfpsent(s, m);
+            s.i(m.monsterstate); s.i(m.tag); s.f(m.targetyaw); s.i(m.trigger); s.v(m.attacktarget);
+            s.i(m.anger); s.v(m.stackpos);
+            int enemy = s.loading ? -1 : dynentindex(m.enemy), stacked = s.loading ? -1 : dynentindex(m.stacked);
+            s.i(enemy); s.i(stacked);
+            if(s.loading) { m.enemy = (fpsent *)dynentat(enemy); m.stacked = dynentat(stacked); }
+            if(!s.ok) return;
+        }
+    }
+
     void hashmonsters(dethasher &h)
     {
         h.i(nextmonster); h.i(spawnremain); h.i(numkilled); h.i(monstertotal); h.i(mtimestart); h.i(remain);

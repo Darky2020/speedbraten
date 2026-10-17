@@ -71,6 +71,14 @@ namespace game
         if(s.loading && s.ok && !loaddynentcache(v)) s.ok = false;
     }
 
+    static void snapscripts(snapio &s)
+    {
+        vector<char> b;
+        if(!s.loading) savescriptstate(b);
+        s.bytes(b);
+        if(s.loading && s.ok && !loadscriptstate(b)) s.ok = false;
+    }
+
     // Header fields that must match the running game; checked before any state is touched.
     static bool snapheader(snapio &s)
     {
@@ -87,6 +95,11 @@ namespace game
 
     static void snapall(snapio &s)
     {
+        // objects are recreated first, so that saved dynent indices resolve
+        s.tag(snaptag("MONS")); snapmonsters(s);
+        if(!s.ok) return;
+        s.tag(snaptag("MONF")); snapmonsterfields(s);
+        s.tag(snaptag("MOVE")); snapmovables(s);
         s.tag(snaptag("CLK ")); snapgameclock(s);
         s.tag(snaptag("RNG ")); snaprng(s);
         s.tag(snaptag("PLY ")); snapfpsent(s, *player1);
@@ -95,6 +108,7 @@ namespace game
         s.tag(snaptag("SERV")); server::snapstate(s);
         s.tag(snaptag("MODE")); snapclientmodes(s);
         s.tag(snaptag("DYNC")); snapdynentcache(s);
+        s.tag(snaptag("SCRP")); snapscripts(s);
         s.tag(snaptag("RUN ")); snapruntimer(s);
         s.tag(snaptag("REC ")); snaprecorder(s);
         s.tag(snaptag("END "));

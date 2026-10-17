@@ -939,6 +939,9 @@ namespace game
     extern void snapshots(snapio &s);
     extern void snapgameclock(snapio &s);
     extern void snapclientmodes(snapio &s);
+    extern void snapmonsters(snapio &s);
+    extern void snapmonsterfields(snapio &s);
+    extern void snapmovables(snapio &s);
 
     // savestate
     extern void snapfpsent(snapio &s, fpsent &d);

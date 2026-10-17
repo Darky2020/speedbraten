@@ -290,15 +290,21 @@ namespace game
         rec.ticks = min(rec.ticks, curtick);
     }
 
-    // Restores a state saved earlier in the current recording and replays the recorded input
-    // from the restored tick, checking the state hashes against the recording.
+    // Restores a state saved earlier in the current recording, or in the replay that is
+    // playing, and replays the recorded input from the restored tick, checking the state
+    // hashes against the recording.
     bool inputreplayfromstate(bool (*restore)())
     {
-        if(replaying || replaypending || recordingoff || recording.attempts.empty()) return false;
-        recording.copyto(replaydata);
-        if(!restore()) { replaydata.clear(); return false; }
-        replaying = true;
-        replayattempt = replaydata.attempts.length()-1;
+        if(replaypending) return false;
+        if(!replaying)
+        {
+            if(recordingoff || recording.attempts.empty()) return false;
+            recording.copyto(replaydata);
+            if(!restore()) { replaydata.clear(); return false; }
+            replaying = true;
+            replayattempt = replaydata.attempts.length()-1;
+        }
+        else if(!restore()) return false;
         const inputattempt &a = replaycur();
         replaypos = 0;
         while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick) replaypos++;
