@@ -79,6 +79,40 @@ namespace game
     ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
     ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
 
+    // bots go into the player group; without bots the group hashes exactly as before
+    static void hashbots(dethasher &h)
+    {
+        loopv(players)
+        {
+            fpsent *d = players[i];
+            if(!d->ai) continue;
+            h.i(d->clientnum);
+            h.phys(d);
+            h.i(d->health); h.i(d->armour); h.i(d->armourtype);
+            h.i(d->gunselect); h.i(d->gunwait); h.i(d->quadmillis);
+            loopk(NUMGUNS) h.i(d->ammo[k]);
+            h.i(d->lastaction); h.i(d->lastpain); h.i(d->lifesequence); h.i(d->attacking);
+            const ai::aiinfo &a = *d->ai;
+            h.i(a.state.length());
+            loopvk(a.state)
+            {
+                const ai::aistate &b = a.state[k];
+                h.i(b.type); h.i(b.millis); h.i(b.targtype); h.i(b.target); h.i(b.idle); h.i(b.override);
+            }
+            h.i(a.route.length());
+            loopvk(a.route) h.i(a.route[k]);
+            h.v(a.target); h.v(a.spot);
+            h.i(a.enemy); h.i(a.enemyseen); h.i(a.enemymillis); h.i(a.weappref);
+            loopk(ai::NUMPREVNODES) h.i(a.prevnodes[k]);
+            h.i(a.targnode); h.i(a.targlast); h.i(a.targtime); h.i(a.targseq);
+            h.i(a.lastrun); h.i(a.lasthunt); h.i(a.lastaction); h.i(a.lastcheck);
+            h.i(a.jumpseed); h.i(a.jumprand); h.i(a.blocktime); h.i(a.huntseq); h.i(a.blockseq); h.i(a.lastaimrnd);
+            h.f(a.targyaw); h.f(a.targpitch);
+            loopk(3) { h.f(a.views[k]); h.f(a.aimrnd[k]); }
+            h.i(a.dontmove); h.i(a.becareful); h.i(a.tryreset); h.i(a.trywipe);
+        }
+    }
+
     // player, monsters, projectiles, movables, entities, rng
     void hashgamestate(uint groups[DETHASH_GROUPS])
     {
@@ -89,6 +123,7 @@ namespace game
         loopi(NUMGUNS) pl.i(player1->ammo[i]);
         pl.i(player1->lastaction); pl.i(player1->lastpain); pl.i(player1->lifesequence);
         pl.i(player1->lasttaunt); pl.i(player1->attacking);
+        hashbots(pl);
 
         dethasher mo, pr, mv, en;
         hashmonsters(mo);

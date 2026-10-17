@@ -713,6 +713,7 @@ namespace game
         clearprojectiles();
         clearbouncers();
         clearragdolls();
+        ai::resetupdates();
 
         clearteaminfo();
 

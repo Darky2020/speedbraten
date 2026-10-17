@@ -291,6 +291,7 @@ namespace ai
 
     extern void init(fpsent *d, int at, int on, int sk, int bn, int pm, const char *name, const char *team);
     extern void update();
+    extern void resetupdates();
     extern void avoid();
     extern void think(fpsent *d, bool run);
 

@@ -10,13 +10,33 @@ namespace ai
     int updatemillis = 0, iteration = 0, itermillis = 0, forcegun = -1;
     vec aitarget(0, 0, 0);
 
+    // Called at every map start, which may run before the map's clock is reset, so the timers
+    // go back to their values at program start rather than to the current lastmillis.
+    void resetupdates()
+    {
+        updatemillis = itermillis = iteration = 0;
+    }
+
     VAR(aidebug, 0, 0, 6);
     VAR(aiforcegun, -1, -1, NUMGUNS-1);
 
-    ICOMMAND(addbot, "s", (char *s), addmsg(N_ADDBOT, "ri", *s ? clamp(parseint(s), 1, 101) : -1));
-    ICOMMAND(delbot, "", (), addmsg(N_DELBOT, "r"));
-    ICOMMAND(botlimit, "i", (int *n), addmsg(N_BOTLIMIT, "ri", *n));
-    ICOMMAND(botbalance, "i", (int *n), addmsg(N_BOTBALANCE, "ri", *n));
+    // offline these change the game, so they run in the tick and are recorded
+    ICOMMAND(addbot, "s", (char *s),
+    {
+        defformatstring(cmd, "addbot %s", escapestring(s));
+        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_ADDBOT, "ri", *s ? clamp(parseint(s), 1, 101) : -1);
+    });
+    ICOMMAND(delbot, "", (), { if(!deferinput(INPUT_COMMAND, 0, "delbot")) addmsg(N_DELBOT, "r"); });
+    ICOMMAND(botlimit, "i", (int *n),
+    {
+        defformatstring(cmd, "botlimit %d", *n);
+        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_BOTLIMIT, "ri", *n);
+    });
+    ICOMMAND(botbalance, "i", (int *n),
+    {
+        defformatstring(cmd, "botbalance %d", *n);
+        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_BOTBALANCE, "ri", *n);
+    });
 
     float viewdist(int x)
     {
@@ -188,16 +208,16 @@ namespace ai
         if(intermission) { loopv(players) if(players[i]->ai) players[i]->stopmoving(); }
         else // fixed rate logic done out-of-sequence at 1 frame per second for each ai
         {
-            if(totalmillis-updatemillis > 1000)
+            if(lastmillis-updatemillis > 1000)
             {
                 avoid();
                 forcegun = multiplayer(false) ? -1 : aiforcegun;
-                updatemillis = totalmillis;
+                updatemillis = lastmillis;
             }
-            if(!iteration && totalmillis-itermillis > 1000)
+            if(!iteration && lastmillis-itermillis > 1000)
             {
                 iteration = 1;
-                itermillis = totalmillis;
+                itermillis = lastmillis;
             }
             int count = 0;
             loopv(players) if(players[i]->ai) think(players[i], ++count == iteration ? true : false);
