@@ -16,6 +16,8 @@ namespace game
     enum { RUN_IDLE = 0, RUN_HOLDING, RUN_RUNNING, RUN_FINISHED };
 
     static int runkind = RUNTIMER_NONE, runstate = RUN_IDLE;
+    static bool liferan = false;  // the run of player1's current life started (flagrun/race)
+    enum { RACESTARTEDTICKS = 200 };
     static int runbase = 0, runstart = 0, runend = 0, runflag = -1;
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
@@ -23,8 +25,12 @@ namespace game
     void snapruntimer(snapio &s)
     {
         s.i(runkind); s.i(runstate); s.i(runbase); s.i(runstart); s.i(runend); s.i(runflag);
-        s.v(runflagloc); s.f(runflagradius);
+        s.v(runflagloc); s.f(runflagradius); s.n(liferan);
     }
+
+    // flagruns and races are judged per life of player1
+    bool runtimerperlife() { return runkind == RUNTIMER_FLAG || runkind == RUNTIMER_RACE; }
+    bool runtimerliferan() { return liferan; }
 
     static int runticks()
     {
@@ -69,6 +75,7 @@ namespace game
     {
         if(d != player1 || runkind != RUNTIMER_FLAG || runstate == RUN_RUNNING) return;
         runstate = RUN_HOLDING;
+        liferan = true;
         runflag = flag;
         runflagloc = loc;
         runflagradius = radius;
@@ -84,7 +91,10 @@ namespace game
 
     void runtimerspawned(fpsent *d)
     {
-        if(d != player1 || runkind != RUNTIMER_RACE) return;
+        if(d != player1 || !runtimerperlife()) return;
+        inputlifespawned();
+        liferan = false;
+        if(runkind != RUNTIMER_RACE) return;
         runstate = RUN_RUNNING;
         runbase = runend = 0;
         runstart = inputtick();
@@ -100,6 +110,7 @@ namespace game
     static void racetick()
     {
         if(runstate != RUN_RUNNING || player1->state != CS_ALIVE) return;
+        if(runticks() >= RACESTARTEDTICKS) liferan = true;
         vec feet = player1->feetpos();
         const vector<extentity *> &ents = entities::getents();
         loopv(ents) if(ents[i]->type == FLAG && feet.dist(ents[i]->o) < RACEFLAGRADIUS)

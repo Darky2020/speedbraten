@@ -111,31 +111,37 @@ namespace game
             if(s.loading && (!sameplayers || cn != players[i]->clientnum || ai != (players[i]->ai ? 1 : 0))) sameplayers = false;
         }
         if(!s.loading) return true;
-        return s.ok && magic == SNAPMAGIC && version == SNAPVERSION && !strcmp(map, getclientmap()) &&
-               crc == getmapcrc() && mode == gamemode && ents == entities::getents().length() && sameplayers;
+        const char *differs = !s.ok || magic != SNAPMAGIC ? "format" : version != SNAPVERSION ? "savestate version" :
+                              strcmp(map, getclientmap()) ? "map" : crc != getmapcrc() ? "map version" : mode != gamemode ? "mode" :
+                              ents != entities::getents().length() ? "entities" : !sameplayers ? "players or bots" : NULL;
+        if(differs) conoutf(CON_ERROR, "savestate: the saved state has a different %s", differs);
+        return !differs;
     }
+
+    static void snapplayer1(snapio &s) { snapfpsent(s, *player1); }
+
+    // In order: objects are recreated first, so that saved dynent indices resolve.
+    static const struct { const char *tag; void (*snap)(snapio &); } snapsections[] =
+    {
+        { "MONS", snapmonsters }, { "MONF", snapmonsterfields }, { "MOVE", snapmovables },
+        { "CLK ", snapgameclock }, { "RNG ", snaprng }, { "PLY ", snapplayer1 }, { "BOTS", snapbots },
+        { "ENT ", snapentities }, { "SHOT", snapshots }, { "SERV", server::snapstate },
+        { "MODE", snapclientmodes }, { "DYNC", snapdynentcache }, { "SCRP", snapscripts },
+        { "MSGS", snapmessages }, { "RUN ", snapruntimer }, { "REC ", snaprecorder }
+    };
 
     static void snapall(snapio &s)
     {
-        // objects are recreated first, so that saved dynent indices resolve
-        s.tag(snaptag("MONS")); snapmonsters(s);
-        if(!s.ok) return;
-        s.tag(snaptag("MONF")); snapmonsterfields(s);
-        s.tag(snaptag("MOVE")); snapmovables(s);
-        s.tag(snaptag("CLK ")); snapgameclock(s);
-        s.tag(snaptag("RNG ")); snaprng(s);
-        s.tag(snaptag("PLY ")); snapfpsent(s, *player1);
-        s.tag(snaptag("BOTS")); snapbots(s);
-        if(!s.ok) return;
-        s.tag(snaptag("ENT ")); snapentities(s);
-        s.tag(snaptag("SHOT")); snapshots(s);
-        s.tag(snaptag("SERV")); server::snapstate(s);
-        s.tag(snaptag("MODE")); snapclientmodes(s);
-        s.tag(snaptag("DYNC")); snapdynentcache(s);
-        s.tag(snaptag("SCRP")); snapscripts(s);
-        s.tag(snaptag("MSGS")); snapmessages(s);
-        s.tag(snaptag("RUN ")); snapruntimer(s);
-        s.tag(snaptag("REC ")); snaprecorder(s);
+        for(size_t i = 0; i < sizeof(snapsections)/sizeof(snapsections[0]); i++)
+        {
+            s.tag(snaptag(snapsections[i].tag));
+            snapsections[i].snap(s);
+            if(!s.ok)
+            {
+                if(s.loading) conoutf(CON_ERROR, "savestate: could not restore section %s", snapsections[i].tag);
+                return;
+            }
+        }
         s.tag(snaptag("END "));
     }
 
@@ -160,7 +166,7 @@ namespace game
 
     static bool readsnapshot(vector<uchar> &buf)
     {
-        if(snapshotrefusal()) return false;
+        if(snapshotrefusal()) { conoutf(CON_ERROR, "savestate: %s", snapshotrefusal()); return false; }
         snapio s(buf, true);
         if(!snapheader(s)) return false;
         snapall(s);
@@ -174,6 +180,8 @@ namespace game
         loopv(buf) h = (h ^ buf[i]) * 16777619U;
         return h;
     }
+
+    bool takesnapshot(vector<uchar> &buf) { return writesnapshot(buf); }
 
     uint snapshotdigest()
     {
@@ -225,13 +233,15 @@ namespace game
         }
     }
 
-    void savestatetick()
+    // returns true if a state was saved
+    bool savestatetick()
     {
+        bool saved = false;
         int op = pendingsnap;
         pendingsnap = SNAP_NONE;
         if(op == SNAP_SAVE)
         {
-            if(writesnapshot(savedstate)) { savedtick = inputtick(); conoutf("state saved at tick %d (%d bytes)", inputtick(), savedstate.length()); }
+            if(writesnapshot(savedstate)) { saved = true; savedtick = inputtick(); conoutf("state saved at tick %d (%d bytes)", inputtick(), savedstate.length()); }
             else conoutf(CON_ERROR, "%s", snapshotrefusal());
         }
         else if(op == SNAP_LOAD)
@@ -249,6 +259,7 @@ namespace game
             else conoutf(CON_ERROR, "could not replay from the saved state");
         }
         if(snapcycle) cyclestate();
+        return saved;
     }
 
     ICOMMAND(savestate, "", (), pendingsnap = SNAP_SAVE);

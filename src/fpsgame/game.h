@@ -948,7 +948,8 @@ namespace game
     extern void snapfpsent(snapio &s, fpsent &d);
     extern int dynentindex(const physent *d);
     extern dynent *dynentat(int i);
-    extern void savestatetick();
+    extern bool savestatetick();
+    extern bool takesnapshot(vector<uchar> &buf);
     extern void noteworldedit();
     extern void savestatemapstart();
     extern uint snapshotdigest();
@@ -985,6 +986,9 @@ namespace game
     extern void runtimerflagscored(fpsent *d);
     extern void runtimertick();
     extern void snapruntimer(snapio &s);
+    extern bool runtimerperlife();
+    extern bool runtimerliferan();
+    extern void inputlifespawned();
     extern void runtimerspawned(fpsent *d);
     extern void runtimeredittoggled(bool on);
     extern void drawruntimer(int w, int h);

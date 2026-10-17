@@ -767,15 +767,10 @@ namespace server
         s.n(notgotitems); s.i(gamemillis); s.i(gamelimit); s.i(nextexceeded); s.i(gamespeed);
         s.n(gamepaused); s.n(shouldstep); s.i(interm); s.n(flagrunon); s.n(raceruleson);
 
-        int n = s.count(sents.length(), sents.length());
-        if(s.loading && n != sents.length()) { s.ok = false; return; }
-        loopv(sents)
-        {
-            int type = sents[i].type;
-            s.i(type);
-            if(type != sents[i].type) { s.ok = false; return; }
-            s.i(sents[i].spawntime); s.n(sents[i].spawned);
-        }
+        // in coop edit the item list only arrives from the client after the map has loaded
+        int n = s.count(sents.length(), MAXENTS);
+        if(s.loading) { sents.setsize(0); loopi(n) sents.add(); }
+        loopv(sents) { s.i(sents[i].type); s.i(sents[i].spawntime); s.n(sents[i].spawned); }
 
         vector<teaminfo *> teams;
         enumerate(teaminfos, teaminfo, t, teams.add(&t));

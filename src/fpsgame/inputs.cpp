@@ -31,10 +31,85 @@ namespace game
 
     extern void saverunreplay(const inputrun &run, bool finished, int runtime);
 
-    // Writes the current run as unfinished, once, unless it is a replay or was saved finished.
+    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed" };
+    enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
+    static void readsettings(int *vals);
+
+    // A saved state with the setting values in effect when it was taken.
+    struct statestart
+    {
+        vector<uchar> state;
+        int tick;
+        int settings[NUMSIMSETTINGS];
+
+        statestart() : tick(-1) {}
+        bool valid() const { return tick >= 0; }
+        void clear() { state.setsize(0); tick = -1; }
+    };
+
+    // The attempt from a saved state on: the state, then the events and hashes after its tick.
+    static void cutattempt(inputattempt &a, const inputattempt &src, const statestart &from)
+    {
+        src.copyto(a);
+        a.snapshot = from.state;
+        a.starttick = from.tick;
+        loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
+        int n = 0;
+        loopv(a.events) if(a.events[i].tick <= from.tick) { DELETEA(a.events[i].cmd); n++; } else break;
+        a.events.remove(0, n);
+        n = 0;
+        loopv(a.hashes) if(a.hashes[i].tick <= from.tick) n++; else break;
+        a.hashes.remove(0, n);
+    }
+
+    // Flagruns and races are judged per life: the replay of a finished run starts at the
+    // spawn of the life it was run in, and an unfinished life whose run started is saved
+    // on its own when it ends.
+    MOD(VARP, replaylifeonly, 0, 1, 1);
+    static statestart lifestart, savedstart;
+    static bool lifepending = false, lifesaved = false;
+
+    static bool havebots()
+    {
+        loopv(players) if(players[i]->ai) return true;
+        return false;
+    }
+
+    static void takelifestate()
+    {
+        lifepending = false;
+        lifestart.clear();
+        if(!replaylifeonly || havebots() || !takesnapshot(lifestart.state)) { lifestart.clear(); return; }
+        lifestart.tick = curtick;
+        readsettings(lifestart.settings);
+    }
+
+    static bool saveliferun(bool finished, int runtime)
+    {
+        if(!replaylifeonly || !lifestart.valid() || lifesaved || recording.attempts.length() != 1) return false;
+        if(!finished && !runtimerliferan()) return true;
+        inputrun run;
+        cutattempt(run.add(), recording.last(), lifestart);
+        saverunreplay(run, finished, runtime);
+        lifesaved = true;
+        return true;
+    }
+
+    void inputlifespawned()
+    {
+        if(!replaying && !recordingoff) saveliferun(false, 0);
+        lifestart.clear();
+        lifesaved = false;
+        lifepending = true;
+    }
+
+    // Writes the current run as unfinished, once, unless it is a replay or was saved finished;
+    // per life, the current life if its run started.
     static void saveunfinishedrun()
     {
-        if(replaying || recordingoff || runsaved || recording.empty()) return;
+        if(replaying || recordingoff || recording.empty()) return;
+        if(saveliferun(false, 0)) { runsaved = true; return; }
+        if(runsaved) return;
         saverunreplay(recording, false, 0);
         runsaved = true;
     }
@@ -42,7 +117,7 @@ namespace game
     void inputrunfinished(int runtime)
     {
         if(replaying || recordingoff || recording.empty()) return;
-        saverunreplay(recording, true, runtime);
+        if(!saveliferun(true, runtime)) saverunreplay(recording, true, runtime);
         runsaved = true;
     }
 
@@ -125,8 +200,6 @@ namespace game
     // Settings the simulation reads that are not part of the player's input. A recording
     // stores them at the start of each attempt and records every later change; a replay
     // plays with the recorded values and then gives the player's own values back.
-    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed" };
-    enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
     static int cursettings[NUMSIMSETTINGS], usersettings[NUMSIMSETTINGS];
     static bool settingsforced = false;
 
@@ -284,6 +357,7 @@ namespace game
         if(!s.loading || !s.ok) return;
         curtick = tick;
         resetarmtick = -1;
+        if(lifestart.tick > curtick) lifestart.clear();
         if(replaying || recordingoff || recording.attempts.empty()) return;
         inputattempt &rec = recording.last();
         while(rec.events.length() && rec.events.last().tick > curtick) DELETEA(rec.events.pop().cmd);
@@ -338,7 +412,14 @@ namespace game
             }
         }
         replaystartstate = false;
-        savestatetick();
+        if(lifepending) takelifestate();
+        if(savestatetick())
+        {
+            int tick = 0;
+            savedstart.state = savedstatedata(tick);
+            savedstart.tick = tick;
+            readsettings(savedstart.settings);
+        }
         curtick++;
         tickhash h;
         if(replaying && curtick > replaycur().ticks)
@@ -463,6 +544,8 @@ namespace game
     {
         bool chained = mapchained(mode) && !recordingoff;
         if(!chained || replaypending) saveunfinishedrun();
+        lifestart.clear();
+        lifepending = lifesaved = false;
         clearevents(pending);
         curtick = 0;
         havecontrols = haveguistate = recordingoff = false;
@@ -570,36 +653,31 @@ namespace game
         playinputrun(src);
     });
 
-    // Harness: writes the current attempt (of the recording, or of the replay that is playing)
-    // as a replay that starts from the state saved with savestate: the state, then the input
-    // and hashes after its tick.
-    static void inputsavefromstate(const char *file)
+    static void writefromstate(const char *cmd, const char *file, const statestart &from)
     {
-        int tick = 0;
-        const vector<uchar> &state = savedstatedata(tick);
-        const inputattempt *src = replaying ? &replaycur() : (recording.attempts.empty() ? NULL : &recording.last());
-        if(state.empty() || !src || src->ticks < tick)
+        bool replayed = replaying || (recordingoff && replaydata.attempts.inrange(replayattempt));
+        const inputattempt *src = replayed ? &replaycur() : (recording.attempts.empty() ? NULL : &recording.last());
+        if(!from.valid() || !src || src->ticks < from.tick)
         {
-            conoutf(CON_ERROR, "inputsavefromstate: no saved state in the current attempt");
+            conoutf(CON_ERROR, "%s: no saved state in the current attempt", cmd);
             return;
         }
         inputrun run;
         inputattempt &a = run.add();
-        src->copyto(a);
-        a.snapshot = state;
-        a.starttick = tick;
-        int n = 0;
-        loopv(a.events) if(a.events[i].tick <= tick) { DELETEA(a.events[i].cmd); n++; } else break;
-        a.events.remove(0, n);
-        n = 0;
-        loopv(a.hashes) if(a.hashes[i].tick <= tick) n++; else break;
-        a.hashes.remove(0, n);
+        cutattempt(a, *src, from);
+        bool finished = false;
+        int runtime = runtimerresult(finished);
         replayinfo info;
-        fillreplayinfo(run, false, 0, info);
-        if(writereplay(file, run, info)) conoutf("inputsavefromstate: wrote %s (ticks %d-%d, %d events)", file, tick+1, a.ticks, a.events.length());
-        else conoutf(CON_ERROR, "inputsavefromstate: could not write %s", file);
+        fillreplayinfo(run, finished, runtime, info);
+        if(writereplay(file, run, info)) conoutf("%s: wrote %s (ticks %d-%d, %d events)", cmd, file, from.tick+1, a.ticks, a.events.length());
+        else conoutf(CON_ERROR, "%s: could not write %s", cmd, file);
     }
-    COMMAND(inputsavefromstate, "s");
+
+    // Harness: writes the current attempt (of the recording, or of the replay that is playing or
+    // has just ended) from the state saved with savestate, or from the start of player1's
+    // current life.
+    ICOMMAND(inputsavefromstate, "s", (char *file), writefromstate("inputsavefromstate", file, savedstart));
+    ICOMMAND(inputsavelife, "s", (char *file), writefromstate("inputsavelife", file, lifestart));
 
     // Debug text dump of a run (0 = current, 1 = previous), readable by inputload.
     ICOMMAND(inputdump, "si", (char *file, int *which),
