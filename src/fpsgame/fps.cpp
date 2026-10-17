@@ -281,7 +281,12 @@ namespace game
 
     void snapgameclock(snapio &s)
     {
-        s.i(lastmillis); s.i(lastphysframe);
+        // stored as the clock of the last finished tick: inside a tick the engine has already
+        // moved lastmillis on to the tick being run, between ticks it has not
+        int clock = lastmillis - (insimtick ? SIMTICK : 0);
+        s.i(clock);
+        if(s.loading) lastmillis = clock + (insimtick ? SIMTICK : 0);
+        s.i(lastphysframe);
         s.i(maptime); s.i(maplimit); s.n(intermission); s.i(respawnent);
         s.i(lastslowmohealth); s.i(lastspawnattempt);
         loopi(NUMGUNS) s.i(savedammo[i]);

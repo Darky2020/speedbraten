@@ -730,6 +730,9 @@ void setupscreen()
         }
         screen = SDL_CreateWindow("Cube 2: Sauerbraten", winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
         if(!screen) continue;
+        // test harnesses run the client without covering the desktop
+        const char *minimized = getenv("SAUER_MINIMIZED");
+        if(minimized && minimized[0] && strcmp(minimized, "0")) SDL_MinimizeWindow(screen);
 
     #ifdef __APPLE__
         static const int glversions[] = { 32, 20 };
