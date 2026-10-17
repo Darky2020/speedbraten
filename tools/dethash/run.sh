@@ -18,6 +18,8 @@ timeout=${TIMEOUT:-300}
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 export DYLD_FRAMEWORK_PATH="$app/Contents/Frameworks"
+# keeps the client from taking focus from other apps on macOS (an SDL hint)
+export SDL_MAC_BACKGROUND_APP=1
 cd "$app/Contents/Resources" || exit 1
 
 t0=$(date +%s)

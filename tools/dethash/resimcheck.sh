@@ -10,6 +10,8 @@ mkdir -p "$1"
 out=$(cd "$1" && pwd)
 sbr=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
 app=${SAUER_APP:-/Applications/Sauerbraten.app}
+# keeps the client from taking focus from other apps on macOS (an SDL hint)
+export SDL_MAC_BACKGROUND_APP=1
 
 home=$out/resim
 rm -rf "$home"; mkdir -p "$home"

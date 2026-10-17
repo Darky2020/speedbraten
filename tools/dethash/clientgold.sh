@@ -7,6 +7,8 @@
 # when it starts this script through /bin/bash).
 set -u
 [ -n "${FRAMEWORKS:-}" ] && export DYLD_FRAMEWORK_PATH=$FRAMEWORKS
+# keeps the client from taking focus from other apps on macOS (an SDL hint)
+export SDL_MAC_BACKGROUND_APP=1
 here=$(cd "$(dirname "$0")" && pwd)
 client=$1; data=$2; mkdir -p "$3"; out=$(cd "$3" && pwd); shift 3
 timeout=${TIMEOUT:-900}
