@@ -408,7 +408,7 @@ namespace game
         if(monsterwashurt) monsterhurt = false;
     }
 
-    VARP(hidedeadmonsters, 0, 0, 1);
+    MOD(VARP, hidedeadmonsters, 0, 0, 1);
 
     void rendermonsters()
     {

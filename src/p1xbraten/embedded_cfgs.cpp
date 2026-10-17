@@ -81,8 +81,9 @@ namespace game {
         return 0;
     }
 
+    // speedbraten's settings live in these menus, so a 0 saved by p1xbraten is ignored
     MOD(VARFP, usep1xbratenmenus, 0, 1, 1, {
-        if(usep1xbratenmenus) execfile(menus_cfg.name);
-        else execfile("data/menus.cfg");
+        usep1xbratenmenus = 1;
+        execfile(menus_cfg.name);
     });
 }

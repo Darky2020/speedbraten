@@ -1406,6 +1406,7 @@ int main(int argc, char **argv)
         execfile(game::defaultconfig());
         writecfg(game::restoreconfig());
     }
+    execfile("p1xbraten.cfg", false); // mod settings saved by p1xbraten, kept for players coming from it
     execfile(game::modconfig(), false);
     execfile(game::autoexec(), false);
 

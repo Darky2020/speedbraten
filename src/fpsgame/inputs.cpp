@@ -342,7 +342,7 @@ namespace game
         return replaydesync;
     }
 
-    VARP(speedrunresetidle, 0, 1000, 10000);
+    MOD(VARP, speedrunresetidle, 0, 1000, 10000);
 
     // Pressing speedrunreset arms a restart of the current run from its first map; it fires
     // once the player has given no movement or attack input for speedrunresetidle ms after

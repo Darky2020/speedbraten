@@ -92,10 +92,10 @@ namespace game
     ICOMMAND(runtime, "", (), intret(runticks()*SIMTICK));
     ICOMMAND(runstate, "", (), intret(runkind == RUNTIMER_NONE ? -1 : runstate));
 
-    VARP(runtimer, 0, 1, 1);
-    FVARP(runtimerscale, 0.5, 1.0, 2.0);
-    FVARP(runtimerx, 0.0, 0.50, 1.0);
-    FVARP(runtimery, 0.0, 0.08, 1.0);
+    MOD(VARP, runtimer, 0, 1, 1);
+    MOD(FVARP, runtimerscale, 0.5, 1.0, 2.0);
+    MOD(FVARP, runtimerx, 0.0, 0.50, 1.0);
+    MOD(FVARP, runtimery, 0.0, 0.08, 1.0);
 
     void drawruntimer(int w, int h)
     {

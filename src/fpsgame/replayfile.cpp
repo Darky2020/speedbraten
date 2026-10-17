@@ -223,8 +223,8 @@ namespace game
         return true;
     }
 
-    VARP(replayautosave, 0, 1, 1);
-    VARP(replaymaxunfinished, 0, 20, 1000);
+    MOD(VARP, replayautosave, 0, 1, 1);
+    MOD(VARP, replaymaxunfinished, 0, 20, 1000);
 
     static void formatrunfilename(char *dst, int ms)
     {
@@ -318,8 +318,8 @@ namespace game
     };
     static vector<replayentry> replaylist;
 
-    SVARP(replayfilter, "");
-    VARP(replaysort, 0, 0, 1);
+    MOD(SVARP, replayfilter, "");
+    MOD(VARP, replaysort, 0, 0, 1);
 
     static bool newerreplay(const replayentry &a, const replayentry &b) { return a.info.date > b.info.date; }
 

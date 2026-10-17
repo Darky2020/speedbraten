@@ -1403,7 +1403,7 @@ namespace game
     const char *savedconfig() { return "config.cfg"; }
     const char *restoreconfig() { return "restore.cfg"; }
     const char *defaultconfig() { return "data/defaults.cfg"; }
-    const char *modconfig() { return "p1xbraten.cfg"; }
+    const char *modconfig() { return "speedbraten.cfg"; }
     const char *autoexec() { return "autoexec.cfg"; }
     const char *savedservers() { return "servers.cfg"; }
 

@@ -5,13 +5,13 @@
 
 namespace game
 {
-    VARP(speedometer, 0, 1, 1);
-    VARP(speedometer3d, 0, 1, 1);
-    FVARP(speedometerscale, 0.5, 1.0, 2.0);
-    FVARP(speedometerx, 0.0, 0.50, 1.0);
-    FVARP(speedometery, 0.0, 0.62, 1.0);
-    VARP(speedometersmooth, 0, 1, 1);
-    VARP(speedometersmoothms, 10, 150, 2000);
+    MOD(VARP, speedometer, 0, 1, 1);
+    MOD(VARP, speedometer3d, 0, 1, 1);
+    MOD(FVARP, speedometerscale, 0.5, 1.0, 2.0);
+    MOD(FVARP, speedometerx, 0.0, 0.50, 1.0);
+    MOD(FVARP, speedometery, 0.0, 0.62, 1.0);
+    MOD(VARP, speedometersmooth, 0, 1, 1);
+    MOD(VARP, speedometersmoothms, 10, 150, 2000);
 
     // Speed changes a little on almost every tick while strafing; optionally show an
     // exponential average over speedometersmoothms of real time instead.
