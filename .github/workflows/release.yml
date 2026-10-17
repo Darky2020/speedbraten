@@ -1,0 +1,206 @@
+name: release
+
+# Builds the clients, plays every gold replay in each of them, and packages them. A v* tag
+# creates a draft GitHub release; a manual run only uploads the packages as artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.15.1
+  RESIMDATA: resimdata-v2
+  RESIMDATA_SHA256: 16389af25b8a981e9bf79307c08642de58567bea59c9a1a3b626cf9e4ad7bce2
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - run: sed -i "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
+      - run: bash tools/clientbuild.sh x86_64-windows-gnu out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-windows-x86_64
+          path: out/speedbraten_*
+
+  build-linux:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     arch: x86_64 }
+          - { os: ubuntu-22.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev zlib1g-dev
+      - run: sed -i "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
+      - run: bash tools/clientbuild.sh ${{ matrix.arch }}-linux-gnu out
+      - name: glibc requirement
+        run: objdump -T out/speedbraten_* | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-linux-${{ matrix.arch }}
+          path: out/speedbraten_*
+
+  build-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: universal SDL2 frameworks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fw=sauerbraten.app/Contents/Frameworks
+          rm -rf $fw/*
+          for a in SDL:release-2.32.10:SDL2-2.32.10 SDL_image:release-2.8.12:SDL2_image-2.8.12 SDL_mixer:release-2.8.2:SDL2_mixer-2.8.2; do
+            IFS=: read r t f <<<"$a"
+            gh release download $t -R libsdl-org/$r -p "$f.dmg"
+            m=$(hdiutil attach -nobrowse -readonly "$f.dmg" | tail -1 | awk -F'\t' '{print $NF}')
+            cp -R "$m"/*.framework $fw/
+            hdiutil detach "$m" > /dev/null
+          done
+          mkdir -p out; tar cf out/Frameworks.tar -C sauerbraten.app/Contents Frameworks
+      - run: sed -i '' "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
+      - run: bash tools/clientbuild.sh aarch64-macos out
+      - run: bash tools/clientbuild.sh x86_64-macos out
+      - name: universal binary
+        run: |
+          lipo -create out/speedbraten_aarch64_client out/speedbraten_x86_64_client -output out/speedbraten_universal
+          lipo -info out/speedbraten_universal
+          rm out/speedbraten_aarch64_client out/speedbraten_x86_64_client
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-macos-universal
+          path: out
+
+  golds:
+    needs: [build-windows, build-linux, build-macos]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022,     artifact: client-windows-x86_64 }
+          - { os: ubuntu-22.04,     artifact: client-linux-x86_64 }
+          - { os: ubuntu-22.04-arm, artifact: client-linux-aarch64 }
+          - { os: macos-15,         artifact: client-macos-universal }
+          - { os: macos-15-intel,   artifact: client-macos-universal }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tests
+            tools
+            bin64
+            speedbraten.bat
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: client
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.RESIMDATA }}.tar.gz
+          key: ${{ env.RESIMDATA }}
+      - name: game data
+        run: |
+          [ -f $RESIMDATA.tar.gz ] || curl -fsSL -o $RESIMDATA.tar.gz https://github.com/Darky2020/speedbraten/releases/download/$RESIMDATA/$RESIMDATA.tar.gz
+          echo "$RESIMDATA_SHA256  $RESIMDATA.tar.gz" | (sha256sum -c - || shasum -a 256 -c -)
+          tar xzf $RESIMDATA.tar.gz
+      - name: software OpenGL (Windows)
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R pal1000/mesa-dist-win -p '*release-msvc.7z' -O mesa.7z
+          7z x -omesa mesa.7z x64 > /dev/null
+          mkdir -p resimdata/bin64_speedbraten
+          cp client/speedbraten_x86_64_client.exe bin64/*.dll mesa/x64/*.dll resimdata/bin64_speedbraten/
+          rm -f resimdata/bin64_speedbraten/EOSSDK-*.dll
+      - name: play the gold replays
+        run: |
+          case "$RUNNER_OS" in
+            Windows) client=$(pwd)/resimdata/bin64_speedbraten/speedbraten_x86_64_client.exe; wrap= ;;
+            Linux)   sudo apt-get update > /dev/null && sudo apt-get install -y libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0 xvfb libgl1-mesa-dri > /dev/null
+                     client=$(pwd)/client/$(ls client); chmod +x "$client"; wrap="xvfb-run -a -s '-screen 0 1024x768x24'" ;;
+            macOS)   tar xf client/Frameworks.tar -C client
+                     client=$(pwd)/client/speedbraten_universal; chmod +x "$client"; export FRAMEWORKS=$(pwd)/client/Frameworks; wrap= ;;
+          esac
+          eval $wrap bash tools/dethash/clientgold.sh "$client" resimdata results tests/gold/*.sbr
+      - name: launcher passes the player's -q (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cp speedbraten.bat resimdata/
+          home=$(cygpath -w "$(pwd)/bathome")
+          mkdir -p bathome; printf 'fullscreen 0\nscr_w 640\nscr_h 400\nusesound 0\n' > bathome/init.cfg
+          (cd resimdata && cmd //c speedbraten.bat "-q$home" "-xsleep 2000 [quit]")
+          for i in $(seq 1 60); do [ -f bathome/log.txt ] && grep -q 'init: mainloop' bathome/log.txt && break; sleep 2; done
+          grep 'Using home directory' bathome/log.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: gold-logs-${{ matrix.os }}
+          path: results
+
+  package:
+    needs: golds
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: archives
+        run: |
+          v=${GITHUB_REF_NAME//\//-}
+          mkdir -p dist pkg
+          # Windows: unpacked into the Sauerbraten folder
+          w=pkg/windows; mkdir -p $w/bin64_speedbraten
+          cp art/client-windows-x86_64/speedbraten_x86_64_client.exe $w/bin64_speedbraten/
+          for d in bin64/*.dll; do case $d in *EOSSDK*) ;; *) cp "$d" $w/bin64_speedbraten/ ;; esac; done
+          cp speedbraten.bat $w/
+          (cd $w && zip -qr ../../dist/speedbraten-$v-windows-x64.zip .)
+          # Linux: unpacked into the Sauerbraten folder
+          for a in x86_64 aarch64; do
+            l=pkg/linux-$a; mkdir -p $l/bin_unix
+            cp art/client-linux-$a/speedbraten_${a}_client $l/bin_unix/; chmod +x $l/bin_unix/*
+            cp speedbraten.sh $l/; chmod +x $l/speedbraten.sh
+            tar czf dist/speedbraten-$v-linux-$a.tar.gz -C $l .
+          done
+          # macOS: a separate app that uses the data of Sauerbraten.app
+          app=pkg/Speedbraten.app/Contents; mkdir -p $app/MacOS
+          cp tools/release/macos/speedbraten art/client-macos-universal/speedbraten_universal $app/MacOS/
+          chmod +x $app/MacOS/*
+          tar xf art/client-macos-universal/Frameworks.tar -C $app
+          sed "s/VERSION/${v#v}/" tools/release/macos/Info.plist > $app/Info.plist
+          codesign --force --deep --sign - pkg/Speedbraten.app
+          (cd pkg && ditto -c -k --keepParent Speedbraten.app ../dist/speedbraten-$v-macos.zip)
+          (cd dist && shasum -a 256 * > SHA256SUMS)
+          ls -la dist; cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-packages
+          path: dist
+      - name: draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "speedbraten $GITHUB_REF_NAME" \
+            --notes "Every gold replay in tests/gold played identically in each of these clients before packaging."

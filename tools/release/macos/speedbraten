@@ -1,0 +1,25 @@
+#!/bin/sh
+# Speedbraten.app launcher: runs the client with the game data of a Sauerbraten 2020 app
+# installed next to it, in /Applications or in ~/Applications. Arguments are passed on;
+# -q<dir> replaces the default home directory (shared with Sauerbraten).
+
+here="$(cd "$(dirname "$0")" && pwd)"
+data=
+for app in "$here/../../../Sauerbraten.app" /Applications/Sauerbraten.app "$HOME/Applications/Sauerbraten.app"; do
+    if [ -e "$app/Contents/Resources/data/stdlib.cfg" ]; then
+        data="$(cd "$app/Contents/Resources" && pwd)"
+        break
+    fi
+done
+if [ -z "$data" ]; then
+    osascript -e 'display alert "Sauerbraten not found" message "Speedbraten needs Sauerbraten 2020. Install Sauerbraten.app into Applications, then start Speedbraten again."'
+    exit 1
+fi
+
+home="-q${HOME}/Library/Application Support/Sauerbraten"
+for arg in "$@"; do
+    case "$arg" in -q*) home= ;; esac
+done
+
+cd "$data"
+exec "$here/speedbraten_universal" ${home:+"$home"} -glog.txt "$@"
