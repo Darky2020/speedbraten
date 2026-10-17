@@ -16,6 +16,7 @@ namespace game
     static int curtick = 0, replayattempt = 0, replaypos = 0, replaydesync = 0;
     static bool replaying = false, replaypending = false, havecontrols = false, recordingoff = false;
     static bool runsaved = false;
+    static bool recordingran = false; // a flagrun/race life of the recording started its run
     static int lastactivetick = 0, resetarmtick = -1;
     static int replayedticks = 0;
     static bool replaystartstate = false;
@@ -30,7 +31,7 @@ namespace game
         if(player1->move || player1->strafe || player1->vertical || player1->jumping || player1->attacking) lastactivetick = curtick;
     }
 
-    extern void saverunreplay(const inputrun &run, bool finished, int runtime);
+    extern void saverunreplay(const inputrun &run, bool finished, int runtime, bool started);
 
     static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed" };
     enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
@@ -239,13 +240,14 @@ namespace game
         if(!finished && !runtimerliferan()) return true;
         inputrun run;
         cutattempt(run.add(), recording.last(), lifestart);
-        saverunreplay(run, finished, runtime);
+        saverunreplay(run, finished, runtime, true);
         lifesaved = true;
         return true;
     }
 
     void inputlifespawned()
     {
+        if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
         lifestart.clear();
         lifesaved = false;
@@ -284,6 +286,13 @@ namespace game
     }
     ICOMMAND(loadautostate, "", (), { autoloadpending = true; if(!insimtick) runstateops(); });
 
+    static bool recordingstarted()
+    {
+        const inputattempt &first = *recording.attempts[0];
+        if(!first.flagrun && !first.race) return m_check(first.mode, M_DMSP | M_CLASSICSP);
+        return recordingran || runtimerliferan();
+    }
+
     // Writes the current run as unfinished, once, unless it is a replay or was saved finished;
     // per life, the current life if its run started.
     static void saveunfinishedrun()
@@ -291,14 +300,14 @@ namespace game
         if(replaying || recordingoff || recording.empty()) return;
         if(saveliferun(false, 0)) { runsaved = true; return; }
         if(runsaved) return;
-        saverunreplay(recording, false, 0);
+        saverunreplay(recording, false, 0, recordingstarted());
         runsaved = true;
     }
 
     void inputrunfinished(int runtime)
     {
         if(replaying || recordingoff || recording.empty()) return;
-        if(!saveliferun(true, runtime)) saverunreplay(recording, true, runtime);
+        if(!saveliferun(true, runtime)) saverunreplay(recording, true, runtime, true);
         runsaved = true;
     }
 
@@ -770,7 +779,7 @@ namespace game
         }
         seedgame();
         if(!chained && !recording.empty()) recording.moveto(previous);
-        if(!chained) { recording.clear(); runsaved = false; }
+        if(!chained) { recording.clear(); runsaved = false; recordingran = false; }
         inputattempt &a = recording.add();
         a.seed = gameseed;
         copystring(a.map, name);

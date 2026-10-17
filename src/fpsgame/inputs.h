@@ -147,6 +147,8 @@ namespace game
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);
     extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
+    extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay);
+    extern void statsreplaymoved(const char *from, const char *to);
     extern void playinputrun(const inputrun &run);
     extern bool inputreplayactive();
     extern int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS]);

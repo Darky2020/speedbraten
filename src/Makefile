@@ -154,6 +154,7 @@ CLIENT_OBJS= \
 	fpsgame/speedometer.o \
 	fpsgame/replayfile.o \
 	fpsgame/savestate.o \
+	fpsgame/stats.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -198,13 +199,19 @@ all: client server
 
 clean:
 	cd enet && make clean && cd ..
-	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) sauer_client sauer_server sauer_resim
+	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) $(SQLITE_OBJS) sauer_client sauer_server sauer_resim
 	-$(RM) -r headless
 
 %-standalone.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES)
+$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite
+
+# run statistics database; no threads or loadable extensions, so it links the same everywhere
+SQLITE_OBJS= sqlite/sqlite3.o
+SQLITE_FLAGS= -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
+sqlite/sqlite3.o: sqlite/sqlite3.c
+	$(CC) $(CFLAGS) $(SQLITE_FLAGS) -c -o $@ $<
 
 $(SERVER_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE
 
@@ -213,8 +220,8 @@ OUTBIN=speedbraten_$(firstword $(subst -, ,$(TARGET)))
 ifneq (,$(findstring linux,$(TARGET)))
 client:	libenet
 endif
-client: $(CLIENT_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(LIBS) $(CLIENT_LIBS)
+client: $(CLIENT_OBJS) $(SQLITE_OBJS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(SQLITE_OBJS) $(LIBS) $(CLIENT_LIBS)
 
 server: $(SERVER_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_server $(SERVER_OBJS) $(LIBS)

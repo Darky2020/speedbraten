@@ -331,6 +331,7 @@ namespace game
         {
             defformatstring(file, "replays/%s.sbr", dnf[i]);
             remove(realpath(file));
+            statsreplaymoved(file, NULL);
         }
         files.deletearrays();
     }
@@ -352,12 +353,18 @@ namespace game
         copystring(info.map, first.map);
     }
 
-    void saverunreplay(const inputrun &run, bool finished, int runtime)
+    // started: the run counts for the statistics (a flagrun or race life whose run began)
+    void saverunreplay(const inputrun &run, bool finished, int runtime, bool started)
     {
-        if(!replayautosave || run.empty()) return;
+        if(run.empty()) return;
         const inputattempt &first = *run.attempts[0];
         replayinfo info;
         fillreplayinfo(run, finished, runtime, info);
+        if(!replayautosave)
+        {
+            if(started) statsrecord(run, info, NULL);
+            return;
+        }
 
         time_t t = time(NULL);
         tm *lt = localtime(&t);
@@ -371,7 +378,9 @@ namespace game
         for(int n = 2; fileexists(realpath(file), "r") && n < 100; n++)
             formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
-        if(!writereplay(file, run, info)) { conoutf(CON_ERROR, "could not write %s", file); return; }
+        bool written = writereplay(file, run, info);
+        if(started) statsrecord(run, info, written ? file : NULL);
+        if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);
         else rotatereplays();
     }
@@ -506,6 +515,7 @@ namespace game
     {
         if(!replaylist.inrange(*i)) return;
         remove(realpath(replaylist[*i].file));
+        statsreplaymoved(replaylist[*i].file, NULL);
         replaylist.remove(*i);
     });
 
@@ -517,6 +527,7 @@ namespace game
         copystring(from, realpath(e.file));
         const char *to = realpath(dst);
         if(fileexists(to, "r") || rename(from, to)) return false;
+        statsreplaymoved(e.file, dst);
         copystring(e.file, dst);
         return true;
     }
