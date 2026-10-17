@@ -874,7 +874,7 @@ void logoutfv(const char *fmt, va_list args)
         line.buf[line.len] = '\0';
         if(outhandle) writeline(line);
     }
-    else if(logfile) writelogv(logfile, fmt, args);
+    else if(FILE *f = getlogfile()) writelogv(f, fmt, args);
 }
 
 #else

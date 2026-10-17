@@ -88,7 +88,7 @@ jobs:
             code=$?
             set -e
             echo "$name: exit $code in $(( $(date +%s) - start ))s: $(tr -d '\r' < "../results/$name.json")"
-            [ $code -eq 0 ] || { fail=1; grep -iE "desync|could not|different version|fatal" "../results/$name.log" | head -5; }
+            [ $code -eq 0 ] || { fail=1; grep -iE "desync|could not|different version|fatal" "../results/$name.log" | head -5 || true; }
           done
           exit $fail
       - uses: actions/upload-artifact@v4
