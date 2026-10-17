@@ -1224,6 +1224,7 @@ namespace game
         }
         drawruntimer(w, h);
         drawspeedometer(w, h);
+        drawinputtimers(w, h);
     }
 
     int clipconsole(int w, int h)

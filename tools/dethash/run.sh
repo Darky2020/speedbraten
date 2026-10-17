@@ -33,9 +33,13 @@ for n in $(seq 1 "$runs"); do
     rs=$(date +%s)
     "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; dethash_fixed = ${FIXED:-5}; dethash_stall = ${STALL:-0}; dethash_replay = \"${REPLAY:-}\"; $extra; exec \"$script\"" &
     pid=$!
+    beat=0
     while kill -0 $pid 2>/dev/null; do
-        sleep 5
+        sleep 1
+        beat=$(( beat + 1 ))
         el=$(( $(date +%s) - rs ))
+        if [ "$el" -gt "$timeout" ]; then echo "run $n/$runs: timeout, killing" >&2; kill $pid; fi
+        [ $(( beat % 5 )) -eq 0 ] || continue
         frames=0; [ -f "$log" ] && frames=$(wc -l < "$log" | tr -d ' ')
         if [ "$frames" -gt 1 ]; then
             rate=$(( frames / el ))
@@ -44,7 +48,6 @@ for n in $(seq 1 "$runs"); do
         else
             echo "run $n/$runs: loading, ${el}s" >&2
         fi
-        if [ "$el" -gt "$timeout" ]; then echo "run $n/$runs: timeout, killing" >&2; kill $pid; fi
     done
     wait $pid; code=$?
     lines=0; [ -f "$log" ] && lines=$(wc -l < "$log" | tr -d ' ')

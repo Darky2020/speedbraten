@@ -1483,7 +1483,7 @@ int main(int argc, char **argv)
         if(simticking)
         {
             if(curtime>200) curtime = 200;
-            if(!game::ispaused()) simaccum += curtime;
+            if(!game::ispaused() && !game::holdsim()) simaccum += curtime;
         }
         else if(!game::ispaused()) lastmillis += curtime;
         totalmillis = millis;
@@ -1496,7 +1496,7 @@ int main(int argc, char **argv)
         if(simticking)
         {
             int simulated = 0;
-            while(simaccum >= SIMTICK && !game::ispaused())
+            while(simaccum >= SIMTICK && !game::ispaused() && !game::holdsim())
             {
                 simaccum -= SIMTICK;
                 curtime = SIMTICK;

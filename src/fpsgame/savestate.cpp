@@ -249,7 +249,7 @@ namespace game
         {
             if(savedstate.empty()) conoutf(CON_ERROR, "no saved state");
             else if(inputreplayactive()) conoutf(CON_ERROR, "savestates do not work during a replay");
-            else if(readsnapshot(savedstate)) conoutf("state loaded (tick %d)", inputtick());
+            else if(readsnapshot(savedstate)) { conoutf("state loaded (tick %d)", inputtick()); holdafterload(); }
             else if(snapshotrefusal()) conoutf(CON_ERROR, "%s", snapshotrefusal());
             else conoutf(CON_ERROR, "the saved state belongs to another map, mode or set of bots");
         }

@@ -79,6 +79,26 @@ namespace game
     static vector<statestart *> autostates;
     static bool autoloadpending = false;
 
+    // After a state is loaded live, the simulation holds for loadstatedelay ms (wall clock) so
+    // the player can react; frames, aim and further loads go on meanwhile.
+    MOD(VARP, loadstatedelay, 0, 1000, 10000);
+    static int holduntil = 0;
+
+    void holdafterload()
+    {
+        if(replaying || loadstatedelay <= 0) return;
+        holduntil = totalmillis + loadstatedelay;
+        conoutf("resuming in %.1f s", loadstatedelay/1000.0f);
+    }
+
+    bool holdsim()
+    {
+        if(!holduntil) return false;
+        if(totalmillis - holduntil < 0) return true;
+        holduntil = 0;
+        return false;
+    }
+
     static bool havebots()
     {
         loopv(players) if(players[i]->ai) return true;
@@ -133,7 +153,11 @@ namespace game
         for(int i = autostates.length()-1; i >= 0; i--) if(autostates[i]->tick <= curtick - margin)
         {
             int back = curtick - autostates[i]->tick;
-            if(restorestate(autostates[i]->state)) conoutf("auto state loaded (%.1f s back)", back*SIMTICK/1000.0f);
+            if(restorestate(autostates[i]->state))
+            {
+                conoutf("auto state loaded (%.1f s back)", back*SIMTICK/1000.0f);
+                holdafterload();
+            }
             return;
         }
         conoutf(CON_ERROR, "no earlier auto state");
@@ -694,6 +718,24 @@ namespace game
         resetarmtick = curtick;
         if(speedrunresetidle > 0) conoutf("\f2resetting in %.1f s - move or shoot to cancel", speedrunresetidle/1000.0f);
     });
+
+    // small countdowns under the crosshair: the hold after a load, an armed run reset
+    void drawinputtimers(int w, int h)
+    {
+        string buf = "";
+        if(holduntil && totalmillis - holduntil < 0) formatstring(buf, "resuming in %.1f s", (holduntil - totalmillis)/1000.0f);
+        else if(resetarmtick >= 0 && speedrunresetidle > 0)
+            formatstring(buf, "resetting in %.1f s", max(speedrunresetidle - (curtick - resetarmtick)*SIMTICK, 0)/1000.0f);
+        if(!buf[0]) return;
+        const float scale = 0.4f;
+        int tw = 0, th = 0;
+        text_bounds(buf, tw, th);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        draw_text(buf, int(w/2.0f/scale - tw/2.0f), int(h/2.0f/scale + th/2), 255, 255, 255, 220);
+        pophudmatrix();
+    }
 
     // 0 replays the current run, 1 the one before it
     ICOMMAND(inputreplay, "i", (int *which),
