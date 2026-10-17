@@ -64,6 +64,14 @@ namespace game
         loopi(NUMGUNS) concformatstring(ammo, " %d", d->ammo[i]);
         conoutf("player ammo%s", ammo);
     });
+    // spawned pickup items on the map
+    ICOMMAND(harnessitems, "", (),
+    {
+        const vector<extentity *> &ents = entities::getents();
+        int n = 0;
+        loopv(ents) if(ents[i]->type >= I_SHELLS && ents[i]->type <= I_QUAD && ents[i]->spawned()) n++;
+        intret(n);
+    });
     ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
     // moves player1 onto the n-th entity of the given type; not recorded, so a replay of the
     // attempt does not reproduce it

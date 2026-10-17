@@ -137,7 +137,10 @@ static struct gamemodeinfo
 #define m_checkall(mode, flag) (m_valid(mode) && (gamemodes[(mode) - STARTGAMEMODE].flags&(flag)) == (flag))
 #define m_checkonly(mode, flag, exclude) (m_valid(mode) && (gamemodes[(mode) - STARTGAMEMODE].flags&((flag)|(exclude))) == (flag))
 
-#define m_noitems      (m_check(gamemode, M_NOITEMS))
+namespace server { extern bool flagrunactive(); }
+// flagrun in plain ctf: no items, no ammo and no attacks, movement only
+#define m_weaponless   (m_checkonly(gamemode, M_CTF, M_NOITEMS | M_INSTA | M_EFFICIENCY | M_PROTECT | M_HOLD) && server::flagrunactive())
+#define m_noitems      (m_check(gamemode, M_NOITEMS) || m_weaponless)
 #define m_noammo       (m_check(gamemode, M_NOAMMO|M_NOITEMS))
 #define m_insta        (m_check(gamemode, M_INSTA))
 #define m_tactics      (m_check(gamemode, M_TACTICS))
@@ -510,8 +513,8 @@ struct fpsstate
         {
             armourtype = A_BLUE;
             armour = 50;
-            ammo[GUN_PISTOL] = 40;
-            ammo[GUN_GL] = 1;
+            ammo[GUN_PISTOL] = m_weaponless ? 0 : 40;
+            ammo[GUN_GL] = m_weaponless ? 0 : 1;
         }
         else if(m_sp)
         {

@@ -2286,7 +2286,7 @@ namespace server
     {
         gamestate &gs = ci->state;
         int wait = millis - gs.lastshot;
-        if(!gs.isalive(gamemillis) ||
+        if(!gs.isalive(gamemillis) || m_weaponless ||
            wait<gs.gunwait ||
            gun<GUN_FIST || gun>GUN_PISTOL ||
            gs.ammo[gun]<=0 || (guns[gun].range && from.dist(to) > guns[gun].range + 1))

@@ -161,21 +161,31 @@ namespace game
         return buf;
     }
 
-    // per map and kind: normal runs and segmented runs counted apart
+    // flagruns are told apart by mode: effic ctf, insta ctf, and plain ctf without weapons
+    static const char *kinddisplay(const char *kind, int mode)
+    {
+        if(!strcmp(kind, "flagrun"))
+            return m_check(mode, M_EFFICIENCY) ? "effic flagrun" : m_check(mode, M_INSTA) ? "insta flagrun" : "weaponless flagrun";
+        if(!strcmp(kind, "sp")) return m_check(mode, M_DMSP) ? "dmsp" : "sp";
+        return kind;
+    }
+
+    // per map, kind and mode: normal runs and segmented runs counted apart
     struct mapstats
     {
         string map, kind;
-        int runs, finished, pb, segruns, segpb, avg10;
+        int mode, runs, finished, pb, segruns, segpb, avg10;
         int64_t ticks, last;
     };
     static vector<mapstats> maplist;
 
-    static int queryint(const char *sql, const char *map, const char *kind, int def)
+    static int queryint(const char *sql, const char *map, const char *kind, int mode, int def)
     {
         sqlite3_stmt *st = prepare(sql);
         if(!st) return def;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
         int val = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL ? sqlite3_column_int(st, 0) : def;
         sqlite3_finalize(st);
         return val;
@@ -186,11 +196,11 @@ namespace game
     {
         maplist.setsize(0);
         sqlite3_stmt *st = prepare(
-            "SELECT map, kind, SUM(splices = 0), SUM(finished AND splices = 0),"
+            "SELECT map, kind, mode, SUM(splices = 0), SUM(finished AND splices = 0),"
             "  MIN(CASE WHEN finished AND splices = 0 THEN runtime END),"
             "  SUM(splices > 0), MIN(CASE WHEN finished AND splices > 0 THEN runtime END),"
             "  SUM(ticks), MAX(date) "
-            "FROM attempts WHERE instr(lower(map), lower(?)) GROUP BY map, kind ORDER BY MAX(date) DESC");
+            "FROM attempts WHERE instr(lower(map), lower(?)) GROUP BY map, kind, mode ORDER BY MAX(date) DESC");
         if(!st) { intret(0); return; }
         bindtext(st, 1, filter);
         while(sqlite3_step(st) == SQLITE_ROW)
@@ -198,18 +208,19 @@ namespace game
             mapstats &m = maplist.add();
             copystring(m.map, (const char *)sqlite3_column_text(st, 0));
             copystring(m.kind, (const char *)sqlite3_column_text(st, 1));
-            m.runs = sqlite3_column_int(st, 2);
-            m.finished = sqlite3_column_int(st, 3);
-            m.pb = sqlite3_column_type(st, 4) != SQLITE_NULL ? sqlite3_column_int(st, 4) : -1;
-            m.segruns = sqlite3_column_int(st, 5);
-            m.segpb = sqlite3_column_type(st, 6) != SQLITE_NULL ? sqlite3_column_int(st, 6) : -1;
-            m.ticks = sqlite3_column_int64(st, 7);
-            m.last = sqlite3_column_int64(st, 8);
+            m.mode = sqlite3_column_int(st, 2);
+            m.runs = sqlite3_column_int(st, 3);
+            m.finished = sqlite3_column_int(st, 4);
+            m.pb = sqlite3_column_type(st, 5) != SQLITE_NULL ? sqlite3_column_int(st, 5) : -1;
+            m.segruns = sqlite3_column_int(st, 6);
+            m.segpb = sqlite3_column_type(st, 7) != SQLITE_NULL ? sqlite3_column_int(st, 7) : -1;
+            m.ticks = sqlite3_column_int64(st, 8);
+            m.last = sqlite3_column_int64(st, 9);
         }
         sqlite3_finalize(st);
         loopv(maplist)
-            maplist[i].avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND finished AND splices = 0 "
-                                        "ORDER BY date DESC, id DESC LIMIT 10)", maplist[i].map, maplist[i].kind, -1);
+            maplist[i].avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND splices = 0 "
+                                        "ORDER BY date DESC, id DESC LIMIT 10)", maplist[i].map, maplist[i].kind, maplist[i].mode, -1);
         intret(maplist.length());
     });
 
@@ -219,6 +230,8 @@ namespace game
         const mapstats &m = maplist[*i];
         if(!strcmp(field, "map")) result(m.map);
         else if(!strcmp(field, "kind")) result(m.kind);
+        else if(!strcmp(field, "mode")) intret(m.mode);
+        else if(!strcmp(field, "kindname")) result(kinddisplay(m.kind, m.mode));
         else if(!strcmp(field, "runs")) intret(m.runs);
         else if(!strcmp(field, "finished")) intret(m.finished);
         else if(!strcmp(field, "pb")) result(m.pb >= 0 ? formatms(m.pb) : "-");
@@ -237,15 +250,16 @@ namespace game
     };
     static vector<attemptstats> attemptlist;
 
-    // statsattempts map kind: caches the newest 100 runs of a map
-    ICOMMAND(statsattempts, "ss", (char *map, char *kind),
+    // statsattempts map kind mode: caches the newest 100 runs of a map
+    ICOMMAND(statsattempts, "ssi", (char *map, char *kind, int *mode),
     {
         attemptlist.setsize(0);
         sqlite3_stmt *st = prepare("SELECT date, finished, runtime, ticks, splices, idle, replay FROM attempts "
-                                   "WHERE map = ? AND kind = ? ORDER BY date DESC, id DESC LIMIT 100");
+                                   "WHERE map = ? AND kind = ? AND mode = ? ORDER BY date DESC, id DESC LIMIT 100");
         if(!st) { intret(0); return; }
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, *mode);
         while(sqlite3_step(st) == SQLITE_ROW)
         {
             attemptstats &a = attemptlist.add();

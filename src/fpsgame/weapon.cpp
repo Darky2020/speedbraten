@@ -830,6 +830,7 @@ namespace game
         if(attacktime<d->gunwait) return;
         d->gunwait = 0;
         if((d==player1 || d->ai) && !d->attacking) return;
+        if(m_weaponless) return;
         d->lastaction = lastmillis;
         d->lastattackgun = d->gunselect;
         if(!d->ammo[d->gunselect])
