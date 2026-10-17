@@ -7,6 +7,8 @@
 # /Applications/Sauerbraten.app/Contents/Resources).
 # Env: OVERLAY=<home dir> layers that home's packages/ on top, the same way the game prefers
 # files in the home dir, so replays recorded with custom or modified content still match.
+# EXTRA=<list file> also packs each listed path (relative to <game dir>, one per line, taken
+# from the overlay first), e.g. the images and models a real client loads for these maps.
 set -eu
 src=$(cd "$1" && pwd); out=$2; shift 2
 [ $# -gt 0 ] || { echo "no maps given" >&2; exit 1; }
@@ -33,5 +35,15 @@ for m in "$@"; do
     done
     [ -n "$found" ] || { echo "map not found: $m" >&2; exit 1; }
 done
+if [ -n "${EXTRA:-}" ]; then
+    while IFS= read -r f; do
+        [ -n "$f" ] && [ ! -e "$root/$f" ] || continue
+        for dir in "${OVERLAY:-}" "$src"; do
+            [ -n "$dir" ] && [ -f "$dir/$f" ] || continue
+            mkdir -p "$root/$(dirname "$f")"; cp "$dir/$f" "$root/$f"; continue 2
+        done
+        echo "not found: $f" >&2
+    done < "$EXTRA"
+fi
 tar czf "$out" -C "$tmp" resimdata
 echo "$out: $(du -h "$out" | cut -f1), $(find "$root" -type f | wc -l | tr -d ' ') files, maps: $*" >&2

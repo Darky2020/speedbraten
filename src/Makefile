@@ -28,6 +28,7 @@ ifdef DEBUG
 	override CFLAGS+= -g3
 	override CXXFLAGS+= -O0 -g3 -DDEBUG=$$DEBUG
 else
+	override CFLAGS+= -O2
 	override CXXFLAGS+= -O3
 endif
 LINKERFLAGS=
@@ -63,7 +64,7 @@ ifneq (,$(findstring windows,$(TARGET)))
 		LIBS+= -lEOSSDK-Win64-Shipping
 	endif
 	CLIENT_INCLUDES= -Iwindows/include/SDL2
-	CLIENT_LIBS= -lSDL2 -lSDL2_image -lSDL2_mixer -lopengl32
+	CLIENT_LIBS= -lSDL2 -lSDL2_image -lSDL2_mixer -lopengl32 -Wl,--subsystem,windows
 endif
 
 ifneq (,$(findstring macos,$(TARGET)))
@@ -206,7 +207,7 @@ $(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES)
 
 $(SERVER_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE
 
-OUTBIN=p1xbraten_x86_64
+OUTBIN=speedbraten_$(firstword $(subst -, ,$(TARGET)))
 
 ifneq (,$(findstring linux,$(TARGET)))
 client:	libenet
