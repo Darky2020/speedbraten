@@ -994,10 +994,22 @@ bool save_world(const char *mname, bool nolms)
     return true;
 }
 
-static uint mapcrc = 0;
+static uint mapcrc = 0, mapcfgcrc = 0;
 
 uint getmapcrc() { return mapcrc; }
-void clearmapcrc() { mapcrc = 0; }
+// 0 when the map has no cfg
+uint getmapcfgcrc() { return mapcfgcrc; }
+void clearmapcrc() { mapcrc = mapcfgcrc = 0; }
+
+static uint filecrc(const char *name)
+{
+    size_t len = 0;
+    char *buf = loadfile(path(name, true), &len, false);
+    if(!buf) return 0;
+    uint crc = crc32(crc32(0, Z_NULL, 0), (const Bytef *)buf, len);
+    delete[] buf;
+    return crc ? crc : 1;
+}
 
 bool load_world(const char *mname, const char *cname)        // still supports all map formats that have existed since the earliest cube betas!
 {
@@ -1248,6 +1260,7 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     identflags |= IDF_OVERRIDDEN;
     execfile("data/default_map_settings.cfg", false);
     execfile(cfgname, false);
+    mapcfgcrc = filecrc(cfgname);
     identflags &= ~IDF_OVERRIDDEN;
    
     extern void fixlightmapnormals();

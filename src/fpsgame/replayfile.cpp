@@ -9,6 +9,7 @@
 //            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
 //            [v6+: var snapshot length, snapshot bytes, var start tick (with a snapshot)],
 //            [v7+: var splices, (var tick, var discarded ticks) per splice],
+//            [v8+: u32 map cfg crc, 0 without a cfg],
 //            var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
@@ -23,7 +24,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 7, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 8, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -124,6 +125,7 @@ namespace game
             if(a.snapshot.length()) { w.buf.put(a.snapshot.getbuf(), a.snapshot.length()); w.var(a.starttick); }
             w.var(a.splices.length());
             loopv(a.splices) { w.var(a.splices[i].tick); w.var(a.splices[i].discarded); }
+            w.u32(a.cfgcrc);
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -236,6 +238,11 @@ namespace game
                     sp.tick = r.var();
                     sp.discarded = r.var();
                 }
+            }
+            if(info.version >= 8)
+            {
+                a.cfgcrc = r.u32();
+                a.hascfgcrc = true;
             }
             a.ticks = r.var();
             int events = r.var(), tick = 0;

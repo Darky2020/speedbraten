@@ -1271,6 +1271,10 @@ int main(int argc, char **argv)
     initing = INIT_RESET;
     // set home dir first
     for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'q') { sethomedir(&argv[i][2]); break; }
+    // -o<dir> sets the folder of speedbraten's file patches, -o alone turns them off
+    const char *overrides = "speedbraten_overrides";
+    for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'o') overrides = &argv[i][2];
+    if(overrides[0]) setoverridedir(overrides);
     // set log after home dir, but before anything else
     for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'g')
     {
@@ -1280,11 +1284,13 @@ int main(int argc, char **argv)
         break;
     }
     execfile("init.cfg", false);
+    if(overridedir[0]) logoutf("Using file patches: %s", overridedir);
     for(int i = 1; i<argc; i++)
     {
         if(argv[i][0]=='-') switch(argv[i][1])
         {
             case 'q': if(homedir[0]) logoutf("Using home directory: %s", homedir); break;
+            case 'o': break;
             case 'r': /* compat, ignore */ break;
             case 'k':
             {

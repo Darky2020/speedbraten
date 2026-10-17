@@ -33,7 +33,7 @@ for n in $(seq 1 "$runs"); do
     log=$home/dethash.log
     echo "run $n/$runs: start (seed=$seed draw=$draw extra='$extra' fixed=${FIXED:-5} stall=${STALL:-0})" >&2
     rs=$(date +%s)
-    "$client" -q"$home" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; dethash_fixed = ${FIXED:-5}; dethash_stall = ${STALL:-0}; dethash_replay = \"${REPLAY:-}\"; $extra; exec \"$script\"" &
+    "$client" -q"$home" -o"$repo/data/overrides" -glog.txt -x"dethash_seed = $seed; dethash_draw = $draw; dethash_fixed = ${FIXED:-5}; dethash_stall = ${STALL:-0}; dethash_replay = \"${REPLAY:-}\"; $extra; exec \"$script\"" &
     pid=$!
     beat=0
     while kill -0 $pid 2>/dev/null; do

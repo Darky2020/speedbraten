@@ -20,7 +20,7 @@ cp "$sbr" "$home/replay.sbr"
 echo "resim: start" >&2
 t=$(date +%s)
 ( cd "$app/Contents/Resources" && DYLD_FRAMEWORK_PATH="$app/Contents/Frameworks" \
-    "$repo/src/sauer_resim" -q"$home" -x'dethashstart dethash.log ""' replay.sbr > "$out/resim.json" 2> "$home/log.txt" )
+    "$repo/src/sauer_resim" -q"$home" -o"$repo/data/overrides" -x'dethashstart dethash.log ""' replay.sbr > "$out/resim.json" 2> "$home/log.txt" )
 code=$?
 echo "resim: exit $code in $(( $(date +%s) - t ))s" >&2
 cat "$out/resim.json"

@@ -286,7 +286,7 @@ char *cubecasefind(const char *haystack, const char *needle)
 #include <dirent.h>
 #endif
 
-string homedir = "";
+string homedir = "", overridedir = "";
 struct packagedir
 {
     char *dir, *filter;
@@ -452,6 +452,44 @@ const char *sethomedir(const char *dir)
     return homedir;
 }
 
+// Files in the override dir replace the same files in the home dir and the game folders.
+const char *setoverridedir(const char *dir)
+{
+    string pdir;
+    copystring(pdir, dir);
+    if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir) || !fileexists(pdir, "d")) return NULL;
+    copystring(overridedir, pdir);
+    return overridedir;
+}
+
+static bool samecontents(const char *a, const char *b)
+{
+    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
+    bool same = fa && fb;
+    while(same)
+    {
+        char ba[4096], bb[4096];
+        size_t na = fread(ba, 1, sizeof(ba), fa), nb = fread(bb, 1, sizeof(bb), fb);
+        if(na != nb || memcmp(ba, bb, na)) same = false;
+        else if(!na) break;
+    }
+    if(fa) fclose(fa);
+    if(fb) fclose(fb);
+    return same;
+}
+
+static vector<char *> checkedoverrides;
+
+static void warnshadowedhome(const char *filename, const char *override)
+{
+    if(!homedir[0]) return;
+    loopv(checkedoverrides) if(!strcmp(checkedoverrides[i], filename)) return;
+    checkedoverrides.add(newstring(filename));
+    defformatstring(home, "%s%s", homedir, filename);
+    if(fileexists(home, "r") && !samecontents(home, override))
+        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
+}
+
 const char *addpackagedir(const char *dir)
 {
     string pdir;
@@ -477,6 +515,15 @@ const char *addpackagedir(const char *dir)
 const char *findfile(const char *filename, const char *mode)
 {
     static string s;
+    if(overridedir[0] && mode[0]!='w' && mode[0]!='a')
+    {
+        formatstring(s, "%s%s", overridedir, filename);
+        if(fileexists(s, mode) && (mode[0]=='d' || !fileexists(s, "d")))
+        {
+            if(mode[0]!='d') warnshadowedhome(filename, s);
+            return s;
+        }
+    }
     if(homedir[0])
     {
         formatstring(s, "%s%s", homedir, filename);
@@ -573,6 +620,11 @@ int listfiles(const char *dir, const char *ext, vector<char *> &files)
     if(homedir[0])
     {
         formatstring(s, "%s%s", homedir, dirname);
+        if(listdir(s, false, ext, files)) dirs++;
+    }
+    if(overridedir[0])
+    {
+        formatstring(s, "%s%s", overridedir, dirname);
         if(listdir(s, false, ext, files)) dirs++;
     }
     loopv(packagedirs)

@@ -10,6 +10,7 @@ set -u
 # keeps the client from taking focus from other apps on macOS (an SDL hint)
 export SDL_MAC_BACKGROUND_APP=1
 here=$(cd "$(dirname "$0")" && pwd)
+overrides=$(cd "$here/../../data/overrides" && pwd)
 client=$1; data=$2; mkdir -p "$3"; out=$(cd "$3" && pwd); shift 3
 timeout=${TIMEOUT:-900}
 limit() {
@@ -32,7 +33,7 @@ for sbr in "$@"; do
     cp "$here/clientgold.cfg" "$home/"
     echo "[$n/$total] $name: start" >&2
     s=$(date +%s)
-    ( cd "$data" && limit "$timeout" "$client" -q"$home" -glog.txt -x'exec clientgold.cfg' > /dev/null 2>&1 )
+    ( cd "$data" && limit "$timeout" "$client" -q"$home" -o"$overrides" -glog.txt -x'exec clientgold.cfg' > /dev/null 2>&1 )
     code=$?
     log=$home/log.txt
     line=$(grep -h '^GOLDCHECK' "$log" 2>/dev/null | tr -d '\r')

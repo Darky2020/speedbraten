@@ -382,6 +382,7 @@ extern bool save_world(const char *mname, bool nolms = false);
 extern void fixmapname(char *name);
 extern void getmapfilenames(const char *fname, const char *cname, char *pakname, char *mapname, char *cfgname);
 extern uint getmapcrc();
+extern uint getmapcfgcrc();
 extern void clearmapcrc();
 extern bool loadents(const char *fname, vector<entity> &ents, uint *crc = NULL);
 

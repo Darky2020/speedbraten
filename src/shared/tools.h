@@ -1360,7 +1360,7 @@ extern int cubecasecmp(const char *s1, const char *s2, int n = INT_MAX);
 static inline bool cubecaseequal(const char *s1, const char *s2, int n = INT_MAX) { return !cubecasecmp(s1, s2, n); }
 extern char *cubecasefind(const char *haystack, const char *needle);
 
-extern string homedir;
+extern string homedir, overridedir;
 
 extern char *makerelpath(const char *dir, const char *file, const char *prefix = NULL, const char *cmd = NULL);
 extern char *path(char *s);
@@ -1370,6 +1370,7 @@ extern bool fileexists(const char *path, const char *mode);
 extern bool createdir(const char *path);
 extern size_t fixpackagedir(char *dir);
 extern const char *sethomedir(const char *dir);
+extern const char *setoverridedir(const char *dir);
 extern const char *addpackagedir(const char *dir);
 extern const char *findfile(const char *filename, const char *mode);
 extern bool findzipfile(const char *filename);

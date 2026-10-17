@@ -56,11 +56,13 @@ namespace game
         int starttick;                   // tick of the snapshot, 0 without one
         vector<inputsplice> splices;
         uint seed, mapcrc;
+        uint cfgcrc;    // crc of the map cfg, 0 without one
+        bool hascfgcrc; // false before v8
         string map, team;
         int mode, flagrun, race, ticks;
         int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS for replays made before v4
 
-        inputattempt() : starttick(0), seed(0), mapcrc(0), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
+        inputattempt() : starttick(0), seed(0), mapcrc(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -91,6 +93,8 @@ namespace game
             dst.splices = splices;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
+            dst.cfgcrc = cfgcrc;
+            dst.hascfgcrc = hascfgcrc;
             copystring(dst.map, map);
             copystring(dst.team, team);
             dst.mode = mode;

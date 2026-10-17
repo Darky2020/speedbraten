@@ -76,6 +76,7 @@ jobs:
           chmod +x bin/sauer_resim-* || true
           exe=$(cd bin && pwd)/$(ls bin)
           gold=$(pwd)/tests/gold
+          overrides=$(pwd)/data/overrides
           mkdir -p results
           fail=0
           cd resimdata
@@ -84,7 +85,7 @@ jobs:
             rm -rf ../home; mkdir -p ../home
             start=$(date +%s)
             set +e
-            "$exe" -q../home "$f" > "../results/$name.json" 2> "../results/$name.log"
+            "$exe" -q../home -o"$overrides" "$f" > "../results/$name.json" 2> "../results/$name.log"
             code=$?
             set -e
             echo "$name: exit $code in $(( $(date +%s) - start ))s: $(tr -d '\r' < "../results/$name.json")"

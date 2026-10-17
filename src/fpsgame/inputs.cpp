@@ -621,6 +621,8 @@ namespace game
             inputattempt &a = replaycur();
             if(curtick == 1 && a.mapcrc && getmapcrc() != a.mapcrc)
                 conoutf(CON_ERROR, "replay was recorded on a different version of %s (map crc %08x, loaded %08x): it will not play back correctly", a.map, a.mapcrc, getmapcrc());
+            if(curtick == 1 && a.hascfgcrc && getmapcfgcrc() != a.cfgcrc)
+                conoutf(CON_ERROR, "replay was recorded with a different %s.cfg (crc %08x, loaded %08x): it will likely not play back correctly", a.map, a.cfgcrc, getmapcfgcrc());
             // mirrors the recording: setting changes come first in a tick, and changes made
             // by the tick's own input are not events
             while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick && a.events[replaypos].type == INPUT_SETTING)
@@ -654,6 +656,8 @@ namespace game
         {
             copystring(rec.team, player1->team);
             rec.mapcrc = getmapcrc();
+            rec.cfgcrc = getmapcfgcrc();
+            rec.hascfgcrc = true;
         }
         recordsettingchanges(rec);
         while(pending.length())
@@ -898,6 +902,7 @@ namespace game
             f->printf("attempt %d %u %d %s %s %d %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks, a.race);
             loopv(a.settings) f->printf("s %s %d\n", escapestring(a.settings[i].name), a.settings[i].value);
             loopv(a.splices) f->printf("sp %d %d\n", a.splices[i].tick, a.splices[i].discarded);
+            if(a.hascfgcrc) f->printf("cfgcrc %08x\n", a.cfgcrc);
             // the saved state as hex, 1024 bytes per line
             if(a.snapshot.length()) f->printf("snap %d\n", a.starttick);
             for(int pos = 0; pos < a.snapshot.length(); pos += 1024)
@@ -980,6 +985,7 @@ namespace game
                 a.race = w.length() > 8 ? parseint(w[8]) : 0;
             }
             else if(cur && w.length() >= 2 && !strcmp(w[0], "snap")) cur->starttick = parseint(w[1]);
+            else if(cur && w.length() >= 2 && !strcmp(w[0], "cfgcrc")) { cur->cfgcrc = uint(strtoul(w[1], NULL, 16)); cur->hascfgcrc = true; }
             else if(cur && w.length() >= 3 && !strcmp(w[0], "sp"))
             {
                 inputsplice &sp = cur->splices.add();
