@@ -861,6 +861,7 @@ namespace game
     extern void clearprojectiles();
     extern void updateprojectiles(int curtime);
     extern void removeprojectiles(fpsent *owner);
+    extern void removeshots(fpsent *d);
     extern void renderprojectiles();
     extern void preloadbouncers();
     extern void removeweapons(fpsent *owner);

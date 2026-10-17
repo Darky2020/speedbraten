@@ -1027,6 +1027,12 @@ namespace game
         removeprojectiles(d);
     }
 
+    void removeshots(fpsent *d)
+    {
+        removeprojectiles(d);
+        loopv(bouncers) if(bouncers[i]->owner==d && bouncers[i]->bouncetype==BNC_GRENADE) { delete bouncers[i]; bouncers.remove(i--); }
+    }
+
     // The renderer's worldpos is only refreshed on drawn frames and follows the camera, so
     // offline the aim point is traced from the player's own view instead.
     static vec simaimpos()

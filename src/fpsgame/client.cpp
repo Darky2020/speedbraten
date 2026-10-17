@@ -1677,6 +1677,8 @@ namespace game
                     particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                 }
                 if(!victim) break;
+                // a new flagrun or race attempt must not start with rockets or grenades left over
+                if(victim==player1 && actor==player1 && (flagrunrules() || racerules())) removeshots(player1);
                 killed(victim, actor);
                 break;
             }
