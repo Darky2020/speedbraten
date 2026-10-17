@@ -182,6 +182,7 @@ namespace game
     }
 
     bool takesnapshot(vector<uchar> &buf) { return writesnapshot(buf); }
+    bool restorestate(vector<uchar> &buf) { return readsnapshot(buf); }
 
     uint snapshotdigest()
     {

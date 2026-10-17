@@ -60,6 +60,9 @@ namespace game
         n = 0;
         loopv(a.hashes) if(a.hashes[i].tick <= from.tick) n++; else break;
         a.hashes.remove(0, n);
+        n = 0;
+        loopv(a.splices) if(a.splices[i].tick <= from.tick) n++; else break;
+        a.splices.remove(0, n);
     }
 
     // Flagruns and races are judged per life: the replay of a finished run starts at the
@@ -68,6 +71,13 @@ namespace game
     MOD(VARP, replaylifeonly, 0, 1, 1);
     static statestart lifestart, savedstart;
     static bool lifepending = false, lifesaved = false;
+
+    // Automatic states for segmented runs, taken every autostateinterval ms while recording;
+    // loadautostate steps back through them.
+    MOD(VARP, autostateinterval, 0, 1000, 60000);
+    MOD(VARP, autostatecount, 0, 30, 1000);
+    static vector<statestart *> autostates;
+    static bool autoloadpending = false;
 
     static bool havebots()
     {
@@ -102,6 +112,33 @@ namespace game
         lifesaved = false;
         lifepending = true;
     }
+
+    static void takeautostate()
+    {
+        if(autostateinterval <= 0 || autostatecount <= 0 || replaying || recordingoff || curtick <= 0) return;
+        if(curtick % max(autostateinterval / SIMTICK, 1)) return;
+        statestart *st = new statestart;
+        if(!takesnapshot(st->state)) { delete st; return; }
+        st->tick = curtick;
+        readsettings(st->settings);
+        autostates.add(st);
+        while(autostates.length() > autostatecount) delete autostates.remove(0);
+    }
+
+    // loads the newest automatic state that lies at least a quarter interval back
+    static void loadautostate()
+    {
+        if(replaying || replaypending) { conoutf(CON_ERROR, "savestates do not work during a replay"); return; }
+        int margin = max(autostateinterval / SIMTICK / 4, 1);
+        for(int i = autostates.length()-1; i >= 0; i--) if(autostates[i]->tick <= curtick - margin)
+        {
+            int back = curtick - autostates[i]->tick;
+            if(restorestate(autostates[i]->state)) conoutf("auto state loaded (%.1f s back)", back*SIMTICK/1000.0f);
+            return;
+        }
+        conoutf(CON_ERROR, "no earlier auto state");
+    }
+    ICOMMAND(loadautostate, "", (), autoloadpending = true);
 
     // Writes the current run as unfinished, once, unless it is a replay or was saved finished;
     // per life, the current life if its run started.
@@ -358,11 +395,20 @@ namespace game
         curtick = tick;
         resetarmtick = -1;
         if(lifestart.tick > curtick) lifestart.clear();
+        while(autostates.length() && autostates.last()->tick > curtick) delete autostates.pop();
         if(replaying || recordingoff || recording.attempts.empty()) return;
         inputattempt &rec = recording.last();
+        int discarded = rec.ticks - curtick;
         while(rec.events.length() && rec.events.last().tick > curtick) DELETEA(rec.events.pop().cmd);
         while(rec.hashes.length() && rec.hashes.last().tick > curtick) rec.hashes.pop();
+        while(rec.splices.length() && rec.splices.last().tick > curtick) rec.splices.pop();
         rec.ticks = min(rec.ticks, curtick);
+        if(discarded > 0)
+        {
+            inputsplice &sp = rec.splices.add();
+            sp.tick = curtick;
+            sp.discarded = discarded;
+        }
     }
 
     // Restores a state saved earlier in the current recording, or in the replay that is
@@ -420,6 +466,8 @@ namespace game
             savedstart.tick = tick;
             readsettings(savedstart.settings);
         }
+        if(autoloadpending) { autoloadpending = false; loadautostate(); }
+        takeautostate();
         curtick++;
         tickhash h;
         if(replaying && curtick > replaycur().ticks)
@@ -546,6 +594,8 @@ namespace game
         if(!chained || replaypending) saveunfinishedrun();
         lifestart.clear();
         lifepending = lifesaved = false;
+        autostates.deletecontents();
+        autoloadpending = false;
         clearevents(pending);
         curtick = 0;
         havecontrols = haveguistate = recordingoff = false;
@@ -693,6 +743,7 @@ namespace game
             const inputattempt &a = *run.attempts[k];
             f->printf("attempt %d %u %d %s %s %d %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks, a.race);
             loopv(a.settings) f->printf("s %s %d\n", escapestring(a.settings[i].name), a.settings[i].value);
+            loopv(a.splices) f->printf("sp %d %d\n", a.splices[i].tick, a.splices[i].discarded);
             // the saved state as hex, 1024 bytes per line
             if(a.snapshot.length()) f->printf("snap %d\n", a.starttick);
             for(int pos = 0; pos < a.snapshot.length(); pos += 1024)
@@ -775,6 +826,12 @@ namespace game
                 a.race = w.length() > 8 ? parseint(w[8]) : 0;
             }
             else if(cur && w.length() >= 2 && !strcmp(w[0], "snap")) cur->starttick = parseint(w[1]);
+            else if(cur && w.length() >= 3 && !strcmp(w[0], "sp"))
+            {
+                inputsplice &sp = cur->splices.add();
+                sp.tick = parseint(w[1]);
+                sp.discarded = parseint(w[2]);
+            }
             else if(cur && w.length() >= 2 && !strcmp(w[0], "sb"))
             {
                 for(const char *c = w[1]; c[0] && c[1]; c += 2)

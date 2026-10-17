@@ -33,6 +33,12 @@ namespace game
         uint groups[DETHASH_GROUPS];
     };
 
+    // a saved state was loaded at this tick of the attempt, throwing away the ticks played after it
+    struct inputsplice
+    {
+        int tick, discarded;
+    };
+
     struct inputsetting
     {
         string name;
@@ -48,6 +54,7 @@ namespace game
         vector<inputsetting> settings; // values at the start of the attempt; empty before v5
         vector<uchar> snapshot;          // saved state the attempt starts from instead of map start
         int starttick;                   // tick of the snapshot, 0 without one
+        vector<inputsplice> splices;
         uint seed, mapcrc;
         string map, team;
         int mode, flagrun, race, ticks;
@@ -64,6 +71,7 @@ namespace game
             settings.setsize(0);
             snapshot.setsize(0);
             starttick = 0;
+            splices.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -80,6 +88,7 @@ namespace game
             dst.settings = settings;
             dst.snapshot = snapshot;
             dst.starttick = starttick;
+            dst.splices = splices;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             copystring(dst.map, map);
@@ -123,9 +132,9 @@ namespace game
         int version;
         uint date;
         string client, player, map;
-        int mode, flagrun, race, finished, runtime, ticks, maps;
+        int mode, flagrun, race, splices, finished, runtime, ticks, maps;
 
-        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), finished(0), runtime(0), ticks(0), maps(0)
+        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0)
         {
             client[0] = player[0] = map[0] = '\0';
         }

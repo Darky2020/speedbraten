@@ -950,6 +950,7 @@ namespace game
     extern dynent *dynentat(int i);
     extern bool savestatetick();
     extern bool takesnapshot(vector<uchar> &buf);
+    extern bool restorestate(vector<uchar> &buf);
     extern void noteworldedit();
     extern void savestatemapstart();
     extern uint snapshotdigest();

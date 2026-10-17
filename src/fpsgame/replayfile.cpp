@@ -3,10 +3,12 @@
 //
 // Layout (all integers little endian, "var" = unsigned LEB128, "svar" = zigzag LEB128):
 //   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
-//   [v3+: var race], var finished, var runtime ms, var ticks, var maps, str first map
+//   [v3+: var race], [v7+: var splices], var finished, var runtime ms, var ticks, var maps,
+//   str first map
 //   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
 //            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
 //            [v6+: var snapshot length, snapshot bytes, var start tick (with a snapshot)],
+//            [v7+: var splices, (var tick, var discarded ticks) per splice],
 //            var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
@@ -21,7 +23,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 6, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 7, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -100,6 +102,7 @@ namespace game
         w.svar(info.mode);
         w.var(info.flagrun);
         w.var(info.race);
+        w.var(info.splices);
         w.var(info.finished);
         w.var(info.runtime);
         w.var(info.ticks);
@@ -119,6 +122,8 @@ namespace game
             loopv(a.settings) { w.str(a.settings[i].name); w.svar(a.settings[i].value); }
             w.var(a.snapshot.length());
             if(a.snapshot.length()) { w.buf.put(a.snapshot.getbuf(), a.snapshot.length()); w.var(a.starttick); }
+            w.var(a.splices.length());
+            loopv(a.splices) { w.var(a.splices[i].tick); w.var(a.splices[i].discarded); }
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -182,6 +187,7 @@ namespace game
         info.mode = r.svar();
         info.flagrun = r.var();
         info.race = info.version >= 3 ? r.var() : 0;
+        info.splices = info.version >= 7 ? r.var() : 0;
         info.finished = r.var();
         info.runtime = r.var();
         info.ticks = r.var();
@@ -219,6 +225,17 @@ namespace game
                 a.snapshot.put(r.p, len);
                 r.p += len;
                 if(len) a.starttick = r.var();
+            }
+            if(info.version >= 7)
+            {
+                int n = r.var();
+                loopi(n)
+                {
+                    if(!r.ok) break;
+                    inputsplice &sp = a.splices.add();
+                    sp.tick = r.var();
+                    sp.discarded = r.var();
+                }
             }
             a.ticks = r.var();
             int events = r.var(), tick = 0;
@@ -322,8 +339,8 @@ namespace game
         info.race = first.race;
         info.finished = finished ? 1 : 0;
         info.runtime = finished ? runtime : 0;
-        info.ticks = 0;
-        loopv(run.attempts) info.ticks += run.attempts[i]->ticks - run.attempts[i]->starttick;
+        info.ticks = info.splices = 0;
+        loopv(run.attempts) { info.ticks += run.attempts[i]->ticks - run.attempts[i]->starttick; info.splices += run.attempts[i]->splices.length(); }
         copystring(info.map, first.map);
     }
 
@@ -340,6 +357,7 @@ namespace game
         safename(map, first.map);
         if(finished) formatrunfilename(result, runtime);
         else copystring(result, "dnf");
+        if(info.splices) concatstring(result, "_seg");
         formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                      lt->tm_hour, lt->tm_min, lt->tm_sec, map, result);
         for(int n = 2; fileexists(realpath(file), "r") && n < 100; n++)
@@ -441,6 +459,7 @@ namespace game
         else if(!strcmp(field, "mode")) result(server::modename(r.mode, "?"));
         else if(!strcmp(field, "flagrun")) intret(r.flagrun);
         else if(!strcmp(field, "race")) intret(r.race);
+        else if(!strcmp(field, "splices")) intret(r.splices);
         else if(!strcmp(field, "player")) result(r.player);
         else if(!strcmp(field, "finished")) intret(r.finished);
         else if(!strcmp(field, "runtime"))
