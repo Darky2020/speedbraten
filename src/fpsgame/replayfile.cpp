@@ -5,10 +5,11 @@
 //   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
 //   [v3+: var race], var finished, var runtime ms, var ticks, var maps, str first map
 //   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
-//            [v3+: var race], var ticks, var events, events, [v4+: var groups], var hashes, hashes
+//            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
+//            var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
-//            (command), u32 cursor x, u32 cursor y, str (gui)
+//            (command), u32 cursor x, u32 cursor y, str (gui), svar value, str name (setting)
 //   hash:    var tick delta, groups x u32 (6 before v4)
 //   str:     var length, bytes
 
@@ -19,7 +20,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 4, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 5, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -113,6 +114,8 @@ namespace game
             w.svar(a.mode);
             w.var(a.flagrun);
             w.var(a.race);
+            w.var(a.settings.length());
+            loopv(a.settings) { w.str(a.settings[i].name); w.svar(a.settings[i].value); }
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -127,6 +130,7 @@ namespace game
                     case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
                     case INPUT_COMMAND: w.str(e.cmd ? e.cmd : ""); break;
                     case INPUT_GUI: w.u32(e.cursorx); w.u32(e.cursory); w.str(e.cmd ? e.cmd : ""); break;
+                    case INPUT_SETTING: w.svar(e.arg); w.str(e.cmd ? e.cmd : ""); break;
                     default: w.svar(e.arg); break;
                 }
             }
@@ -194,6 +198,17 @@ namespace game
             a.mode = r.svar();
             a.flagrun = r.var();
             a.race = info.version >= 3 ? r.var() : 0;
+            if(info.version >= 5)
+            {
+                int settings = r.var();
+                loopi(settings)
+                {
+                    if(!r.ok) break;
+                    inputsetting &s = a.settings.add();
+                    r.str(s.name, sizeof(s.name));
+                    s.value = r.svar();
+                }
+            }
             a.ticks = r.var();
             int events = r.var(), tick = 0;
             loopi(events)
@@ -209,6 +224,7 @@ namespace game
                     case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
                     case INPUT_COMMAND: e.cmd = r.newstr(); break;
                     case INPUT_GUI: e.cursorx = r.u32(); e.cursory = r.u32(); e.cmd = r.newstr(); break;
+                    case INPUT_SETTING: e.arg = r.svar(); e.cmd = r.newstr(); break;
                     default: e.arg = r.svar(); break;
                 }
             }

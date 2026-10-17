@@ -33,12 +33,19 @@ namespace game
         uint groups[DETHASH_GROUPS];
     };
 
+    struct inputsetting
+    {
+        string name;
+        int value;
+    };
+
     // One attempt: everything needed to replay it from its map start, plus the state hash
     // at the start of every tick to find where a replay drifts.
     struct inputattempt
     {
         vector<inputevent> events;
         vector<tickhash> hashes;
+        vector<inputsetting> settings; // values at the start of the attempt; empty before v5
         uint seed, mapcrc;
         string map, team;
         int mode, flagrun, race, ticks;
@@ -52,6 +59,7 @@ namespace game
             loopv(events) DELETEA(events[i].cmd);
             events.setsize(0);
             hashes.setsize(0);
+            settings.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -65,6 +73,7 @@ namespace game
                 if(e.cmd) e.cmd = newstring(e.cmd);
             }
             dst.hashes = hashes;
+            dst.settings = settings;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             copystring(dst.map, map);

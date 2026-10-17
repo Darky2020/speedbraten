@@ -45,7 +45,13 @@ namespace game
         runsaved = true;
     }
 
-    void inputdisconnect() { saveunfinishedrun(); }
+    static void restoresettings();
+
+    void inputdisconnect()
+    {
+        saveunfinishedrun();
+        restoresettings();
+    }
     static inputcontrols lastcontrols;
     static vector<char> lastgui;
     static uint lastcursorx = 0, lastcursory = 0;
@@ -115,6 +121,95 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    // Settings the simulation reads that are not part of the player's input. A recording
+    // stores them at the start of each attempt and records every later change; a replay
+    // plays with the recorded values and then gives the player's own values back.
+    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed" };
+    enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
+    static int cursettings[NUMSIMSETTINGS], usersettings[NUMSIMSETTINGS];
+    static bool settingsforced = false;
+
+    static int findsetting(const char *name)
+    {
+        loopi(NUMSIMSETTINGS) if(!strcmp(simsettings[i], name)) return i;
+        return -1;
+    }
+
+    static int getsetting(int i)
+    {
+        ident *id = getident(simsettings[i]);
+        return id && id->type == ID_VAR ? *id->storage.i : 0;
+    }
+
+    // writes the value directly, so a map script's override of the variable is kept
+    static void setsetting(int i, int val)
+    {
+        ident *id = getident(simsettings[i]);
+        if(!id || id->type != ID_VAR) return;
+        val = clamp(val, id->minval, id->maxval);
+        if(*id->storage.i == val) return;
+        *id->storage.i = val;
+        id->changed();
+    }
+
+    static void readsettings(int *vals) { loopi(NUMSIMSETTINGS) vals[i] = getsetting(i); }
+
+    static void applysettings() { loopi(NUMSIMSETTINGS) setsetting(i, cursettings[i]); }
+
+    static void forcesettings(const inputattempt &a)
+    {
+        if(a.settings.empty()) return;
+        if(!settingsforced)
+        {
+            readsettings(usersettings);
+            settingsforced = true;
+        }
+        readsettings(cursettings);
+        loopv(a.settings)
+        {
+            int k = findsetting(a.settings[i].name);
+            if(k >= 0) cursettings[k] = a.settings[i].value;
+        }
+        applysettings();
+    }
+
+    static void restoresettings()
+    {
+        if(!settingsforced) return;
+        settingsforced = false;
+        loopi(NUMSIMSETTINGS) setsetting(i, usersettings[i]);
+    }
+
+    static void recordsettings(inputattempt &a)
+    {
+        readsettings(cursettings);
+        a.settings.setsize(0);
+        loopi(NUMSIMSETTINGS)
+        {
+            inputsetting &s = a.settings.add();
+            copystring(s.name, simsettings[i]);
+            s.value = cursettings[i];
+        }
+    }
+
+    // records the settings changed since the last tick, other than through recorded input
+    static void recordsettingchanges(inputattempt &a)
+    {
+        loopi(NUMSIMSETTINGS)
+        {
+            int val = getsetting(i);
+            if(val == cursettings[i]) continue;
+            cursettings[i] = val;
+            inputevent &e = a.events.add();
+            e.tick = curtick;
+            e.type = INPUT_SETTING;
+            e.arg = val;
+            memset(&e.controls, 0, sizeof(e.controls));
+            e.cursorx = e.cursory = 0;
+            e.cmd = newstring(simsettings[i]);
+        }
+    }
+
     bool queuemenuinput(const char *cmd, bool scripted)
     {
         if(!simticking || insimtick || !connected) return false;
@@ -133,6 +228,12 @@ namespace game
             case INPUT_COMMAND: if(e.cmd) execute(e.cmd); break;
             case INPUT_GUI: setmapguistate(e.cmd ? e.cmd : "", bitsfloat(e.cursorx), bitsfloat(e.cursory)); break;
             case INPUT_ZOOM: zoom = e.arg; break;
+            case INPUT_SETTING:
+            {
+                int i = e.cmd ? findsetting(e.cmd) : -1;
+                if(i >= 0 && settingsforced) { cursettings[i] = e.arg; setsetting(i, e.arg); }
+                break;
+            }
         }
     }
 
@@ -173,6 +274,7 @@ namespace game
         {
             replaying = false;
             recordingoff = true;
+            restoresettings();
             if(replaydesync) conoutf(CON_ERROR, "input replay finished (desynced at tick %d)", replaydesync);
             else conoutf("input replay finished");
         }
@@ -196,12 +298,18 @@ namespace game
             inputattempt &a = replaycur();
             if(curtick == 1 && a.mapcrc && getmapcrc() != a.mapcrc)
                 conoutf(CON_ERROR, "replay was recorded on a different version of %s (map crc %08x, loaded %08x): it will not play back correctly", a.map, a.mapcrc, getmapcrc());
+            // mirrors the recording: setting changes come first in a tick, and changes made
+            // by the tick's own input are not events
+            while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick && a.events[replaypos].type == INPUT_SETTING)
+                applyevent(a.events[replaypos++]);
+            if(settingsforced) applysettings();
             while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick)
             {
                 int attempt = replayattempt;
                 applyevent(a.events[replaypos++]);
                 if(!replaying || attempt != replayattempt || !curtick) return;
             }
+            if(settingsforced) readsettings(cursettings);
             setcontrols(lastcontrols);
             hashgamestate(h.groups);
             checkreplayhash(h);
@@ -215,6 +323,7 @@ namespace game
             copystring(rec.team, player1->team);
             rec.mapcrc = getmapcrc();
         }
+        recordsettingchanges(rec);
         while(pending.length())
         {
             inputevent e = pending.remove(0);
@@ -223,6 +332,7 @@ namespace game
             if(curtick != e.tick) { DELETEA(e.cmd); return; }
             rec.events.add(e);
         }
+        readsettings(cursettings);
         inputcontrols c;
         getcontrols(c);
         if(!havecontrols || c != lastcontrols)
@@ -296,6 +406,8 @@ namespace game
             replayattempt = 0;
             replaydesync = replaydesyncgroups = 0;
             seedattempt(replaycur());
+            restoresettings();
+            forcesettings(replaycur());
             return;
         }
         if(replaying)
@@ -304,9 +416,11 @@ namespace game
             {
                 replayattempt++;
                 seedattempt(replaycur());
+                forcesettings(replaycur());
                 return;
             }
             replaying = false;
+            restoresettings();
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
@@ -319,6 +433,7 @@ namespace game
         a.mode = mode;
         a.flagrun = server::flagrunactive() ? 1 : 0;
         a.race = server::racerulesactive() ? 1 : 0;
+        recordsettings(a);
     }
 
     void playinputrun(const inputrun &src)
@@ -395,6 +510,7 @@ namespace game
         {
             const inputattempt &a = *run.attempts[k];
             f->printf("attempt %d %u %d %s %s %d %d %d\n", k+1, a.seed, a.mode, escapestring(a.map), escapestring(a.team), a.flagrun, a.ticks, a.race);
+            loopv(a.settings) f->printf("s %s %d\n", escapestring(a.settings[i].name), a.settings[i].value);
             loopv(a.events)
             {
                 const inputevent &e = a.events[i];
@@ -467,6 +583,12 @@ namespace game
                 a.flagrun = w.length() > 6 ? parseint(w[6]) : 0;
                 a.ticks = w.length() > 7 ? parseint(w[7]) : 0;
                 a.race = w.length() > 8 ? parseint(w[8]) : 0;
+            }
+            else if(cur && w.length() >= 3 && !strcmp(w[0], "s"))
+            {
+                inputsetting &st = cur->settings.add();
+                copyunescaped(st.name, w[1]);
+                st.value = parseint(w[2]);
             }
             else if(cur && w.length() >= 13 && !strcmp(w[0], "e"))
             {
