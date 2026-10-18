@@ -994,6 +994,13 @@ namespace game
     extern void runtimerflagtaken(fpsent *d, int flag, const vec &loc, float radius);
     extern void runtimerflagscored(fpsent *d);
     extern void runtimertick();
+    extern int runtimerticks(bool &running);
+    extern const char *runtimerkindname();
+    extern bool inputrecordinglive();
+    extern int inputattemptindex();
+    extern int inputsplicecount();
+    extern void ghosttick();
+    extern void renderghost(bool mainpass);
     extern void snapruntimer(snapio &s);
     extern bool runtimerperlife();
     extern bool runtimerliferan();
@@ -1043,6 +1050,7 @@ namespace game
     extern void moveragdolls();
     extern void changedplayermodel();
     extern const playermodelinfo &getplayermodelinfo(fpsent *d);
+    extern void renderplayer(fpsent *d, const playermodelinfo &mdl, int team, float fade, bool mainpass);
     extern int chooserandomplayermodel(int seed);
     extern void swayhudgun(int curtime);
     extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);

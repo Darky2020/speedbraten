@@ -120,8 +120,21 @@ namespace game
         }
     }
 
-    // called at the end of every simulated tick
-    void runtimertick()
+    int runtimerticks(bool &running) { running = runstate == RUN_RUNNING; return runticks(); }
+
+    // the run kind as the statistics name it, NULL when nothing is timed
+    const char *runtimerkindname()
+    {
+        switch(runkind)
+        {
+            case RUNTIMER_SP: return "sp";
+            case RUNTIMER_FLAG: return "flagrun";
+            case RUNTIMER_RACE: return "race";
+            default: return NULL;
+        }
+    }
+
+    static void updaterun()
     {
         if(runkind == RUNTIMER_RACE) { racetick(); return; }
         if(runkind != RUNTIMER_FLAG || (runstate != RUN_HOLDING && runstate != RUN_RUNNING)) return;
@@ -131,6 +144,13 @@ namespace game
             runstate = RUN_RUNNING;
             runstart = inputtick();
         }
+    }
+
+    // called at the end of every simulated tick
+    void runtimertick()
+    {
+        updaterun();
+        ghosttick();
     }
 
     int runtimerresult(bool &finished)

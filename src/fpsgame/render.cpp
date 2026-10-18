@@ -373,6 +373,7 @@ namespace game
             renderplayer(d, getplayermodelinfo(d), team, fade, mainpass);
         } 
         if(isthirdperson() && !followingplayer() && (player1->state!=CS_DEAD || hidedead != 1)) renderplayer(player1, getplayermodelinfo(player1), teamskins || m_teammode ? 1 : 0, 1, mainpass);
+        renderghost(mainpass);
         rendermonsters();
         rendermovables();
         entities::renderentities();

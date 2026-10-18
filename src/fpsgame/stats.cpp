@@ -13,7 +13,13 @@ namespace game
 #ifdef HEADLESS
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay) {}
     void statsreplaymoved(const char *from, const char *to) {}
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
+    int statsversion() { return 0; }
 #else
+    static int changes = 0;
+    // changes whenever a run is added, so callers can tell when a PB may have changed
+    int statsversion() { return changes; }
+
     static sqlite3 *db = NULL;
     static bool dbfailed = false;
 
@@ -132,6 +138,23 @@ namespace game
         bindtext(st, 13, replay);
         if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
+        changes++;
+    }
+
+    // the replay file of the fastest finished run with an existing replay; file is a string
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file)
+    {
+        sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND (splices > 0) = ? "
+                                   "AND replay IS NOT NULL ORDER BY runtime, id LIMIT 1");
+        if(!st) return false;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        bool found = sqlite3_step(st) == SQLITE_ROW;
+        if(found) copystring(file, (const char *)sqlite3_column_text(st, 0), MAXSTRLEN);
+        sqlite3_finalize(st);
+        return found;
     }
 
     // a replay file was renamed or moved (to = NULL: deleted); its run keeps its row

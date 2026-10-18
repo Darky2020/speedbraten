@@ -803,6 +803,23 @@ namespace game
     }
 
     bool inputreplayactive() { return replaying || replaypending; }
+    bool inputrecordinglive() { return !replaying && !replaypending && !recordingoff; }
+    int inputattemptindex() { return replaying ? replayattempt : max(recording.attempts.length()-1, 0); }
+
+    // the first attempt of the run being played or replayed (its map and mode name the run)
+    const inputattempt *inputrunfirst()
+    {
+        const inputrun &run = replaying ? replaydata : recording;
+        return run.attempts.length() ? run.attempts[0] : NULL;
+    }
+
+    int inputsplicecount()
+    {
+        const inputrun &run = replaying ? replaydata : recording;
+        int n = 0;
+        loopv(run.attempts) n += run.attempts[i]->splices.length();
+        return n;
+    }
 
     // first desync tick (0 = none), ticks replayed so far and the state hash after the last one
     int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS])

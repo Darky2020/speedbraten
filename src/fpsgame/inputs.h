@@ -39,6 +39,16 @@ namespace game
         int tick, discarded;
     };
 
+    // player1 on the run timer's clock, for drawing the run as a ghost
+    struct ghostsample
+    {
+        enum { MOVESHIFT = 0, STRAFESHIFT = 2, INWATER = 1<<4, INAIR = 1<<5, ATTACK = 1<<6, GUNSHIFT = 8 };
+        int tick;   // run timer tick
+        vec o;
+        float yaw, pitch;
+        int flags;  // move+1, strafe+1, INWATER, INAIR, ATTACK, gun
+    };
+
     struct inputsetting
     {
         string name;
@@ -55,6 +65,7 @@ namespace game
         vector<uchar> snapshot;          // saved state the attempt starts from instead of map start
         int starttick;                   // tick of the snapshot, 0 without one
         vector<inputsplice> splices;
+        vector<ghostsample> trace; // v9+, finished or saved runs only
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false before v8
@@ -74,6 +85,7 @@ namespace game
             snapshot.setsize(0);
             starttick = 0;
             splices.setsize(0);
+            trace.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -91,6 +103,7 @@ namespace game
             dst.snapshot = snapshot;
             dst.starttick = starttick;
             dst.splices = splices;
+            dst.trace = trace;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             dst.cfgcrc = cfgcrc;
@@ -149,6 +162,10 @@ namespace game
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
     extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay);
     extern void statsreplaymoved(const char *from, const char *to);
+    extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
+    extern int statsversion();
+    extern const inputattempt *inputrunfirst();
+    extern void ghostattach(inputrun &run);
     extern void playinputrun(const inputrun &run);
     extern bool inputreplayactive();
     extern int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS]);

@@ -10,6 +10,8 @@
 //            [v6+: var snapshot length, snapshot bytes, var start tick (with a snapshot)],
 //            [v7+: var splices, (var tick, var discarded ticks) per splice],
 //            [v8+: u32 map cfg crc, 0 without a cfg],
+//            [v9+: var ghost samples, (var run tick delta, u32 x, u32 y, u32 z, u32 yaw,
+//                  u32 pitch, var flags) per sample],
 //            var ticks, var events, events, [v4+: var groups], var hashes, hashes
 //   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
 //            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
@@ -24,7 +26,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 8, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 9, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -32,6 +34,7 @@ namespace game
 
         void u8(int v) { buf.add(uchar(v)); }
         void u32(uint v) { loopi(4) buf.add(uchar(v >> (i*8))); }
+        void f32(float f) { uint v; memcpy(&v, &f, 4); u32(v); }
         void var(uint v) { do { uchar c = v & 0x7F; v >>= 7; if(v) c |= 0x80; buf.add(c); } while(v); }
         void svar(int v) { var((uint(v) << 1) ^ uint(v >> 31)); }
         void str(const char *s) { int len = strlen(s); var(len); buf.put((const uchar *)s, len); }
@@ -46,6 +49,7 @@ namespace game
 
         int u8() { if(p >= end) { ok = false; return 0; } return *p++; }
         uint u32() { uint v = 0; loopi(4) v |= uint(u8()) << (i*8); return v; }
+        float f32() { uint v = u32(); float f; memcpy(&f, &v, 4); return f; }
         uint var()
         {
             uint v = 0;
@@ -126,6 +130,16 @@ namespace game
             w.var(a.splices.length());
             loopv(a.splices) { w.var(a.splices[i].tick); w.var(a.splices[i].discarded); }
             w.u32(a.cfgcrc);
+            w.var(a.trace.length());
+            int lasttick = 0;
+            loopv(a.trace)
+            {
+                const ghostsample &g = a.trace[i];
+                w.var(g.tick - lasttick);
+                lasttick = g.tick;
+                w.f32(g.o.x); w.f32(g.o.y); w.f32(g.o.z); w.f32(g.yaw); w.f32(g.pitch);
+                w.var(g.flags);
+            }
             w.var(a.ticks);
             w.var(a.events.length());
             int last = 0;
@@ -244,6 +258,19 @@ namespace game
                 a.cfgcrc = r.u32();
                 a.hascfgcrc = true;
             }
+            if(info.version >= 9)
+            {
+                int n = r.var(), tick = 0;
+                loopi(n)
+                {
+                    if(!r.ok) break;
+                    ghostsample &g = a.trace.add();
+                    tick += r.var();
+                    g.tick = tick;
+                    g.o.x = r.f32(); g.o.y = r.f32(); g.o.z = r.f32(); g.yaw = r.f32(); g.pitch = r.f32();
+                    g.flags = r.var();
+                }
+            }
             a.ticks = r.var();
             int events = r.var(), tick = 0;
             loopi(events)
@@ -360,6 +387,12 @@ namespace game
         const inputattempt &first = *run.attempts[0];
         replayinfo info;
         fillreplayinfo(run, finished, runtime, info);
+        inputrun traced;
+        if(finished && replayautosave)
+        {
+            run.copyto(traced);
+            ghostattach(traced);
+        }
         if(!replayautosave)
         {
             if(started) statsrecord(run, info, NULL);
@@ -378,7 +411,7 @@ namespace game
         for(int n = 2; fileexists(realpath(file), "r") && n < 100; n++)
             formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
-        bool written = writereplay(file, run, info);
+        bool written = writereplay(file, finished ? traced : run, info);
         if(started) statsrecord(run, info, written ? file : NULL);
         if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);
