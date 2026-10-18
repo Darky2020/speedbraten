@@ -151,6 +151,7 @@ namespace game
     {
         updaterun();
         ghosttick();
+        splittick();
     }
 
     int runtimerresult(bool &finished)

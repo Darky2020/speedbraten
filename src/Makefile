@@ -156,6 +156,7 @@ CLIENT_OBJS= \
 	fpsgame/savestate.o \
 	fpsgame/stats.o \
 	fpsgame/ghost.o \
+	fpsgame/splits.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -569,6 +570,10 @@ fpsgame/ghost.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/ghost.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/ghost.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/ghost.o: fpsgame/inputs.h
+fpsgame/splits.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/splits.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/splits.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/splits.o: fpsgame/inputs.h
 fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

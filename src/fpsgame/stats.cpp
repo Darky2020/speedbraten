@@ -14,6 +14,7 @@ namespace game
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay) {}
     void statsreplaymoved(const char *from, const char *to) {}
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
+    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best) { return false; }
     int statsversion() { return 0; }
 #else
     static int changes = 0;
@@ -40,7 +41,14 @@ namespace game
         "  mapcrc INTEGER, cfgcrc INTEGER,"
         "  idle INTEGER NOT NULL,"   // longest stretch of ticks without an input event
         "  replay TEXT);"            // replay file, NULL without one
-        "CREATE INDEX IF NOT EXISTS attempts_map ON attempts(map, kind, finished);";
+        "CREATE INDEX IF NOT EXISTS attempts_map ON attempts(map, kind, finished);"
+        // the splits of a run in the order they fired; prev is the split before ('' at the start)
+        // and segment the ticks since it. A finished run ends with a split named finish.
+        "CREATE TABLE IF NOT EXISTS splits("
+        "  attempt INTEGER NOT NULL REFERENCES attempts(id),"
+        "  idx INTEGER NOT NULL, name TEXT NOT NULL, prev TEXT NOT NULL,"
+        "  tick INTEGER NOT NULL, segment INTEGER NOT NULL);"
+        "CREATE INDEX IF NOT EXISTS splits_attempt ON splits(attempt);";
 
     static bool dbexec(const char *sql)
     {
@@ -115,6 +123,35 @@ namespace game
         return info.race ? "race" : info.flagrun ? "flagrun" : "sp";
     }
 
+    static void recordsplits(sqlite3_int64 attempt, const replayinfo &info)
+    {
+        vector<splittime> times;
+        splitresults(times);
+        if(info.finished)
+        {
+            splittime &f = times.add();
+            copystring(f.name, "finish");
+            f.tick = info.runtime / SIMTICK;
+        }
+        if(times.empty()) return;
+        sqlite3_stmt *st = prepare("INSERT INTO splits(attempt, idx, name, prev, tick, segment) VALUES(?, ?, ?, ?, ?, ?)");
+        if(!st) return;
+        dbexec("BEGIN");
+        loopv(times)
+        {
+            sqlite3_bind_int64(st, 1, attempt);
+            sqlite3_bind_int(st, 2, i);
+            bindtext(st, 3, times[i].name);
+            bindtext(st, 4, i ? times[i-1].name : "");
+            sqlite3_bind_int(st, 5, times[i].tick);
+            sqlite3_bind_int(st, 6, times[i].tick - (i ? times[i-1].tick : 0));
+            sqlite3_step(st);
+            sqlite3_reset(st);
+        }
+        dbexec("COMMIT");
+        sqlite3_finalize(st);
+    }
+
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay)
     {
         sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay) "
@@ -136,8 +173,10 @@ namespace game
         else sqlite3_bind_null(st, 11);
         sqlite3_bind_int(st, 12, longestidle(run));
         bindtext(st, 13, replay);
-        if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
+        bool added = sqlite3_step(st) == SQLITE_DONE;
+        if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
+        if(added) recordsplits(sqlite3_last_insert_rowid(db), info);
         changes++;
     }
 
@@ -155,6 +194,44 @@ namespace game
         if(found) copystring(file, (const char *)sqlite3_column_text(st, 0), MAXSTRLEN);
         sqlite3_finalize(st);
         return found;
+    }
+
+    // The splits of the PB (fastest finished run of the category) and the best time of every
+    // segment (previous split, split) over all runs of the category.
+    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best)
+    {
+        pb.setsize(0);
+        best.setsize(0);
+        sqlite3_stmt *st = prepare("SELECT s.name, s.tick FROM splits s WHERE s.attempt = (SELECT id FROM attempts WHERE map = ? AND kind = ? AND mode = ? "
+                                   "AND finished AND (splices > 0) = ? ORDER BY runtime, id LIMIT 1) ORDER BY s.idx");
+        if(!st) return false;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            splittime &t = pb.add();
+            copystring(t.name, (const char *)sqlite3_column_text(st, 0));
+            t.tick = sqlite3_column_int(st, 1);
+        }
+        sqlite3_finalize(st);
+        st = prepare("SELECT s.prev, s.name, MIN(s.segment) FROM splits s JOIN attempts a ON a.id = s.attempt "
+                     "WHERE a.map = ? AND a.kind = ? AND a.mode = ? AND (a.splices > 0) = ? GROUP BY s.prev, s.name");
+        if(!st) return false;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            splitsegment &g = best.add();
+            copystring(g.prev, (const char *)sqlite3_column_text(st, 0));
+            copystring(g.name, (const char *)sqlite3_column_text(st, 1));
+            g.ticks = sqlite3_column_int(st, 2);
+        }
+        sqlite3_finalize(st);
+        return true;
     }
 
     // a replay file was renamed or moved (to = NULL: deleted); its run keeps its row

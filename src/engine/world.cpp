@@ -273,6 +273,8 @@ extern selinfo sel;
 extern bool havesel;
 int entlooplevel = 0;
 int efocus = -1, enthover = -1, entorient = -1, oldhover = -1;
+// the entity under the cursor in edit mode, else the first selected one; -1 for none
+int getenthover() { return enthover >= 0 ? enthover : (entgroup.length() ? entgroup[0] : -1); }
 bool undonext = true;
 
 VARF(entediting, 0, 0, 1, { if(!entediting) { entcancel(); efocus = enthover = -1; } });

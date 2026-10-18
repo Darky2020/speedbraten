@@ -374,6 +374,7 @@ namespace game
         } 
         if(isthirdperson() && !followingplayer() && (player1->state!=CS_DEAD || hidedead != 1)) renderplayer(player1, getplayermodelinfo(player1), teamskins || m_teammode ? 1 : 0, 1, mainpass);
         renderghost(mainpass);
+        if(mainpass) rendersplitzones();
         rendermonsters();
         rendermovables();
         entities::renderentities();

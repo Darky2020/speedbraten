@@ -1,0 +1,377 @@
+// Splits: named points of a run, defined per map and run kind in splits/<map>_<kind>.cfg (the
+// player's own file in the home dir wins over the one in the override dir). A split fires once
+// per run, in any order: entering a zone, picking up or using a given entity, a cubescript
+// condition turning true, or a map script calling splithere. Split times are run timer ticks.
+// The HUD compares them with the PB run's splits and the best time of each segment.
+
+#include "game.h"
+#include "inputs.h"
+
+namespace game
+{
+    enum { SPLIT_ZONE = 0, SPLIT_PICKUP, SPLIT_TELEPORT, SPLIT_WHEN, SPLIT_SCRIPT };
+    static const char * const splittypes[] = { "zone", "pickup", "teleport", "when", "script" };
+
+    struct splitdef
+    {
+        string name;
+        int type, ent;
+        vec lo, hi;
+        string expr;
+    };
+    static vector<splitdef> defs;
+
+    struct splithit
+    {
+        int def, tick;
+    };
+    static vector<splithit> hits;
+
+    MOD(VARP, splithud, 0, 1, 1);
+    MOD(VARP, splitlist, 0, 0, 1);
+    MOD(VARP, splitshowzones, 0, 0, 1);
+
+    static string defskey = "", splitkind = "", splitmap = "";
+    static int lasttick = -1;
+
+    static int finddef(const char *name)
+    {
+        loopv(defs) if(!strcmp(defs[i].name, name)) return i;
+        return -1;
+    }
+
+    static splitdef &adddef(const char *name, int type)
+    {
+        int i = finddef(name);
+        splitdef &d = i >= 0 ? defs[i] : defs.add();
+        copystring(d.name, name);
+        d.type = type;
+        d.ent = -1;
+        d.lo = d.hi = vec(0, 0, 0);
+        d.expr[0] = '\0';
+        return d;
+    }
+
+    // definitions, as written in a split file
+    static void splitzone(const char *name, float x1, float y1, float z1, float x2, float y2, float z2)
+    {
+        splitdef &d = adddef(name, SPLIT_ZONE);
+        d.lo = vec(min(x1, x2), min(y1, y2), min(z1, z2));
+        d.hi = vec(max(x1, x2), max(y1, y2), max(z1, z2));
+    }
+    ICOMMAND(splitzone, "sffffff", (char *name, float *x1, float *y1, float *z1, float *x2, float *y2, float *z2), splitzone(name, *x1, *y1, *z1, *x2, *y2, *z2));
+    ICOMMAND(splitpickup, "si", (char *name, int *ent), adddef(name, SPLIT_PICKUP).ent = *ent);
+    ICOMMAND(splitteleport, "si", (char *name, int *ent), adddef(name, SPLIT_TELEPORT).ent = *ent);
+    ICOMMAND(splitwhen, "ss", (char *name, char *expr), copystring(adddef(name, SPLIT_WHEN).expr, expr));
+    ICOMMAND(splitscript, "s", (char *name), adddef(name, SPLIT_SCRIPT));
+
+    static void splitfilename(char *dst, const char *map, const char *kind)
+    {
+        string m;
+        copystring(m, map);
+        for(char *c = m; *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+        nformatstring(dst, MAXSTRLEN, "splits/%s_%s.cfg", m, kind);
+    }
+
+    static void loaddefs(const char *map, const char *kind)
+    {
+        defs.setsize(0);
+        copystring(splitmap, map);
+        copystring(splitkind, kind);
+        string file;
+        splitfilename(file, map, kind);
+        defformatstring(home, "%s%s", homedir, file);
+        if(homedir[0] && fileexists(home, "r")) execfile(home, false);
+        else
+        {
+            defformatstring(shipped, "%s%s", overridedir, file);
+            if(overridedir[0] && fileexists(shipped, "r")) execfile(shipped, false);
+        }
+    }
+
+    ICOMMAND(splitsave, "", (),
+    {
+        if(!splitmap[0]) { conoutf(CON_ERROR, "splitsave: no map"); return; }
+        string file;
+        splitfilename(file, splitmap, splitkind);
+        stream *f = openutf8file(path(file, true), "w");
+        if(!f) { conoutf(CON_ERROR, "splitsave: could not write %s", file); return; }
+        f->printf("// splits of %s (%s), any order\n", splitmap, splitkind);
+        loopv(defs)
+        {
+            const splitdef &d = defs[i];
+            switch(d.type)
+            {
+                case SPLIT_ZONE: f->printf("splitzone %s %g %g %g %g %g %g\n", escapestring(d.name), d.lo.x, d.lo.y, d.lo.z, d.hi.x, d.hi.y, d.hi.z); break;
+                case SPLIT_PICKUP: f->printf("splitpickup %s %d\n", escapestring(d.name), d.ent); break;
+                case SPLIT_TELEPORT: f->printf("splitteleport %s %d\n", escapestring(d.name), d.ent); break;
+                case SPLIT_WHEN: f->printf("splitwhen %s [%s]\n", escapestring(d.name), d.expr); break;
+                case SPLIT_SCRIPT: f->printf("splitscript %s\n", escapestring(d.name)); break;
+            }
+        }
+        delete f;
+        conoutf("saved %d splits to %s", defs.length(), file);
+    });
+
+    // editing: a zone from the selection, the item or teleport under the cursor, a script split
+    static void splitaddzone(const char *name)
+    {
+        vec lo, hi;
+        if(!editmode || !getselbox(lo, hi)) { conoutf(CON_ERROR, "splitaddzone: select an area in edit mode first"); return; }
+        splitdef &d = adddef(name, SPLIT_ZONE);
+        d.lo = lo;
+        d.hi = hi;
+    }
+    ICOMMAND(splitaddzone, "s", (char *name), splitaddzone(name));
+    ICOMMAND(splitaddent, "s", (char *name),
+    {
+        const vector<extentity *> &ents = entities::getents();
+        int n = getenthover();
+        if(!editmode || !ents.inrange(n)) { conoutf(CON_ERROR, "splitaddent: point at an item or teleport in edit mode first"); return; }
+        int type = ents[n]->type;
+        if(type == TELEPORT) adddef(name, SPLIT_TELEPORT).ent = n;
+        else if(type >= I_SHELLS && type <= I_QUAD) adddef(name, SPLIT_PICKUP).ent = n;
+        else conoutf(CON_ERROR, "splitaddent: entity %d is not an item or teleport", n);
+    });
+    ICOMMAND(splitremove, "i", (int *i), { if(defs.inrange(*i)) defs.remove(*i); });
+    ICOMMAND(splitrename, "is", (int *i, char *name), { if(defs.inrange(*i) && name[0] && finddef(name) < 0) copystring(defs[*i].name, name); });
+    ICOMMAND(splitcount, "", (), intret(defs.length()));
+    ICOMMAND(splitfield, "is", (int *i, char *field),
+    {
+        if(!defs.inrange(*i)) { result(""); return; }
+        const splitdef &d = defs[*i];
+        if(!strcmp(field, "name")) result(d.name);
+        else if(!strcmp(field, "type")) result(splittypes[d.type]);
+        else if(!strcmp(field, "desc"))
+        {
+            string buf;
+            switch(d.type)
+            {
+                case SPLIT_ZONE: formatstring(buf, "zone %.0f %.0f %.0f - %.0f %.0f %.0f", d.lo.x, d.lo.y, d.lo.z, d.hi.x, d.hi.y, d.hi.z); break;
+                case SPLIT_PICKUP: formatstring(buf, "pickup of entity %d", d.ent); break;
+                case SPLIT_TELEPORT: formatstring(buf, "teleport %d", d.ent); break;
+                case SPLIT_WHEN: formatstring(buf, "when [%s]", d.expr); break;
+                default: copystring(buf, "called by the map script"); break;
+            }
+            result(buf);
+        }
+        else result("");
+    });
+
+    static bool hasfired(int def)
+    {
+        loopv(hits) if(hits[i].def == def) return true;
+        return false;
+    }
+
+    static void fire(int def)
+    {
+        bool running;
+        int t = runtimerticks(running);
+        if(!running || !defs.inrange(def) || hasfired(def)) return;
+        splithit &h = hits.add();
+        h.def = def;
+        h.tick = t;
+    }
+
+    void splitentityused(int n, fpsent *d, bool teleport)
+    {
+        if(d != player1) return;
+        loopv(defs) if(defs[i].ent == n && defs[i].type == (teleport ? SPLIT_TELEPORT : SPLIT_PICKUP)) fire(i);
+    }
+
+    // called by map scripts
+    ICOMMAND(splithere, "s", (char *name),
+    {
+        int i = finddef(name);
+        if(i < 0) { adddef(name, SPLIT_SCRIPT); i = defs.length()-1; }
+        fire(i);
+    });
+
+    // helpers for splitwhen conditions
+    extern int numkilled;
+    ICOMMAND(splitkills, "", (), intret(numkilled));
+    ICOMMAND(splittriggered, "i", (int *tag),
+    {
+        const vector<extentity *> &ents = entities::getents();
+        loopv(ents) if(ents[i]->attr4 == *tag && ents[i]->type == MAPMODEL && ((fpsentity *)ents[i])->triggerstate == TRIGGERED) { intret(1); return; }
+        intret(0);
+    });
+
+    void splitresults(vector<splittime> &out)
+    {
+        out.setsize(0);
+        loopv(hits) if(defs.inrange(hits[i].def))
+        {
+            splittime &t = out.add();
+            copystring(t.name, defs[hits[i].def].name);
+            t.tick = hits[i].tick;
+        }
+    }
+
+    // what the HUD compares against, refreshed when the run's category or the statistics change
+    static vector<splittime> pbsplits;
+    static vector<splitsegment> bestsegs;
+    static string comparekey = "";
+
+    static void refreshcomparison(const char *map, const char *kind, int mode)
+    {
+        bool segmented = inputsplicecount() > 0;
+        defformatstring(key, "%s %s %d %d %d", map, kind, mode, segmented ? 1 : 0, statsversion());
+        if(!strcmp(key, comparekey)) return;
+        copystring(comparekey, key);
+        statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs);
+    }
+
+    void splittick()
+    {
+        const inputattempt *first = inputrunfirst();
+        const char *kind = runtimerkindname();
+        if(!first || !kind) { defs.setsize(0); hits.setsize(0); defskey[0] = '\0'; return; }
+        defformatstring(key, "%s %s", first->map, kind);
+        if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(first->map, kind); hits.setsize(0); }
+        refreshcomparison(first->map, kind, first->mode);
+
+        bool running;
+        int t = runtimerticks(running);
+        // a state load or a new run moves the clock back
+        if(t < lasttick)
+        {
+            if(t <= 1) hits.setsize(0);
+            else while(hits.length() && hits.last().tick > t) hits.pop();
+        }
+        lasttick = t;
+        if(!running) return;
+        vec feet = player1->feetpos();
+        loopv(defs) if(!hasfired(i))
+        {
+            const splitdef &d = defs[i];
+            if(d.type == SPLIT_ZONE)
+            {
+                if(feet.x >= d.lo.x && feet.x <= d.hi.x && feet.y >= d.lo.y && feet.y <= d.hi.y && feet.z >= d.lo.z && feet.z <= d.hi.z) fire(i);
+            }
+            else if(d.type == SPLIT_WHEN && d.expr[0] && execute(d.expr)) fire(i);
+        }
+    }
+
+    // zones as wire boxes, in edit mode or with splitshowzones
+    void rendersplitzones()
+    {
+        if(!editmode && !splitshowzones) return;
+        loopv(defs) if(defs[i].type == SPLIT_ZONE)
+        {
+            const splitdef &d = defs[i];
+            int color = hasfired(i) ? 0x40FF80 : 0xFFC040;
+            vec c[8];
+            loopj(8) c[j] = vec(j&1 ? d.hi.x : d.lo.x, j&2 ? d.hi.y : d.lo.y, j&4 ? d.hi.z : d.lo.z);
+            static const int edges[12][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {0,2}, {1,3}, {4,6}, {5,7}, {0,4}, {1,5}, {2,6}, {3,7} };
+            loopj(12) particle_flare(c[edges[j][0]], c[edges[j][1]], 1, PART_STREAK, color, 0.5f);
+            particle_textcopy(vec(d.lo).add(d.hi).mul(0.5f), d.name, PART_TEXT, 1, color, 3.0f);
+        }
+    }
+
+    static int pbtick(const char *name)
+    {
+        loopv(pbsplits) if(!strcmp(pbsplits[i].name, name)) return pbsplits[i].tick;
+        return -1;
+    }
+
+    static int bestsegment(const char *prev, const char *name)
+    {
+        loopv(bestsegs) if(!strcmp(bestsegs[i].prev, prev) && !strcmp(bestsegs[i].name, name)) return bestsegs[i].ticks;
+        return -1;
+    }
+
+    // sum of the best segments along the PB's order of splits, -1 if one is missing
+    static int sumofbest()
+    {
+        int sum = 0;
+        loopv(pbsplits)
+        {
+            int b = bestsegment(i ? pbsplits[i-1].name : "", pbsplits[i].name);
+            if(b < 0) return -1;
+            sum += b;
+        }
+        return pbsplits.length() ? sum : -1;
+    }
+
+    static void formattime(char *dst, int ticks)
+    {
+        int ms = ticks*SIMTICK;
+        nformatstring(dst, MAXSTRLEN, "%d:%02d.%03d", ms/60000, (ms/1000)%60, ms%1000);
+    }
+
+    static void formatdelta(char *dst, int ticks)
+    {
+        int ms = abs(ticks)*SIMTICK;
+        nformatstring(dst, MAXSTRLEN, "%s%s%d.%03d", ticks > 0 ? "\f3+" : ticks < 0 ? "\f0-" : "\f7", "", ms/1000, ms%1000);
+    }
+
+    // one HUD line for hit i: name, time, delta to the PB's split, delta to the best segment
+    static void hitline(int i, char *dst)
+    {
+        const splithit &h = hits[i];
+        const char *name = defs[h.def].name, *prev = i ? defs[hits[i-1].def].name : "";
+        string t, d1 = "", d2 = "";
+        formattime(t, h.tick);
+        int pb = pbtick(name);
+        if(pb >= 0) { string d; formatdelta(d, h.tick - pb); formatstring(d1, "  %s", d); }
+        int best = bestsegment(prev, name), seg = h.tick - (i ? hits[i-1].tick : 0);
+        if(best >= 0) { string d; formatdelta(d, seg - best); formatstring(d2, "  \f7seg %s", d); }
+        nformatstring(dst, MAXSTRLEN, "\f7%s %s%s%s", name, t, d1, d2);
+    }
+
+    extern float runtimerscale, runtimerx, runtimery;
+    extern bool ghostdelta(int &delta);
+
+    void drawsplits(int w, int h)
+    {
+        if(!splithud || !runtimerkindname()) return;
+        vector<char *> lines;
+        if(splitlist)
+        {
+            loopv(hits) if(defs.inrange(hits[i].def)) { string l; hitline(i, l); lines.add(newstring(l)); }
+            int sob = sumofbest();
+            if(sob >= 0) { string s, l; formattime(s, sob); formatstring(l, "\f4sum of best %s", s); lines.add(newstring(l)); }
+        }
+        else if(hits.length() && defs.inrange(hits.last().def))
+        {
+            string l;
+            hitline(hits.length()-1, l);
+            lines.add(newstring(l));
+        }
+        int delta;
+        if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); }
+        if(lines.empty()) return;
+
+        const float scale = runtimerscale * 0.45f;
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        int zw = 0, zh = 0;
+        text_bounds("0", zw, zh);
+        float y = runtimery * h / scale + zh * runtimerscale / scale;
+        loopv(lines)
+        {
+            int tw = 0, th = 0;
+            text_bounds(lines[i], tw, th);
+            draw_text(lines[i], int(runtimerx * w / scale - tw/2.0f), int(y), 255, 255, 255, 255);
+            y += th;
+        }
+        pophudmatrix();
+        lines.deletearrays();
+    }
+
+    // harness: the current run's splits as "name tick" pairs
+    ICOMMAND(splittimes, "", (),
+    {
+        vector<char> buf;
+        loopv(hits) if(defs.inrange(hits[i].def))
+        {
+            defformatstring(s, "%s%s %d", buf.length() ? " " : "", defs[hits[i].def].name, hits[i].tick);
+            buf.put(s, strlen(s));
+        }
+        buf.add('\0');
+        result(buf.getbuf());
+    });
+}

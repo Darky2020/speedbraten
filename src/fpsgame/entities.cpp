@@ -171,6 +171,7 @@ namespace entities
         extentity *e = ents[n];
         int type = e->type;
         if(type<I_SHELLS || type>I_QUAD) return;
+        splitentityused(n, d, false);
         e->clearspawned();
         e->clearnopickup();
         if(!d) return;
@@ -262,6 +263,7 @@ namespace entities
             if(beenhere<0) beenhere = e;
             if(ents[e]->attr2==tag)
             {
+                splitentityused(n, d, true);
                 teleporteffects(d, n, e, true);
                 d->o = ents[e]->o;
                 d->yaw = ents[e]->attr1;

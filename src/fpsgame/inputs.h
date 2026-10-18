@@ -164,6 +164,20 @@ namespace game
     extern void statsreplaymoved(const char *from, const char *to);
     extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
     extern int statsversion();
+
+    // a split of the current run: name and run timer tick
+    struct splittime
+    {
+        string name;
+        int tick;
+    };
+    struct splitsegment
+    {
+        string prev, name;
+        int ticks;
+    };
+    extern void splitresults(vector<splittime> &out);
+    extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best);
     extern const inputattempt *inputrunfirst();
     extern void ghostattach(inputrun &run);
     extern void playinputrun(const inputrun &run);

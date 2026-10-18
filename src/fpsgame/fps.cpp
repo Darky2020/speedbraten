@@ -1228,6 +1228,7 @@ namespace game
             if(hudfragmessages==1 || (hudfragmessages==2 && !m_insta)) drawfragmessages(w, h);
         }
         drawruntimer(w, h);
+        drawsplits(w, h);
         drawspeedometer(w, h);
         drawinputtimers(w, h);
     }

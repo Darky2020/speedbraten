@@ -254,6 +254,15 @@ ICOMMAND(getselsavedsize, "", (),
     result(size);
 });
 
+// the selection box in world units; false without a selection
+bool getselbox(vec &lo, vec &hi)
+{
+    if(!havesel) return false;
+    lo = vec(sel.o);
+    hi = vec(ivec(sel.s).mul(sel.grid).add(sel.o));
+    return true;
+}
+
 ICOMMAND(getselpos, "", (),
 {
     if(noedit(true)) return;

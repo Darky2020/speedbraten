@@ -1000,6 +1000,10 @@ namespace game
     extern int inputattemptindex();
     extern int inputsplicecount();
     extern void ghosttick();
+    extern void splittick();
+    extern void splitentityused(int n, fpsent *d, bool teleport);
+    extern void rendersplitzones();
+    extern void drawsplits(int w, int h);
     extern void renderghost(bool mainpass);
     extern void snapruntimer(snapio &s);
     extern bool runtimerperlife();

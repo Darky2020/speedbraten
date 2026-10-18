@@ -97,12 +97,6 @@ namespace game
         else clearghost();
     }
 
-    void ghosttick()
-    {
-        if(inputrecordinglive()) recordsample();
-        chooseghost();
-    }
-
     // the ghost's sample at run tick t on the current map, interpolated; false if none
     static bool ghostat(int t, ghostsample &out)
     {
@@ -142,6 +136,59 @@ namespace game
         bool running;
         int t = runtimerticks(running);
         return ghostat(running || t > 0 ? t : 0, g);
+    }
+
+    enum { DELTAWINDOW = 600 };      // ticks searched either side of the run time
+    static const float DELTARANGE = 64; // farther from the ghost's path than this: no delta
+
+    // How far behind the ghost the player is, in ticks (negative: ahead): the run time minus
+    // the time at which the ghost passed the point of its path closest to the player. Taken at
+    // the end of a tick, where player1 is at its simulated position.
+    static bool computedelta(int &delta)
+    {
+        if(!ghost || samples.empty() || !runtimerkindname()) return false;
+        bool running;
+        int t = runtimerticks(running);
+        if(!running) return false;
+        int map = inputattemptindex();
+        vec p = player1->o;
+        float bestdist = DELTARANGE;
+        int bestt = -1;
+        loopv(samples)
+        {
+            if(samplemaps[i] != map || samples[i].tick < t - DELTAWINDOW) continue;
+            if(samples[i].tick > t + DELTAWINDOW) break;
+            const ghostsample &a = samples[i];
+            if(i + 1 < samples.length() && samplemaps[i+1] == map)
+            {
+                const ghostsample &b = samples[i+1];
+                vec ab = vec(b.o).sub(a.o);
+                float len2 = ab.squaredlen(), f = len2 > 0 ? clamp(vec(p).sub(a.o).dot(ab) / len2, 0.0f, 1.0f) : 0;
+                float dist = vec(ab).mul(f).add(a.o).dist(p);
+                if(dist < bestdist) { bestdist = dist; bestt = a.tick + int(f*(b.tick - a.tick) + 0.5f); }
+            }
+            else if(a.o.dist(p) < bestdist) { bestdist = a.o.dist(p); bestt = a.tick; }
+        }
+        if(bestt < 0) return false;
+        delta = t - bestt;
+        return true;
+    }
+
+    static int lastdelta = 0;
+    static bool havedelta = false;
+
+    bool ghostdelta(int &delta)
+    {
+        if(!havedelta || !ghost) return false;
+        delta = lastdelta;
+        return true;
+    }
+
+    void ghosttick()
+    {
+        if(inputrecordinglive()) recordsample();
+        chooseghost();
+        havedelta = computedelta(lastdelta);
     }
 
     static fpsent *ghostent = NULL;
