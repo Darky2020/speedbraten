@@ -7,7 +7,8 @@
 
 namespace game
 {
-    VARP(ghost, 0, 1, 1);
+    VARP(ghost, 0, 1, 1);     // draw the ghost
+    VARP(ghostdiff, 0, 1, 1); // show the live time difference to it
     VARP(ghostsegpb, 0, 0, 1);
     FVARP(ghostalpha, 0.1f, 0.4f, 1);
 
@@ -146,7 +147,7 @@ namespace game
     // the end of a tick, where player1 is at its simulated position.
     static bool computedelta(int &delta)
     {
-        if(!ghost || samples.empty() || !runtimerkindname()) return false;
+        if(!ghostdiff || samples.empty() || !runtimerkindname()) return false;
         bool running;
         int t = runtimerticks(running);
         if(!running) return false;
@@ -179,7 +180,7 @@ namespace game
 
     bool ghostdelta(int &delta)
     {
-        if(!havedelta || !ghost) return false;
+        if(!havedelta || !ghostdiff) return false;
         delta = lastdelta;
         return true;
     }

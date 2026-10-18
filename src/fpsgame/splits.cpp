@@ -23,13 +23,16 @@ namespace game
 
     struct splithit
     {
-        int def, tick;
+        int def, tick, millis; // millis: totalmillis when it fired, for the HUD fade
     };
     static vector<splithit> hits;
 
     MOD(VARP, splithud, 0, 1, 1);
     MOD(VARP, splitlist, 0, 0, 1);
     MOD(VARP, splitshowzones, 0, 0, 1);
+    // ms the split lines stay after the last split before fading out; 0 keeps them
+    MOD(VARP, splitfade, 0, 3000, 600000);
+    enum { SPLITFADEMS = 500 };
     // the run kind whose splits are edited in edit mode or while no run is timed: sp, flagrun, race
     MOD(VARP, spliteditkind, 0, 1, 2);
     static const char * const editkinds[] = { "sp", "flagrun", "race" };
@@ -117,27 +120,48 @@ namespace game
     });
 
     // editing: a zone from the selection, the item or teleport under the cursor, a script split
-    static void splitaddzone(const char *name)
+    // the edit tools never replace an existing split
+    static bool newsplitname(const char *cmd, const char *name)
+    {
+        if(!name[0]) { conoutf(CON_ERROR, "%s: give the split a name", cmd); return false; }
+        if(finddef(name) >= 0) { conoutf(CON_ERROR, "%s: a split named %s exists; rename or delete it first", cmd, name); return false; }
+        return true;
+    }
+
+    static bool splitaddzone(const char *name)
     {
         vec lo, hi;
-        if(!editmode || !getselbox(lo, hi)) { conoutf(CON_ERROR, "splitaddzone: select an area in edit mode first"); return; }
-        if(lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z) { conoutf(CON_ERROR, "splitaddzone: the selection is empty; drag a box first"); return; }
+        if(!newsplitname("splitaddzone", name)) return false;
+        if(!editmode || !getselbox(lo, hi)) { conoutf(CON_ERROR, "splitaddzone: select an area in edit mode first"); return false; }
+        if(lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z) { conoutf(CON_ERROR, "splitaddzone: the selection is empty; drag a box first"); return false; }
         splitdef &d = adddef(name, SPLIT_ZONE);
         d.lo = lo;
         d.hi = hi;
         conoutf("added zone split %s (%s splits of %s; splitsave to keep it)", name, splitkind, splitmap);
+        return true;
     }
-    ICOMMAND(splitaddzone, "s", (char *name), splitaddzone(name));
+    // the add commands return 1 when the split was added
+    ICOMMAND(splitaddzone, "s", (char *name), intret(splitaddzone(name) ? 1 : 0));
+    ICOMMAND(splitaddscript, "s", (char *name),
+    {
+        if(!newsplitname("splitaddscript", name)) { intret(0); return; }
+        adddef(name, SPLIT_SCRIPT);
+        conoutf("added script split %s (the map script fires it with splithere; splitsave to keep it)", name);
+        intret(1);
+    });
     ICOMMAND(splitaddent, "s", (char *name),
     {
         const vector<extentity *> &ents = entities::getents();
         int n = getenthover();
+        intret(0);
+        if(!newsplitname("splitaddent", name)) return;
         if(!editmode || !ents.inrange(n)) { conoutf(CON_ERROR, "splitaddent: point at an item or teleport in edit mode first"); return; }
         int type = ents[n]->type;
         if(type == TELEPORT) adddef(name, SPLIT_TELEPORT).ent = n;
         else if(type >= I_SHELLS && type <= I_QUAD) adddef(name, SPLIT_PICKUP).ent = n;
         else { conoutf(CON_ERROR, "splitaddent: entity %d is not an item or teleport", n); return; }
         conoutf("added %s split %s on entity %d (splitsave to keep it)", type == TELEPORT ? "teleport" : "pickup", name, n);
+        intret(1);
     });
     ICOMMAND(splitremove, "i", (int *i), { if(defs.inrange(*i)) defs.remove(*i); });
     ICOMMAND(splitrename, "is", (int *i, char *name), { if(defs.inrange(*i) && name[0] && finddef(name) < 0) copystring(defs[*i].name, name); });
@@ -178,6 +202,7 @@ namespace game
         splithit &h = hits.add();
         h.def = def;
         h.tick = t;
+        h.millis = totalmillis;
     }
 
     void splitentityused(int n, fpsent *d, bool teleport)
@@ -340,9 +365,17 @@ namespace game
 
     void drawsplits(int w, int h)
     {
-        if(!splithud || !runtimerkindname()) return;
+        if(!runtimerkindname()) return;
         vector<char *> lines;
-        if(splitlist)
+        vector<int> alphas;
+        int alpha = 255;
+        if(splitfade && hits.length())
+        {
+            int age = totalmillis - hits.last().millis - splitfade;
+            if(age > 0) alpha = int(255 * clamp(1 - age / float(SPLITFADEMS), 0.0f, 1.0f));
+        }
+        if(!splithud || !alpha) {}
+        else if(splitlist)
         {
             loopv(hits) if(defs.inrange(hits[i].def)) { string l; hitline(i, l); lines.add(newstring(l)); }
             int sob = sumofbest();
@@ -354,8 +387,9 @@ namespace game
             hitline(hits.length()-1, l);
             lines.add(newstring(l));
         }
+        while(alphas.length() < lines.length()) alphas.add(alpha);
         int delta;
-        if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); }
+        if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); alphas.add(255); }
         if(lines.empty()) return;
 
         const float scale = runtimerscale * 0.45f;
@@ -369,7 +403,7 @@ namespace game
         {
             int tw = 0, th = 0;
             text_bounds(lines[i], tw, th);
-            draw_text(lines[i], int(runtimerx * w / scale - tw/2.0f), int(y), 255, 255, 255, 255);
+            draw_text(lines[i], int(runtimerx * w / scale - tw/2.0f), int(y), 255, 255, 255, alphas[i]);
             y += th;
         }
         pophudmatrix();
