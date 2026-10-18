@@ -12,6 +12,7 @@ namespace game
     FVARP(ghostalpha, 0.1f, 0.4f, 1);
 
     enum { SAMPLETICKS = 2 };
+    static const float GHOSTHIDEDIST = 8, GHOSTFADEDIST = 16;
 
     // the current run's samples, with the index of the chained map each was taken on
     static vector<ghostsample> live;
@@ -149,6 +150,9 @@ namespace game
     {
         ghostsample g;
         if(!currentghost(g)) return;
+        // fades out as the camera gets inside it
+        float alpha = ghostalpha * clamp((camera1->o.dist(g.o) - GHOSTHIDEDIST) / GHOSTFADEDIST, 0.0f, 1.0f);
+        if(alpha <= 0) return;
         if(!ghostent) ghostent = new fpsent;
         fpsent &d = *ghostent;
         d.o = g.o;
@@ -164,7 +168,7 @@ namespace game
         d.state = CS_ALIVE;
         d.lastpain = 0;
         d.armour = 0;
-        renderplayer(&d, getplayermodelinfo(player1), 0, ghostalpha, mainpass);
+        renderplayer(&d, getplayermodelinfo(player1), 0, alpha, mainpass);
         if(mainpass) particle_text(d.abovehead(), ghostpicked ? "ghost" : "PB", PART_TEXT, 1, 0x80FFFF, 2.0f);
     }
 
