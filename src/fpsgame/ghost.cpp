@@ -202,6 +202,14 @@ namespace game
         if(alpha <= 0) return;
         if(!ghostent) ghostent = new fpsent;
         fpsent &d = *ghostent;
+        // a map start or a state load moves the clock back; animation blending from timestamps
+        // in the future would extrapolate the mesh
+        if(lastmillis < d.lastrendered || lastmillis < d.lastaction)
+        {
+            loopi(MAXANIMPARTS) d.animinterp[i].reset();
+            d.lastrendered = 0;
+            d.lastaction = 0;
+        }
         d.o = g.o;
         d.yaw = g.yaw;
         d.pitch = g.pitch;
@@ -235,7 +243,8 @@ namespace game
     {
         ghostsample g;
         if(!currentghost(g)) { defformatstring(res, "samples=%d none", samples.length()); result(res); return; }
-        defformatstring(res, "samples=%d pos=%.3f %.3f %.3f", samples.length(), g.o.x, g.o.y, g.o.z);
+        defformatstring(res, "samples=%d pos=%.3f %.3f %.3f animswitch=%d rendered=%d now=%d", samples.length(), g.o.x, g.o.y, g.o.z,
+                        ghostent ? ghostent->animinterp[0].lastswitch : -1, ghostent ? ghostent->lastrendered : -1, lastmillis);
         result(res);
     });
 }
