@@ -153,6 +153,7 @@ namespace game
         updaterun();
         ghosttick();
         splittick();
+        spawntick();
     }
 
     int runtimerresult(bool &finished)

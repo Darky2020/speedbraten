@@ -763,6 +763,14 @@ struct snapio
         pos += len;
     }
     void tag(uint t) { uint x = t; u(x); if(x != t) ok = false; }
+    // loading: whether the next word is tag t, without reading it
+    bool peektag(uint t) const
+    {
+        if(pos + 4 > buf.length()) return false;
+        uint v = 0;
+        loopk(4) v |= uint(buf[pos+k]) << (k*8);
+        return v == t;
+    }
     void phys(physent &d)
     {
         v(d.o); v(d.vel); v(d.falling); v(d.deltapos); v(d.newpos); i(d.interpmillis);
@@ -1007,6 +1015,13 @@ namespace game
     extern void drawsplits(int w, int h);
     extern void renderghost(bool mainpass);
     extern void snapruntimer(snapio &s);
+    extern void snapspawns(snapio &s);
+    extern void resetspawns(snapio &s);
+    extern void snaplatesettings(snapio &s);
+    extern void resetlatesettings(snapio &s);
+    extern bool pickcustomspawn(fpsent *d, int &forceent);
+    extern void spawnmapstart(const char *map);
+    extern void spawntick();
     extern bool runtimerperlife();
     extern bool runtimerliferan();
     extern void inputlifespawned();

@@ -33,8 +33,12 @@ namespace game
 
     extern void saverunreplay(const inputrun &run, bool finished, int runtime, bool started);
 
-    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed" };
+    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed", "racestart" };
     enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
+    // settings added after replays started recording settings (the last ones of simsettings),
+    // with the value that matches replays and saved states made before them
+    static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 } };
+    enum { NUMLATESETTINGS = sizeof(latesettings)/sizeof(latesettings[0]), NUMOLDSETTINGS = NUMSIMSETTINGS - NUMLATESETTINGS };
     static void readsettings(int *vals);
 
     // A saved state with the setting values in effect when it was taken, and the branch of the
@@ -422,13 +426,17 @@ namespace game
 
     static void forcesettings(const inputattempt &a)
     {
-        if(a.settings.empty()) return;
         if(!settingsforced)
         {
             readsettings(usersettings);
             settingsforced = true;
         }
         readsettings(cursettings);
+        for(size_t j = 0; j < sizeof(latesettings)/sizeof(latesettings[0]); j++)
+        {
+            int k = findsetting(latesettings[j].name);
+            if(k >= 0) cursettings[k] = latesettings[j].absent;
+        }
         loopv(a.settings)
         {
             int k = findsetting(a.settings[i].name);
@@ -531,6 +539,9 @@ namespace game
 
     // On load during a recording, the attempt is cut back to the restored tick, so it still
     // replays from map start: the restored state is the state it had at that tick.
+    void snaplatesettings(snapio &s) { for(int i = NUMOLDSETTINGS; i < NUMSIMSETTINGS; i++) s.i(cursettings[i]); }
+    void resetlatesettings(snapio &s) { loopi(NUMLATESETTINGS) cursettings[NUMOLDSETTINGS + i] = latesettings[i].absent; }
+
     void snaprecorder(snapio &s)
     {
         int tick = curtick;
@@ -542,7 +553,7 @@ namespace game
         s.bytes(lastgui);
         s.u(lastcursorx); s.u(lastcursory); s.n(haveguistate);
         s.i(lastzoom); s.i(zoom);
-        loopi(NUMSIMSETTINGS) s.i(cursettings[i]);
+        loopi(NUMOLDSETTINGS) s.i(cursettings[i]);
         s.i(lastactivetick);
         if(!s.loading || !s.ok) return;
         curtick = tick;

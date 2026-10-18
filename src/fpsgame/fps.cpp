@@ -408,6 +408,7 @@ namespace game
     {
         int ent = m_classicsp && d == player1 && respawnent >= 0 ? respawnent : -1;
         int tag = cmode ? cmode->getspawngroup(d) : 0;
+        if(pickcustomspawn(d, ent)) return;
         findplayerspawn(d, ent, tag);
     }
 
@@ -805,6 +806,7 @@ namespace game
 
         respawnent = -1; // so we don't respawn at an old spot
         savestatemapstart();
+        spawnmapstart(name ? name : "");
         mapstartspawn = true; // where the player was before the map load is meaningless here
         if(!m_mp(gamemode)) spawnplayer(player1);
         else findplayerspawn(player1, -1);

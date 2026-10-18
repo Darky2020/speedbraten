@@ -120,20 +120,27 @@ namespace game
 
     static void snapplayer1(snapio &s) { snapfpsent(s, *player1); }
 
-    // In order: objects are recreated first, so that saved dynent indices resolve.
-    static const struct { const char *tag; void (*snap)(snapio &); } snapsections[] =
+    // In order: objects are recreated first, so that saved dynent indices resolve. Sections
+    // with a reset function were added later; states saved before them restore without.
+    static const struct { const char *tag; void (*snap)(snapio &); void (*absent)(snapio &); } snapsections[] =
     {
         { "MONS", snapmonsters }, { "MONF", snapmonsterfields }, { "MOVE", snapmovables },
         { "CLK ", snapgameclock }, { "RNG ", snaprng }, { "PLY ", snapplayer1 }, { "BOTS", snapbots },
         { "ENT ", snapentities }, { "SHOT", snapshots }, { "SERV", server::snapstate },
         { "MODE", snapclientmodes }, { "DYNC", snapdynentcache }, { "SCRP", snapscripts },
-        { "MSGS", snapmessages }, { "RUN ", snapruntimer }, { "REC ", snaprecorder }
+        { "MSGS", snapmessages }, { "RUN ", snapruntimer }, { "REC ", snaprecorder },
+        { "SPWN", snapspawns, resetspawns }, { "SETX", snaplatesettings, resetlatesettings }
     };
 
     static void snapall(snapio &s)
     {
         for(size_t i = 0; i < sizeof(snapsections)/sizeof(snapsections[0]); i++)
         {
+            if(s.loading && snapsections[i].absent && !s.peektag(snaptag(snapsections[i].tag)))
+            {
+                snapsections[i].absent(s);
+                continue;
+            }
             s.tag(snaptag(snapsections[i].tag));
             snapsections[i].snap(s);
             if(!s.ok)
