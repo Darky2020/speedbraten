@@ -30,6 +30,9 @@ namespace game
     MOD(VARP, splithud, 0, 1, 1);
     MOD(VARP, splitlist, 0, 0, 1);
     MOD(VARP, splitshowzones, 0, 0, 1);
+    // the run kind whose splits are edited in edit mode or while no run is timed: sp, flagrun, race
+    MOD(VARP, spliteditkind, 0, 1, 2);
+    static const char * const editkinds[] = { "sp", "flagrun", "race" };
 
     static string defskey = "", splitkind = "", splitmap = "";
     static int lasttick = -1;
@@ -118,9 +121,11 @@ namespace game
     {
         vec lo, hi;
         if(!editmode || !getselbox(lo, hi)) { conoutf(CON_ERROR, "splitaddzone: select an area in edit mode first"); return; }
+        if(lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z) { conoutf(CON_ERROR, "splitaddzone: the selection is empty; drag a box first"); return; }
         splitdef &d = adddef(name, SPLIT_ZONE);
         d.lo = lo;
         d.hi = hi;
+        conoutf("added zone split %s (%s splits of %s; splitsave to keep it)", name, splitkind, splitmap);
     }
     ICOMMAND(splitaddzone, "s", (char *name), splitaddzone(name));
     ICOMMAND(splitaddent, "s", (char *name),
@@ -131,7 +136,8 @@ namespace game
         int type = ents[n]->type;
         if(type == TELEPORT) adddef(name, SPLIT_TELEPORT).ent = n;
         else if(type >= I_SHELLS && type <= I_QUAD) adddef(name, SPLIT_PICKUP).ent = n;
-        else conoutf(CON_ERROR, "splitaddent: entity %d is not an item or teleport", n);
+        else { conoutf(CON_ERROR, "splitaddent: entity %d is not an item or teleport", n); return; }
+        conoutf("added %s split %s on entity %d (splitsave to keep it)", type == TELEPORT ? "teleport" : "pickup", name, n);
     });
     ICOMMAND(splitremove, "i", (int *i), { if(defs.inrange(*i)) defs.remove(*i); });
     ICOMMAND(splitrename, "is", (int *i, char *name), { if(defs.inrange(*i) && name[0] && finddef(name) < 0) copystring(defs[*i].name, name); });
@@ -226,10 +232,17 @@ namespace game
     void splittick()
     {
         const inputattempt *first = inputrunfirst();
-        const char *kind = runtimerkindname();
-        if(!first || !kind) { defs.setsize(0); hits.setsize(0); defskey[0] = '\0'; return; }
-        defformatstring(key, "%s %s", first->map, kind);
-        if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(first->map, kind); hits.setsize(0); }
+        const char *kind = runtimerkindname(), *map = first ? first->map : "";
+        bool editing = editmode || !kind;
+        if(editing)
+        {
+            kind = editkinds[clamp(spliteditkind, 0, 2)];
+            map = getclientmap();
+        }
+        if(!map[0]) { defs.setsize(0); hits.setsize(0); defskey[0] = '\0'; splitmap[0] = '\0'; return; }
+        defformatstring(key, "%s %s", map, kind);
+        if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(map, kind); hits.setsize(0); }
+        if(editing) return;
         refreshcomparison(first->map, kind, first->mode);
 
         bool running;
