@@ -207,12 +207,19 @@ namespace game
         h.millis = totalmillis;
     }
 
+    // feet position at the end of the previous tick, so a zone thinner than one tick's movement
+    // is not stepped over; a longer jump than MAXSTEP (teleport, respawn) is not swept
+    static vec lastfeet(0, 0, 0);
+    static bool havelastfeet = false;
+    static const float MAXSTEP = 64;
+
     // prints the entity index of every item player1 picks up and every teleport it uses
     MOD(VARP, splitlog, 0, 0, 1);
 
     void splitentityused(int n, fpsent *d, bool teleport)
     {
         if(d != player1) return;
+        if(teleport) havelastfeet = false;
         if(splitlog)
         {
             const vector<extentity *> &ents = entities::getents();
@@ -267,6 +274,28 @@ namespace game
         statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs, pbms);
     }
 
+    static bool insidebox(const vec &p, const vec &lo, const vec &hi)
+    {
+        return p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y && p.z >= lo.z && p.z <= hi.z;
+    }
+
+    // whether the segment a-b touches the box (slab test)
+    static bool segmenthitsbox(const vec &a, const vec &b, const vec &lo, const vec &hi)
+    {
+        float t0 = 0, t1 = 1;
+        loopi(3)
+        {
+            float d = b[i] - a[i];
+            if(fabs(d) < 1e-6f) { if(a[i] < lo[i] || a[i] > hi[i]) return false; continue; }
+            float n = (lo[i] - a[i]) / d, f = (hi[i] - a[i]) / d;
+            if(n > f) swap(n, f);
+            t0 = max(t0, n);
+            t1 = min(t1, f);
+            if(t0 > t1) return false;
+        }
+        return true;
+    }
+
     void splittick()
     {
         const inputattempt *first = inputrunfirst();
@@ -288,21 +317,25 @@ namespace game
         // a state load or a new run moves the clock back
         if(t < lasttick)
         {
+            havelastfeet = false;
             if(t <= 1) hits.setsize(0);
             else while(hits.length() && hits.last().tick > t) hits.pop();
         }
         lasttick = t;
-        if(!running) return;
+        if(!running || player1->state != CS_ALIVE) { havelastfeet = false; return; }
         vec feet = player1->feetpos();
+        bool sweep = havelastfeet && lastfeet.dist(feet) <= MAXSTEP;
         loopv(defs) if(!hasfired(i))
         {
             const splitdef &d = defs[i];
             if(d.type == SPLIT_ZONE)
             {
-                if(feet.x >= d.lo.x && feet.x <= d.hi.x && feet.y >= d.lo.y && feet.y <= d.hi.y && feet.z >= d.lo.z && feet.z <= d.hi.z) fire(i);
+                if(sweep ? segmenthitsbox(lastfeet, feet, d.lo, d.hi) : insidebox(feet, d.lo, d.hi)) fire(i);
             }
             else if(d.type == SPLIT_WHEN && d.expr[0] && execute(d.expr)) fire(i);
         }
+        lastfeet = feet;
+        havelastfeet = true;
     }
 
     // zones as wire boxes, in edit mode or with splitshowzones
