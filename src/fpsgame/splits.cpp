@@ -320,7 +320,8 @@ namespace game
         nformatstring(dst, MAXSTRLEN, "%s%s%d.%03d", ticks > 0 ? "\f3+" : ticks < 0 ? "\f0-" : "\f7", "", ms/1000, ms%1000);
     }
 
-    // one HUD line for hit i: name, time, delta to the PB's split, delta to the best segment
+    // one HUD line for hit i: name, time (yellow for a new best segment), delta to the PB's
+    // split, delta to the best time of the segment
     static void hitline(int i, char *dst)
     {
         const splithit &h = hits[i];
@@ -328,10 +329,10 @@ namespace game
         string t, d1 = "", d2 = "";
         formattime(t, h.tick);
         int pb = pbtick(name);
-        if(pb >= 0) { string d; formatdelta(d, h.tick - pb); formatstring(d1, "  %s", d); }
+        if(pb >= 0) { string d; formatdelta(d, h.tick - pb); formatstring(d1, "  \f7pb %s", d); }
         int best = bestsegment(prev, name), seg = h.tick - (i ? hits[i-1].tick : 0);
-        if(best >= 0) { string d; formatdelta(d, seg - best); formatstring(d2, "  \f7seg %s", d); }
-        nformatstring(dst, MAXSTRLEN, "\f7%s %s%s%s", name, t, d1, d2);
+        if(best >= 0) { string d; formatdelta(d, seg - best); formatstring(d2, "  \f7best %s", d); }
+        nformatstring(dst, MAXSTRLEN, "\f7%s %s%s%s%s", name, best >= 0 && seg < best ? "\f2" : "", t, d1, d2);
     }
 
     extern float runtimerscale, runtimerx, runtimery;
