@@ -995,6 +995,7 @@ namespace game
     extern void runtimerflagscored(fpsent *d);
     extern void runtimertick();
     extern int runtimerticks(bool &running);
+    extern bool runtimerfinished();
     extern const char *runtimerkindname();
     extern bool inputrecordinglive();
     extern int inputattemptindex();

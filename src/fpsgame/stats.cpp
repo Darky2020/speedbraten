@@ -14,7 +14,7 @@ namespace game
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay) {}
     void statsreplaymoved(const char *from, const char *to) {}
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
-    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best) { return false; }
+    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
     int statsversion() { return 0; }
 #else
     static int changes = 0;
@@ -196,12 +196,21 @@ namespace game
         return found;
     }
 
-    // The splits of the PB (fastest finished run of the category) and the best time of every
-    // segment (previous split, split) over all runs of the category.
-    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best)
+    // The PB (fastest finished run of the category): its run time (-1 without one) and splits,
+    // and the best time of every segment (previous split, split) over all runs of the category.
+    bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms)
     {
         pb.setsize(0);
         best.setsize(0);
+        pbms = -1;
+        sqlite3_stmt *pt = prepare("SELECT MIN(runtime) FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND (splices > 0) = ?");
+        if(!pt) return false;
+        bindtext(pt, 1, map);
+        bindtext(pt, 2, kind);
+        sqlite3_bind_int(pt, 3, mode);
+        sqlite3_bind_int(pt, 4, segmented ? 1 : 0);
+        if(sqlite3_step(pt) == SQLITE_ROW && sqlite3_column_type(pt, 0) != SQLITE_NULL) pbms = sqlite3_column_int(pt, 0);
+        sqlite3_finalize(pt);
         sqlite3_stmt *st = prepare("SELECT s.name, s.tick FROM splits s WHERE s.attempt = (SELECT id FROM attempts WHERE map = ? AND kind = ? AND mode = ? "
                                    "AND finished AND (splices > 0) = ? ORDER BY runtime, id LIMIT 1) ORDER BY s.idx");
         if(!st) return false;

@@ -244,14 +244,17 @@ namespace game
     static vector<splittime> pbsplits;
     static vector<splitsegment> bestsegs;
     static string comparekey = "";
+    static int pbms = -1;
 
     static void refreshcomparison(const char *map, const char *kind, int mode)
     {
         bool segmented = inputsplicecount() > 0;
         defformatstring(key, "%s %s %d %d %d", map, kind, mode, segmented ? 1 : 0, statsversion());
         if(!strcmp(key, comparekey)) return;
+        // a finished run stays compared with the PB it was run against, not with itself
+        if(runtimerfinished() && comparekey[0]) return;
         copystring(comparekey, key);
-        statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs);
+        statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs, pbms);
     }
 
     void splittick()
@@ -388,6 +391,17 @@ namespace game
             lines.add(newstring(l));
         }
         while(alphas.length() < lines.length()) alphas.add(alpha);
+        bool running;
+        int t = runtimerticks(running);
+        if(splithud && runtimerfinished() && pbms >= 0)
+        {
+            string ft, d, l;
+            formattime(ft, t);
+            formatdelta(d, t - pbms/SIMTICK);
+            formatstring(l, "\f7finish %s%s  \f7pb %s", t < pbms/SIMTICK ? "\f2" : "", ft, d);
+            lines.insert(0, newstring(l));
+            alphas.insert(0, 255);
+        }
         int delta;
         if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); alphas.add(255); }
         if(lines.empty()) return;

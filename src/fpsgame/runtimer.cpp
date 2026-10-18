@@ -121,6 +121,7 @@ namespace game
     }
 
     int runtimerticks(bool &running) { running = runstate == RUN_RUNNING; return runticks(); }
+    bool runtimerfinished() { return runstate == RUN_FINISHED; }
 
     // the run kind as the statistics name it, NULL when nothing is timed
     const char *runtimerkindname()

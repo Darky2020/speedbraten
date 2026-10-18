@@ -177,7 +177,7 @@ namespace game
         int ticks;
     };
     extern void splitresults(vector<splittime> &out);
-    extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best);
+    extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
     extern const inputattempt *inputrunfirst();
     extern void ghostattach(inputrun &run);
     extern void playinputrun(const inputrun &run);
