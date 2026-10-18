@@ -3,7 +3,7 @@
 //
 // Layout (all integers little endian, "var" = unsigned LEB128, "svar" = zigzag LEB128):
 //   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
-//   [v3+: var race], [v7+: var splices], var finished, var runtime ms, var ticks, var maps,
+//   [v3+: var race], [v7+: var splices], [v10+: var run started], var finished, var runtime ms, var ticks, var maps,
 //   str first map
 //   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
 //            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
@@ -26,7 +26,7 @@ namespace game
 {
     static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
     // REPLAYSIMVERSION: oldest version recorded with the current simulation
-    enum { REPLAYVERSION = 9, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { REPLAYVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     struct replaywriter
     {
@@ -108,6 +108,7 @@ namespace game
         w.var(info.flagrun);
         w.var(info.race);
         w.var(info.splices);
+        w.var(info.started != 0 ? 1 : 0);
         w.var(info.finished);
         w.var(info.runtime);
         w.var(info.ticks);
@@ -204,6 +205,7 @@ namespace game
         info.flagrun = r.var();
         info.race = info.version >= 3 ? r.var() : 0;
         info.splices = info.version >= 7 ? r.var() : 0;
+        info.started = info.version >= 10 ? int(r.var()) : -1;
         info.finished = r.var();
         info.runtime = r.var();
         info.ticks = r.var();
@@ -363,8 +365,29 @@ namespace game
         files.deletearrays();
     }
 
+    // the longest stretch of ticks without an input event
+    int replaylongestidle(const inputrun &run)
+    {
+        int idle = 0;
+        loopvk(run.attempts)
+        {
+            const inputattempt &a = *run.attempts[k];
+            int last = a.starttick;
+            loopv(a.events)
+            {
+                const inputevent &e = a.events[i];
+                if(e.type == INPUT_SETTING) continue;
+                idle = max(idle, e.tick - last);
+                last = e.tick;
+            }
+            idle = max(idle, a.ticks - last);
+        }
+        return idle;
+    }
+
     void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info)
     {
+        info.started = 1;
         const inputattempt &first = *run.attempts[0];
         info.version = REPLAYVERSION;
         info.date = uint(time(NULL));
@@ -393,6 +416,7 @@ namespace game
             run.copyto(traced);
             ghostattach(traced);
         }
+        info.started = started || finished ? 1 : 0;
         if(!replayautosave)
         {
             if(started) statsrecord(run, info, NULL);
@@ -585,5 +609,204 @@ namespace game
         string name;
         safename(name, newname);
         if(!movereplay(e, e.kept ? "replays/kept" : "replays", name)) conoutf(CON_ERROR, "could not rename %s", e.file);
+    });
+}
+
+// Replay cleanup rules, run on demand: cleanupcheck lists the replays in replays/ (never
+// replays/kept/) that a rule matches, cleanupdelete removes the listed ones. A rule is
+// "<kind> <result> <condition> <n>": kind any|sp|flagrun|race, result any|unfinished|finished,
+// condition shorter (n s), idle (an idle stretch longer than n s), notstarted, older (n days)
+// or keepbest (matches all but the n fastest finished runs per map and mode).
+namespace game
+{
+    MOD(SVARP, replaycleanuprules, "");
+
+    struct cleanuprule
+    {
+        string kind, result, cond;
+        int n;
+    };
+
+    static void parserules(vector<cleanuprule> &rules)
+    {
+        vector<char *> parts;
+        explodelist(replaycleanuprules, parts);
+        for(int i = 0; i + 3 < parts.length(); i += 4)
+        {
+            cleanuprule &r = rules.add();
+            copystring(r.kind, parts[i]);
+            copystring(r.result, parts[i+1]);
+            copystring(r.cond, parts[i+2]);
+            r.n = parseint(parts[i+3]);
+        }
+        parts.deletearrays();
+    }
+
+    static void saverules(const vector<cleanuprule> &rules)
+    {
+        vector<char> buf;
+        loopv(rules)
+        {
+            defformatstring(s, "%s%s %s %s %d", i ? " " : "", rules[i].kind, rules[i].result, rules[i].cond, rules[i].n);
+            buf.put(s, strlen(s));
+        }
+        buf.add('\0');
+        setsvar("replaycleanuprules", buf.getbuf());
+    }
+
+    static const char *replaykind(const replayinfo &info) { return info.race ? "race" : info.flagrun ? "flagrun" : "sp"; }
+
+    struct cleanupfile
+    {
+        string file;
+        replayinfo info;
+        int idle, size, rule;
+    };
+    static vector<cleanupfile> cleanuplist;
+
+    static bool rulefilter(const cleanuprule &r, const replayinfo &info)
+    {
+        if(strcmp(r.kind, "any") && strcmp(r.kind, replaykind(info))) return false;
+        if(!strcmp(r.result, "unfinished") && info.finished) return false;
+        if(!strcmp(r.result, "finished") && !info.finished) return false;
+        return true;
+    }
+
+    static bool fastercleanup(const cleanupfile *a, const cleanupfile *b)
+    {
+        return a->info.runtime != b->info.runtime ? a->info.runtime < b->info.runtime : a->info.date > b->info.date;
+    }
+
+    static void checkcleanup()
+    {
+        cleanuplist.setsize(0);
+        vector<cleanuprule> rules;
+        parserules(rules);
+        if(rules.empty()) return;
+        vector<cleanupfile> all;
+        vector<char *> files;
+        listfiles("replays", "sbr", files);
+        loopv(files)
+        {
+            cleanupfile c;
+            formatstring(c.file, "replays/%s.sbr", files[i]);
+            inputrun run;
+            if(!readreplay(c.file, &run, c.info)) continue;
+            c.idle = replaylongestidle(run);
+            stream *f = openrawfile(path(c.file, true), "rb");
+            c.size = f ? int(f->size()) : 0;
+            delete f;
+            c.rule = -1;
+            all.add(c);
+        }
+        files.deletearrays();
+        time_t now = time(NULL);
+        loopvj(rules)
+        {
+            const cleanuprule &r = rules[j];
+            if(!strcmp(r.cond, "keepbest"))
+            {
+                // per map, mode, kind and segmented or not: the fastest n finished runs stay
+                vector<cleanupfile *> group;
+                loopv(all)
+                {
+                    cleanupfile &c = all[i];
+                    if(!c.info.finished || !rulefilter(r, c.info)) continue;
+                    group.setsize(0);
+                    loopvk(all)
+                    {
+                        cleanupfile &o = all[k];
+                        if(o.info.finished && o.info.mode == c.info.mode && !strcmp(replaykind(o.info), replaykind(c.info)) &&
+                           (o.info.splices > 0) == (c.info.splices > 0) && !strcmp(o.info.map, c.info.map)) group.add(&o);
+                    }
+                    group.sort(fastercleanup);
+                    if(group.find(&c) >= max(r.n, 0) && c.rule < 0) c.rule = j;
+                }
+                continue;
+            }
+            loopv(all)
+            {
+                cleanupfile &c = all[i];
+                if(c.rule >= 0 || !rulefilter(r, c.info)) continue;
+                bool match = false;
+                if(!strcmp(r.cond, "shorter")) match = c.info.ticks*SIMTICK < r.n*1000;
+                else if(!strcmp(r.cond, "idle")) match = c.idle*SIMTICK > r.n*1000;
+                else if(!strcmp(r.cond, "notstarted")) match = c.info.started == 0;
+                else if(!strcmp(r.cond, "older")) match = double(now) - double(c.info.date) > r.n*86400.0;
+                if(match) c.rule = j;
+            }
+        }
+        loopv(all) if(all[i].rule >= 0) cleanuplist.add(all[i]);
+    }
+
+    ICOMMAND(cleanupadd, "sssi", (char *kind, char *result, char *cond, int *n),
+    {
+        vector<cleanuprule> rules;
+        parserules(rules);
+        cleanuprule &r = rules.add();
+        copystring(r.kind, kind);
+        copystring(r.result, result);
+        copystring(r.cond, cond);
+        r.n = *n;
+        saverules(rules);
+    });
+    ICOMMAND(cleanupremove, "i", (int *i),
+    {
+        vector<cleanuprule> rules;
+        parserules(rules);
+        if(rules.inrange(*i)) rules.remove(*i);
+        saverules(rules);
+    });
+    ICOMMAND(cleanuprulecount, "", (), { vector<cleanuprule> rules; parserules(rules); intret(rules.length()); });
+    static void ruletext(int i, char *res)
+    {
+        vector<cleanuprule> rules;
+        parserules(rules);
+        res[0] = '\0';
+        if(!rules.inrange(i)) return;
+        const cleanuprule &r = rules[i];
+        bool anyresult = !strcmp(r.result, "any");
+        string what, cond;
+        formatstring(what, "%s%s%s", anyresult ? "" : r.result, anyresult ? "" : " ", strcmp(r.kind, "any") ? r.kind : "all");
+        if(!strcmp(r.cond, "shorter")) formatstring(cond, "shorter than %d s", r.n);
+        else if(!strcmp(r.cond, "idle")) formatstring(cond, "with no input for over %d s", r.n);
+        else if(!strcmp(r.cond, "notstarted")) copystring(cond, "where the run never started");
+        else if(!strcmp(r.cond, "older")) formatstring(cond, "older than %d days", r.n);
+        else if(!strcmp(r.cond, "keepbest")) formatstring(cond, "except the %d fastest per map and mode", r.n);
+        else copystring(cond, r.cond);
+        nformatstring(res, MAXSTRLEN, "%s runs %s", what, cond);
+    }
+    ICOMMAND(cleanupruletext, "i", (int *i), { string res; ruletext(*i, res); result(res); });
+
+    // cleanupcheck: lists the matching replays and returns their number
+    ICOMMAND(cleanupcheck, "", (), { checkcleanup(); intret(cleanuplist.length()); });
+    ICOMMAND(cleanupsize, "", (),
+    {
+        int total = 0;
+        loopv(cleanuplist) total += cleanuplist[i].size;
+        defformatstring(res, "%.1f MB", total/(1024.0f*1024.0f));
+        result(res);
+    });
+    ICOMMAND(cleanupfield, "is", (int *i, char *field),
+    {
+        if(!cleanuplist.inrange(*i)) { result(""); return; }
+        const cleanupfile &c = cleanuplist[*i];
+        if(!strcmp(field, "file")) result(c.file);
+        else if(!strcmp(field, "rule")) intret(c.rule);
+        else result("");
+    });
+    // cleanupdelete: removes the replays the last cleanupcheck listed, returns how many
+    ICOMMAND(cleanupdelete, "", (),
+    {
+        int n = 0;
+        loopv(cleanuplist)
+        {
+            if(remove(realpath(cleanuplist[i].file))) continue;
+            statsreplaymoved(cleanuplist[i].file, NULL);
+            n++;
+        }
+        conoutf("cleanup: deleted %d replays", n);
+        cleanuplist.setsize(0);
+        intret(n);
     });
 }

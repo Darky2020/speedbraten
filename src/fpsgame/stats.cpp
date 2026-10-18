@@ -99,25 +99,6 @@ namespace game
         else sqlite3_bind_null(st, i);
     }
 
-    static int longestidle(const inputrun &run)
-    {
-        int idle = 0;
-        loopvk(run.attempts)
-        {
-            const inputattempt &a = *run.attempts[k];
-            int last = a.starttick;
-            loopv(a.events)
-            {
-                const inputevent &e = a.events[i];
-                if(e.type == INPUT_SETTING) continue;
-                idle = max(idle, e.tick - last);
-                last = e.tick;
-            }
-            idle = max(idle, a.ticks - last);
-        }
-        return idle;
-    }
-
     static const char *runkindname(const replayinfo &info)
     {
         return info.race ? "race" : info.flagrun ? "flagrun" : "sp";
@@ -171,7 +152,7 @@ namespace game
         sqlite3_bind_int64(st, 10, first.mapcrc);
         if(first.hascfgcrc) sqlite3_bind_int64(st, 11, first.cfgcrc);
         else sqlite3_bind_null(st, 11);
-        sqlite3_bind_int(st, 12, longestidle(run));
+        sqlite3_bind_int(st, 12, replaylongestidle(run));
         bindtext(st, 13, replay);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));

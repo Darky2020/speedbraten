@@ -150,8 +150,9 @@ namespace game
         uint date;
         string client, player, map;
         int mode, flagrun, race, splices, finished, runtime, ticks, maps;
+        int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (before v10)
 
-        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0)
+        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1)
         {
             client[0] = player[0] = map[0] = '\0';
         }
@@ -159,6 +160,7 @@ namespace game
 
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);
     extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
+    extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
     extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay);
     extern void statsreplaymoved(const char *from, const char *to);
