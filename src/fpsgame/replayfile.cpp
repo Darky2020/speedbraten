@@ -615,8 +615,9 @@ namespace game
 // Replay cleanup rules, run on demand: cleanupcheck lists the replays in replays/ (never
 // replays/kept/) that a rule matches, cleanupdelete removes the listed ones. A rule is
 // "<kind> <result> <condition> <n>": kind any|sp|flagrun|race, result any|unfinished|finished,
-// condition shorter (n s), idle (an idle stretch longer than n s), notstarted, older (n days)
-// or keepbest (matches all but the n fastest finished runs per map and mode).
+// condition shorter (n s), idle (an idle stretch longer than n s), notstarted, outdated (made
+// with an older simulation, so it will likely desync), older (n days) or keepbest (matches all
+// but the n fastest finished runs per map and mode).
 namespace game
 {
     MOD(SVARP, replaycleanuprules, "");
@@ -732,6 +733,7 @@ namespace game
                 if(!strcmp(r.cond, "shorter")) match = c.info.ticks*SIMTICK < r.n*1000;
                 else if(!strcmp(r.cond, "idle")) match = c.idle*SIMTICK > r.n*1000;
                 else if(!strcmp(r.cond, "notstarted")) match = c.info.started == 0;
+                else if(!strcmp(r.cond, "outdated")) match = c.info.version < REPLAYSIMVERSION;
                 else if(!strcmp(r.cond, "older")) match = double(now) - double(c.info.date) > r.n*86400.0;
                 if(match) c.rule = j;
             }
@@ -771,6 +773,7 @@ namespace game
         if(!strcmp(r.cond, "shorter")) formatstring(cond, "shorter than %d s", r.n);
         else if(!strcmp(r.cond, "idle")) formatstring(cond, "with no input for over %d s", r.n);
         else if(!strcmp(r.cond, "notstarted")) copystring(cond, "where the run never started");
+        else if(!strcmp(r.cond, "outdated")) copystring(cond, "made with an older build (will likely desync)");
         else if(!strcmp(r.cond, "older")) formatstring(cond, "older than %d days", r.n);
         else if(!strcmp(r.cond, "keepbest")) formatstring(cond, "except the %d fastest per map and mode", r.n);
         else copystring(cond, r.cond);
