@@ -188,6 +188,8 @@ namespace game
         else result("");
     });
 
+    static int runtimerticksnow() { bool running; return runtimerticks(running); }
+
     static bool hasfired(int def)
     {
         loopv(hits) if(hits[i].def == def) return true;
@@ -205,9 +207,17 @@ namespace game
         h.millis = totalmillis;
     }
 
+    // prints the entity index of every item player1 picks up and every teleport it uses
+    MOD(VARP, splitlog, 0, 0, 1);
+
     void splitentityused(int n, fpsent *d, bool teleport)
     {
         if(d != player1) return;
+        if(splitlog)
+        {
+            const vector<extentity *> &ents = entities::getents();
+            if(ents.inrange(n)) conoutf("\f4split log: %s entity %d (%s) at %.3f s", teleport ? "teleport" : "picked up", n, entities::entname(ents[n]->type), runtimerticksnow()*SIMTICK/1000.0f);
+        }
         loopv(defs) if(defs[i].ent == n && defs[i].type == (teleport ? SPLIT_TELEPORT : SPLIT_PICKUP)) fire(i);
     }
 
