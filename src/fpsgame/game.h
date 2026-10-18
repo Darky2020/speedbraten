@@ -1017,10 +1017,13 @@ namespace game
     extern void snapruntimer(snapio &s);
     extern void snapspawns(snapio &s);
     extern void resetspawns(snapio &s);
+    extern void snaprespawn(snapio &s);
+    extern void resetrespawn(snapio &s);
     extern void snaplatesettings(snapio &s);
     extern void resetlatesettings(snapio &s);
     extern bool pickcustomspawn(fpsent *d, int &forceent);
     extern void spawnmapstart(const char *map);
+    extern void respawn();
     extern void spawntick();
     extern bool runtimerperlife();
     extern bool runtimerliferan();

@@ -409,11 +409,10 @@ namespace game
     extern float runtimerscale, runtimerx, runtimery;
     extern bool ghostdelta(int &delta);
 
-    void drawsplits(int w, int h)
+    // the split HUD's lines and their alpha
+    static void hudlines(vector<char *> &lines, vector<int> &alphas)
     {
         if(!runtimerkindname()) return;
-        vector<char *> lines;
-        vector<int> alphas;
         int alpha = 255;
         if(splitfade && hits.length())
         {
@@ -447,6 +446,13 @@ namespace game
         }
         int delta;
         if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); alphas.add(255); }
+    }
+
+    void drawsplits(int w, int h)
+    {
+        vector<char *> lines;
+        vector<int> alphas;
+        hudlines(lines, alphas);
         if(lines.empty()) return;
 
         const float scale = runtimerscale * 0.45f;
@@ -477,6 +483,27 @@ namespace game
             buf.put(s, strlen(s));
         }
         buf.add('\0');
+        result(buf.getbuf());
+    });
+}
+
+namespace game
+{
+    // harness: the split HUD's lines, joined with " | "
+    ICOMMAND(splithudtext, "", (),
+    {
+        vector<char *> lines;
+        vector<int> alphas;
+        hudlines(lines, alphas);
+        vector<char> buf;
+        loopv(lines)
+        {
+            if(i) buf.put(" | ", 3);
+            filtertext(lines[i], lines[i], false, false, strlen(lines[i]));
+            buf.put(lines[i], strlen(lines[i]));
+        }
+        buf.add('\0');
+        lines.deletearrays();
         result(buf.getbuf());
     });
 }

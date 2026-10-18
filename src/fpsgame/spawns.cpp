@@ -18,6 +18,9 @@ namespace game
         float yaw, pitch;
     } spawn = { false, vec(0, 0, 0), 0, 0 };
 
+    // respawnnow: the life whose end was asked for, until the next life has started; -1 none
+    static int respawnlife = -1;
+
     enum { STILLMS = 1000 };
     static const float STILLDIST = 1;
     static vec stillpos(0, 0, 0);
@@ -28,6 +31,8 @@ namespace game
         s.n(spawn.valid); s.v(spawn.o); s.f(spawn.yaw); s.f(spawn.pitch);
     }
     void resetspawns(snapio &s) { spawn.valid = false; }
+    void snaprespawn(snapio &s) { s.i(respawnlife); }
+    void resetrespawn(snapio &s) { respawnlife = -1; }
 
     static bool customspawnactive() { return spawn.valid && m_ctf && server::flagrunactive(); }
 
@@ -63,9 +68,25 @@ namespace game
         return false;
     }
 
-    // live only: how long player1 has stood still
+    // A suicide in a multiplayer mode reaches the server as an event, so a spawn request in
+    // the same tick is refused; respawnnow keeps asking until the new life has started.
+    ICOMMAND(respawnnow, "", (),
+    {
+        if(deferinput(INPUT_COMMAND, 0, "respawnnow")) return;
+        if(!connected || intermission) return;
+        respawnlife = player1->lifesequence;
+        if(player1->state == CS_ALIVE) suicide(player1);
+        respawn();
+    });
+
     void spawntick()
     {
+        if(respawnlife >= 0)
+        {
+            if(player1->state == CS_ALIVE && player1->lifesequence != respawnlife) respawnlife = -1;
+            else if(player1->state == CS_DEAD) respawn();
+        }
+        // how long player1 has stood still, for setspawn
         bool still = player1->state == CS_ALIVE && player1->physstate >= PHYS_SLOPE && player1->o.dist(stillpos) < STILLDIST;
         if(!still) { stillpos = player1->o; stillsince = lastmillis; }
     }
@@ -137,6 +158,7 @@ namespace game
 
     ICOMMAND(havespawn, "", (), intret(customspawnactive() ? 1 : 0));
     ICOMMAND(racestartcount, "", (), intret(countplayerstarts()));
+    ICOMMAND(inrace, "", (), intret(!multiplayer(false) && server::racerulesactive() ? 1 : 0));
 
     // a saved spawn of this map and mode is applied, and player1 placed there, on the first tick
     void spawnmapstart(const char *map)

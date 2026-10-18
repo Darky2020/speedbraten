@@ -824,10 +824,17 @@ namespace game
         return run.attempts.length() ? run.attempts[0] : NULL;
     }
 
+    // state loads in the run being played: for a flagrun or race life saved on its own, only
+    // those since the life started, as in its replay
     int inputsplicecount()
     {
         const inputrun &run = replaying ? replaydata : recording;
         int n = 0;
+        if(!replaying && replaylifeonly && lifestart.valid() && run.attempts.length() == 1)
+        {
+            loopv(run.attempts[0]->splices) if(run.attempts[0]->splices[i].tick > lifestart.tick) n++;
+            return n;
+        }
         loopv(run.attempts) n += run.attempts[i]->splices.length();
         return n;
     }

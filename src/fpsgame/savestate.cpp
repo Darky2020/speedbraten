@@ -129,7 +129,8 @@ namespace game
         { "ENT ", snapentities }, { "SHOT", snapshots }, { "SERV", server::snapstate },
         { "MODE", snapclientmodes }, { "DYNC", snapdynentcache }, { "SCRP", snapscripts },
         { "MSGS", snapmessages }, { "RUN ", snapruntimer }, { "REC ", snaprecorder },
-        { "SPWN", snapspawns, resetspawns }, { "SETX", snaplatesettings, resetlatesettings }
+        { "SPWN", snapspawns, resetspawns }, { "SETX", snaplatesettings, resetlatesettings },
+        { "RSPN", snaprespawn, resetrespawn }
     };
 
     static void snapall(snapio &s)
