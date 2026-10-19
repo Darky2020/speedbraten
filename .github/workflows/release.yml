@@ -205,5 +205,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "speedbraten $GITHUB_REF_NAME" \
-            --notes "Every gold replay in tests/gold played identically in each of these clients before packaging."
+          # the release notes are the tag's section of CHANGELOG.md ("## <tag>" up to the next "## ")
+          awk -v tag="## $GITHUB_REF_NAME" '$0 == tag { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then echo "CHANGELOG.md has no section '## $GITHUB_REF_NAME'" >&2; exit 1; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "speedbraten $GITHUB_REF_NAME" --notes-file notes.md
