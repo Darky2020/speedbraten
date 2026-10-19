@@ -34,11 +34,11 @@ namespace game
 
     extern void saverunreplay(const inputrun &run, bool finished, int runtime, bool started);
 
-    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed", "racestart" };
+    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed", "racestart", "flagrunrestart" };
     enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
     // settings added after replays started recording settings (the last ones of simsettings),
     // with the value that matches replays and saved states made before them
-    static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 } };
+    static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 }, { "flagrunrestart", 0 } };
     enum { NUMLATESETTINGS = sizeof(latesettings)/sizeof(latesettings[0]), NUMOLDSETTINGS = NUMSIMSETTINGS - NUMLATESETTINGS };
     static void readsettings(int *vals);
 
@@ -550,8 +550,22 @@ namespace game
 
     // On load during a recording, the attempt is cut back to the restored tick, so it still
     // replays from map start: the restored state is the state it had at that tick.
-    void snaplatesettings(snapio &s) { for(int i = NUMOLDSETTINGS; i < NUMSIMSETTINGS; i++) s.i(cursettings[i]); }
+    // saved states: section SETX holds the first late setting, SETN a count and the rest, so
+    // states saved with fewer of them still restore
+    void snaplatesettings(snapio &s) { s.i(cursettings[NUMOLDSETTINGS]); }
     void resetlatesettings(snapio &s) { loopi(NUMLATESETTINGS) cursettings[NUMOLDSETTINGS + i] = latesettings[i].absent; }
+    void snapmorelatesettings(snapio &s)
+    {
+        int n = s.count(NUMLATESETTINGS - 1, 1000);
+        loopi(n)
+        {
+            int k = NUMOLDSETTINGS + 1 + i, v = k < NUMSIMSETTINGS ? cursettings[k] : 0;
+            s.i(v);
+            if(s.loading && k < NUMSIMSETTINGS) cursettings[k] = v;
+        }
+        if(s.loading) for(int i = n + 1; i < NUMLATESETTINGS; i++) cursettings[NUMOLDSETTINGS + i] = latesettings[i].absent;
+    }
+    void resetmorelatesettings(snapio &s) { for(int i = 1; i < NUMLATESETTINGS; i++) cursettings[NUMOLDSETTINGS + i] = latesettings[i].absent; }
 
     void snaprecorder(snapio &s)
     {

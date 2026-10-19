@@ -135,15 +135,25 @@ namespace game
         }
     }
 
+    // flagruns: walking back into the flag's pickup sphere puts the run back to holding, so the
+    // timer starts again when the player leaves it (a replay-forced sim setting)
+    MOD(VARP, flagrunrestart, 0, 0, 1);
+
     static void updaterun()
     {
         if(runkind == RUNTIMER_RACE) { racetick(); return; }
         if(runkind != RUNTIMER_FLAG || (runstate != RUN_HOLDING && runstate != RUN_RUNNING)) return;
         if(!flagheldby(runflag, player1)) { runstate = RUN_IDLE; return; }
-        if(runstate == RUN_HOLDING && player1->feetpos().dist(runflagloc) >= runflagradius)
+        float dist = player1->feetpos().dist(runflagloc);
+        if(runstate == RUN_HOLDING && dist >= runflagradius)
         {
             runstate = RUN_RUNNING;
             runstart = inputtick();
+        }
+        else if(runstate == RUN_RUNNING && flagrunrestart && dist < runflagradius)
+        {
+            runstate = RUN_HOLDING;
+            runbase = runstart = runend = 0;
         }
     }
 

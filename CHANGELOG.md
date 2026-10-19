@@ -15,6 +15,9 @@
   Weaponless replays made with v0.1.0 that switched weapons will desync.
 - Setting a flagrun spawn starts a one-second countdown under the crosshair; moving cancels it.
 - The ghost isn't shown while you watch the replay it comes from.
+- New flagrun option: walking back onto the flag after taking it restarts the timer, so it only
+  starts once you really leave the flag (no flag drop needed). Off by default; replays keep
+  the setting they were recorded with.
 
 ## v0.1.0
 

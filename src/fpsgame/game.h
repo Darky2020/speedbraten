@@ -1021,6 +1021,8 @@ namespace game
     extern void resetrespawn(snapio &s);
     extern void snaplatesettings(snapio &s);
     extern void resetlatesettings(snapio &s);
+    extern void snapmorelatesettings(snapio &s);
+    extern void resetmorelatesettings(snapio &s);
     extern bool pickcustomspawn(fpsent *d, int &forceent);
     extern void spawnmapstart(const char *map);
     extern void respawn();

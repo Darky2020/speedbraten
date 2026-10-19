@@ -130,7 +130,7 @@ namespace game
         { "MODE", snapclientmodes }, { "DYNC", snapdynentcache }, { "SCRP", snapscripts },
         { "MSGS", snapmessages }, { "RUN ", snapruntimer }, { "REC ", snaprecorder },
         { "SPWN", snapspawns, resetspawns }, { "SETX", snaplatesettings, resetlatesettings },
-        { "RSPN", snaprespawn, resetrespawn }
+        { "RSPN", snaprespawn, resetrespawn }, { "SETN", snapmorelatesettings, resetmorelatesettings }
     };
 
     static void snapall(snapio &s)
