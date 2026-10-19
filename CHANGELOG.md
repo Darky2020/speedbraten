@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Choose which ghost to race per map and mode: your PB, your segmented PB, or any replay (for
+  example a world record copied into `replays/`), with your own label. The choice is saved, and
+  the label shows above the ghost and on the time difference line. Replays made before v0.1.0
+  have no ghost path and can't be chosen.
+
 ## v0.1.0
 
 The first speedbraten release, on top of p1xbraten. Offline games are deterministic: the same

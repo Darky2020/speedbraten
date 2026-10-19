@@ -408,6 +408,7 @@ namespace game
 
     extern float runtimerscale, runtimerx, runtimery;
     extern bool ghostdelta(int &delta);
+    extern const char *ghostname();
 
     // the split HUD's lines and their alpha
     static void hudlines(vector<char *> &lines, vector<int> &alphas)
@@ -445,7 +446,7 @@ namespace game
             alphas.insert(0, 255);
         }
         int delta;
-        if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4ghost %s", d); lines.add(newstring(l)); alphas.add(255); }
+        if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4%s %s", ghostname(), d); lines.add(newstring(l)); alphas.add(255); }
     }
 
     void drawsplits(int w, int h)

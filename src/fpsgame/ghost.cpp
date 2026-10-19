@@ -46,8 +46,7 @@ namespace game
 
     // the ghost being shown: every attempt's samples in run order, and the map of each
     static inputrun ghostrun;
-    static string ghostfile = "", ghostkey = "", pickedmap = "";
-    static bool ghostpicked = false;
+    static string ghostfile = "", ghostkey = "", ghostlabel = "";
     static vector<ghostsample> samples;
     static vector<int> samplemaps;
 
@@ -76,27 +75,34 @@ namespace game
         ghostrun.clear();
     }
 
-    // picks the ghost again whenever the run, its category or the statistics change
+    // Picks the ghost again whenever the run, its category or the statistics change: the replay
+    // chosen for the map, kind and mode, else the PB (the segmented PB in a segmented run, with
+    // ghostsegpb, or when chosen).
     static void chooseghost()
     {
         const inputattempt *first = inputrunfirst();
         const char *kind = runtimerkindname();
-        if(!first || !kind) { ghostkey[0] = '\0'; ghostpicked = false; clearghost(); return; }
-        if(ghostpicked)
-        {
-            if(!strcmp(pickedmap, first->map)) return;
-            ghostpicked = false;
-            ghostkey[0] = '\0';
-        }
+        if(!first || !kind) { ghostkey[0] = '\0'; clearghost(); return; }
         bool segmented = inputsplicecount() > 0;
         defformatstring(key, "%s %s %d %d %d %d", first->map, kind, first->mode, segmented ? 1 : 0, ghostsegpb, statsversion());
         if(!strcmp(key, ghostkey)) return;
         copystring(ghostkey, key);
-        string file;
-        bool seg = segmented || ghostsegpb;
-        if(statspbreplay(first->map, kind, first->mode, seg, file) || statspbreplay(first->map, kind, first->mode, !seg, file)) loadghost(file);
-        else clearghost();
+        string source = "pb", file = "", label = "";
+        statsghostchoice(first->map, kind, first->mode, source, file, label);
+        if(!strcmp(source, "file") && loadghost(file))
+        {
+            copystring(ghostlabel, label[0] ? label : "ghost");
+            return;
+        }
+        bool seg = segmented || ghostsegpb || !strcmp(source, "segpb");
+        if(statspbreplay(first->map, kind, first->mode, seg, file)) {}
+        else if(statspbreplay(first->map, kind, first->mode, !seg, file)) seg = !seg;
+        else { clearghost(); return; }
+        loadghost(file);
+        copystring(ghostlabel, label[0] ? label : seg ? "seg PB" : "PB");
     }
+
+    const char *ghostname() { return ghostlabel; }
 
     // the ghost's sample at run tick t on the current map, interpolated; false if none
     static bool ghostat(int t, ghostsample &out)
@@ -225,19 +231,79 @@ namespace game
         d.lastpain = 0;
         d.armour = 0;
         renderplayer(&d, getplayermodelinfo(player1), 0, alpha, mainpass);
-        if(mainpass) particle_text(d.abovehead(), ghostpicked ? "ghost" : "PB", PART_TEXT, 1, 0x80FFFF, 2.0f);
+        if(mainpass) particle_textcopy(d.abovehead(), ghostlabel, PART_TEXT, 1, 0x80FFFF, 2.0f);
     }
 
-    // ghostuse file: shows that replay's ghost until a run on another map starts
-    ICOMMAND(ghostuse, "s", (char *file),
+    static const char *replaykindof(const replayinfo &info) { return info.race ? "race" : info.flagrun ? "flagrun" : "sp"; }
+
+    // ghostrace file [label]: races that replay on its map, kind and mode from now on
+    static void ghostrace(const char *file, const char *label)
+    {
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
+        bool path = false;
+        loopv(run.attempts) if(run.attempts[i]->trace.length()) path = true;
+        if(!path) { conoutf(CON_ERROR, "%s has no ghost path: only replays made with speedbraten v0.1.0 or later can be ghosts", file); return; }
+        string name;
+        if(label[0]) copystring(name, label);
+        else if(info.finished) formatstring(name, "%s %d:%02d.%03d", info.player, info.runtime/60000, (info.runtime/1000)%60, info.runtime%1000);
+        else copystring(name, info.player);
+        statssetghost(info.map, replaykindof(info), info.mode, "file", file, name);
+        conoutf("ghost on %s (%s): %s", info.map, server::modename(info.mode, "?"), name);
+    }
+    ICOMMAND(ghostrace, "ss", (char *file, char *label), ghostrace(file, label));
+    ICOMMAND(ghostuse, "s", (char *file), ghostrace(file, ""));
+
+    // the current run's category, for the commands below
+    static bool currentcategory(const char *&map, const char *&kind, int &mode)
     {
         const inputattempt *first = inputrunfirst();
-        ghostfile[0] = '\0';
-        if(!loadghost(file)) { conoutf(CON_ERROR, "%s has no ghost (replays made before ghosts were added have none)", file); return; }
-        ghostpicked = true;
-        copystring(pickedmap, first ? first->map : "");
-        conoutf("ghost: %s", file);
-    });
+        kind = runtimerkindname();
+        if(!first || !kind) return false;
+        map = first->map;
+        mode = first->mode;
+        return true;
+    }
+
+    // ghostsource pb|segpb: races the PB or the segmented PB on the current map and mode
+    static void ghostsource(const char *source)
+    {
+        const char *map, *kind;
+        int mode;
+        if(!currentcategory(map, kind, mode)) { conoutf(CON_ERROR, "ghostsource: start a run on the map first"); return; }
+        statssetghost(map, kind, mode, !strcmp(source, "segpb") ? "segpb" : "pb", NULL, NULL);
+    }
+    ICOMMAND(ghostsource, "s", (char *source), ghostsource(source));
+
+    // ghostlabel text: renames the ghost of the current map and mode ("" for the default)
+    static void setghostlabel(const char *label)
+    {
+        const char *map, *kind;
+        int mode;
+        if(!currentcategory(map, kind, mode)) { conoutf(CON_ERROR, "ghostlabel: start a run on the map first"); return; }
+        string source = "pb", file = "", old = "";
+        statsghostchoice(map, kind, mode, source, file, old);
+        statssetghost(map, kind, mode, source, file, label);
+    }
+    ICOMMAND(ghostlabel, "s", (char *label), setghostlabel(label));
+
+    // ghostchoice field: source, file or label of the current map and mode's ghost, and name
+    // (the label shown)
+    static void ghostchoicefield(const char *field)
+    {
+        const char *map, *kind;
+        int mode;
+        string source = "pb", file = "", label = "";
+        if(!currentcategory(map, kind, mode)) { result(""); return; }
+        statsghostchoice(map, kind, mode, source, file, label);
+        if(!strcmp(field, "source")) result(source);
+        else if(!strcmp(field, "file")) result(file);
+        else if(!strcmp(field, "label")) result(label);
+        else if(!strcmp(field, "name")) result(ghostlabel);
+        else result("");
+    }
+    ICOMMAND(ghostchoice, "s", (char *field), ghostchoicefield(field));
 
     // harness: the ghost's sample count and its position now
     ICOMMAND(ghostinfo, "", (),

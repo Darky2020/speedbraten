@@ -16,6 +16,8 @@ namespace game
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
     int statsversion() { return 0; }
+    bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
+    void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
     static int changes = 0;
     // changes whenever a run is added, so callers can tell when a PB may have changed
@@ -48,7 +50,12 @@ namespace game
         "  attempt INTEGER NOT NULL REFERENCES attempts(id),"
         "  idx INTEGER NOT NULL, name TEXT NOT NULL, prev TEXT NOT NULL,"
         "  tick INTEGER NOT NULL, segment INTEGER NOT NULL);"
-        "CREATE INDEX IF NOT EXISTS splits_attempt ON splits(attempt);";
+        "CREATE INDEX IF NOT EXISTS splits_attempt ON splits(attempt);"
+        // the ghost raced on a map, kind and mode when it is not the PB
+        "CREATE TABLE IF NOT EXISTS ghosts("
+        "  map TEXT NOT NULL, kind TEXT NOT NULL, mode INTEGER NOT NULL,"
+        "  source TEXT NOT NULL, file TEXT, label TEXT,"
+        "  PRIMARY KEY(map, kind, mode));";
 
     static bool dbexec(const char *sql)
     {
@@ -224,7 +231,8 @@ namespace game
         return true;
     }
 
-    // a replay file was renamed or moved (to = NULL: deleted); its run keeps its row
+    // a replay file was renamed or moved (to = NULL: deleted); its run keeps its row, and a ghost
+    // chosen from it follows it or, once deleted, goes back to the PB
     void statsreplaymoved(const char *from, const char *to)
     {
         sqlite3_stmt *st = prepare("UPDATE attempts SET replay = ? WHERE replay = ?");
@@ -233,6 +241,47 @@ namespace game
         bindtext(st, 2, from);
         sqlite3_step(st);
         sqlite3_finalize(st);
+        st = prepare(to ? "UPDATE ghosts SET file = ? WHERE file = ?" : "DELETE FROM ghosts WHERE file = ?");
+        if(!st) return;
+        if(to) { bindtext(st, 1, to); bindtext(st, 2, from); }
+        else bindtext(st, 1, from);
+        sqlite3_step(st);
+        sqlite3_finalize(st);
+        changes++;
+    }
+
+    bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label)
+    {
+        sqlite3_stmt *st = prepare("SELECT source, file, label FROM ghosts WHERE map = ? AND kind = ? AND mode = ?");
+        if(!st) return false;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        bool found = sqlite3_step(st) == SQLITE_ROW;
+        if(found)
+        {
+            const char *s = (const char *)sqlite3_column_text(st, 0), *f = (const char *)sqlite3_column_text(st, 1), *l = (const char *)sqlite3_column_text(st, 2);
+            copystring(source, s ? s : "pb", MAXSTRLEN);
+            copystring(file, f ? f : "", MAXSTRLEN);
+            copystring(label, l ? l : "", MAXSTRLEN);
+        }
+        sqlite3_finalize(st);
+        return found;
+    }
+
+    void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label)
+    {
+        sqlite3_stmt *st = prepare("INSERT OR REPLACE INTO ghosts(map, kind, mode, source, file, label) VALUES(?, ?, ?, ?, ?, ?)");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        bindtext(st, 4, source);
+        bindtext(st, 5, file && file[0] ? file : NULL);
+        bindtext(st, 6, label && label[0] ? label : NULL);
+        if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
+        sqlite3_finalize(st);
+        changes++;
     }
 
     static const char *formatms(int ms)

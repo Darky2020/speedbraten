@@ -166,6 +166,9 @@ namespace game
     extern void statsreplaymoved(const char *from, const char *to);
     extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
     extern int statsversion();
+    // the ghost chosen for a map, kind and mode: source "pb", "segpb" or "file"; label may be empty
+    extern bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label);
+    extern void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label);
 
     // a split of the current run: name and run timer tick
     struct splittime
