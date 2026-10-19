@@ -1025,6 +1025,8 @@ namespace game
     extern void spawnmapstart(const char *map);
     extern void respawn();
     extern void spawntick();
+    extern void checkarmedspawn();
+    extern bool spawncountdown(char *buf);
     extern bool runtimerperlife();
     extern bool runtimerliferan();
     extern void inputlifespawned();

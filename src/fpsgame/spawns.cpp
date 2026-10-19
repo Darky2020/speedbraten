@@ -21,10 +21,11 @@ namespace game
     // respawnnow: the life whose end was asked for, until the next life has started; -1 none
     static int respawnlife = -1;
 
+    // setspawn arms a countdown; standing still on the ground until it ends sets the spawn
     enum { STILLMS = 1000 };
     static const float STILLDIST = 1;
-    static vec stillpos(0, 0, 0);
-    static int stillsince = 0;
+    static vec armpos(0, 0, 0);
+    static int armedat = -1;
 
     void snapspawns(snapio &s)
     {
@@ -86,10 +87,10 @@ namespace game
             if(player1->state == CS_ALIVE && player1->lifesequence != respawnlife) respawnlife = -1;
             else if(player1->state == CS_DEAD) respawn();
         }
-        // how long player1 has stood still, for setspawn
-        bool still = player1->state == CS_ALIVE && player1->physstate >= PHYS_SLOPE && player1->o.dist(stillpos) < STILLDIST;
-        if(!still) { stillpos = player1->o; stillsince = lastmillis; }
+        if(armedat >= 0) checkarmedspawn();
     }
+
+    static bool standing() { return player1->state == CS_ALIVE && player1->physstate >= PHYS_SLOPE && !player1->timeinair; }
 
     static void spawnfile(char *dst, const char *map, int mode)
     {
@@ -127,12 +128,32 @@ namespace game
     {
         if(!m_ctf || !server::flagrunactive() || multiplayer(false)) { conoutf(CON_ERROR, "setspawn: only in flagruns"); return; }
         if(inputreplayactive()) { conoutf(CON_ERROR, "setspawn: not during a replay"); return; }
-        if(player1->state != CS_ALIVE || player1->physstate < PHYS_SLOPE || player1->timeinair || player1->o.dist(stillpos) >= STILLDIST ||
-           lastmillis - stillsince < STILLMS)
+        if(!standing()) { conoutf(CON_ERROR, "setspawn: stand on the ground first"); return; }
+        armedat = lastmillis;
+        armpos = player1->o;
+    });
+
+    // the countdown under the crosshair while setspawn is armed
+    bool spawncountdown(char *buf)
+    {
+        if(armedat < 0) return false;
+        nformatstring(buf, MAXSTRLEN, "setting spawn in %.1f s", max(STILLMS - (lastmillis - armedat), 0)/1000.0f);
+        return true;
+    }
+
+    // harness: the countdown text, empty when not armed
+    ICOMMAND(spawncountdowntext, "", (), { string buf = ""; spawncountdown(buf); result(buf); });
+
+    void checkarmedspawn()
+    {
+        if(!standing() || player1->o.dist(armpos) >= STILLDIST || !m_ctf || !server::flagrunactive() || inputreplayactive())
         {
-            conoutf(CON_ERROR, "setspawn: stand still on the ground for %.1f s first", STILLMS/1000.0f);
+            armedat = -1;
+            conoutf(CON_ERROR, "spawn not set: you moved");
             return;
         }
+        if(lastmillis - armedat < STILLMS) return;
+        armedat = -1;
         queuespawn(player1->o, player1->yaw, player1->pitch, false);
         string file;
         spawnfile(file, getclientmap(), gamemode);
@@ -143,7 +164,7 @@ namespace game
             delete f;
         }
         conoutf("spawn set for %s (%s)", getclientmap(), server::modename(gamemode, "?"));
-    });
+    }
 
     ICOMMAND(clearspawn, "", (),
     {
@@ -164,7 +185,7 @@ namespace game
     void spawnmapstart(const char *map)
     {
         spawn.valid = false;
-        stillsince = lastmillis;
+        armedat = -1;
         if(multiplayer(false) || !m_ctf || !server::flagrunactive() || inputreplayactive()) return;
         string file;
         spawnfile(file, map, gamemode);

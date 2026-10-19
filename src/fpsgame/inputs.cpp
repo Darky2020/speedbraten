@@ -353,6 +353,16 @@ namespace game
         player1->attacking = c.attacking;
     }
 
+    // Live keys are ignored while a replay plays, so when it ends the replay's last controls
+    // would otherwise keep the player moving or shooting.
+    static void releasecontrols()
+    {
+        fpsent &d = *player1;
+        d.k_left = d.k_right = d.k_forward = d.k_backward = d.k_up = d.k_down = false;
+        d.move = d.strafe = d.vertical = 0;
+        d.jumping = d.attacking = false;
+    }
+
     static void clearevents(vector<inputevent> &evs)
     {
         loopv(evs) DELETEA(evs[i].cmd);
@@ -618,6 +628,7 @@ namespace game
             replaying = false;
             recordingoff = true;
             restoresettings();
+            releasecontrols();
             if(replaydesync) conoutf(CON_ERROR, "input replay finished (desynced at tick %d)", replaydesync);
             else conoutf("input replay finished");
         }
@@ -785,6 +796,7 @@ namespace game
             }
             replaying = false;
             restoresettings();
+            releasecontrols();
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
@@ -885,6 +897,7 @@ namespace game
         if(holduntil && totalmillis - holduntil < 0) formatstring(buf, "resuming in %.1f s", (holduntil - totalmillis)/1000.0f);
         else if(resetarmtick >= 0 && speedrunresetidle > 0)
             formatstring(buf, "resetting in %.1f s", max(speedrunresetidle - (curtick - resetarmtick)*SIMTICK, 0)/1000.0f);
+        else if(spawncountdown(buf)) {}
         else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
         if(!buf[0]) return;
         const float scale = 0.4f;

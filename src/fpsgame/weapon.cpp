@@ -22,6 +22,7 @@ namespace game
 
     void gunselect(int gun, fpsent *d)
     {
+        if(m_weaponless && gun != GUN_PISTOL) return;
         if(gun!=d->gunselect)
         {
             addmsg(N_GUNSELECT, "rci", d, gun);

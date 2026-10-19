@@ -9,6 +9,11 @@
 - With a chosen ghost replay, every split and the finish also show the difference to it, next
   to the PB difference. For a replay from someone else, zone splits are worked out from its
   ghost path; pickup, teleport and condition splits only compare with your own runs.
+- When a replay ends, the player no longer keeps moving or shooting with the replay's last
+  inputs.
+- Weaponless flagruns keep the pistol selected; switching to the chainsaw is blocked.
+  Weaponless replays made with v0.1.0 that switched weapons will desync.
+- Setting a flagrun spawn starts a one-second countdown under the crosshair; moving cancels it.
 
 ## v0.1.0
 
