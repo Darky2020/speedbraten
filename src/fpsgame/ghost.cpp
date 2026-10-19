@@ -110,9 +110,16 @@ namespace game
 
     const char *ghostname() { return ghostlabel; }
 
+    // whether the replay being watched is the ghost's own file
+    static bool watchingghost()
+    {
+        const char *watched = inputwatchedfile();
+        return watched[0] && ghostfile[0] && !strcmp(watched, ghostfile);
+    }
+
     bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&s, const vector<int> *&maps, int &runtime)
     {
-        if(!ghostisreplay || samples.empty()) return false;
+        if(!ghostisreplay || samples.empty() || watchingghost()) return false;
         file = ghostfile;
         s = &samples;
         maps = &samplemaps;
@@ -155,7 +162,7 @@ namespace game
 
     static bool currentghost(ghostsample &g)
     {
-        if(!ghost || !connected || !runtimerkindname()) return false;
+        if(!ghost || !connected || !runtimerkindname() || watchingghost()) return false;
         bool running;
         int t = runtimerticks(running);
         return ghostat(running || t > 0 ? t : 0, g);
@@ -169,7 +176,7 @@ namespace game
     // the end of a tick, where player1 is at its simulated position.
     static bool computedelta(int &delta)
     {
-        if(!ghostdiff || samples.empty() || !runtimerkindname()) return false;
+        if(!ghostdiff || samples.empty() || !runtimerkindname() || watchingghost()) return false;
         bool running;
         int t = runtimerticks(running);
         if(!running) return false;

@@ -189,8 +189,10 @@ namespace game
     extern const char *ghostname();
     extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
     extern const inputattempt *inputrunfirst();
+    extern const char *inputwatchedfile();
     extern void ghostattach(inputrun &run);
-    extern void playinputrun(const inputrun &run);
+    // file: the replay file it was read from, or NULL
+    extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern bool inputreplayactive();
     extern int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS]);
     extern int runtimerresult(bool &finished);

@@ -461,7 +461,7 @@ namespace game
         inputrun run;
         replayinfo info;
         if(!readreplay(attemptlist[*i].replay, &run, info)) { conoutf(CON_ERROR, "could not read %s", attemptlist[*i].replay); return; }
-        playinputrun(run);
+        playinputrun(run, attemptlist[*i].replay);
     });
 #endif
 }

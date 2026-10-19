@@ -22,6 +22,7 @@ namespace game
     static bool replaystartstate = false;
     static int splicetextuntil = 0;
     static uint lastreplayhash[DETHASH_GROUPS];
+    static string replayfilename = ""; // file of the replay that is playing, "" if not from a file
 
     static void checkpendingreset();
 
@@ -812,8 +813,9 @@ namespace game
         recordsettings(a);
     }
 
-    void playinputrun(const inputrun &src)
+    void playinputrun(const inputrun &src, const char *file)
     {
+        copystring(replayfilename, file ? file : "");
         src.copyto(replaydata);
         const inputattempt &first = *replaydata.attempts[0];
         server::forcenextteam(first.team);
@@ -827,6 +829,8 @@ namespace game
 
     bool inputreplayactive() { return replaying || replaypending; }
     bool inputrecordinglive() { return !replaying && !replaypending && !recordingoff; }
+    // the replay file being watched, "" when none or not played from a file
+    const char *inputwatchedfile() { return replaying || replaypending ? replayfilename : ""; }
     int inputattemptindex() { return replaying ? replayattempt : max(recording.attempts.length()-1, 0); }
 
     // the first attempt of the run being played or replayed (its map and mode name the run)

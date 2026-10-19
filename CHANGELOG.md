@@ -14,6 +14,7 @@
 - Weaponless flagruns keep the pistol selected; switching to the chainsaw is blocked.
   Weaponless replays made with v0.1.0 that switched weapons will desync.
 - Setting a flagrun spawn starts a one-second countdown under the crosshair; moving cancels it.
+- The ghost isn't shown while you watch the replay it comes from.
 
 ## v0.1.0
 
