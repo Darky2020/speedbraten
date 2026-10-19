@@ -6,6 +6,9 @@
   example a world record copied into `replays/`), with your own label. The choice is saved, and
   the label shows above the ghost and on the time difference line. Replays made before v0.1.0
   have no ghost path and can't be chosen.
+- With a chosen ghost replay, every split and the finish also show the difference to it, next
+  to the PB difference. For a replay from someone else, zone splits are worked out from its
+  ghost path; pickup, teleport and condition splits only compare with your own runs.
 
 ## v0.1.0
 

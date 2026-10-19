@@ -47,6 +47,8 @@ namespace game
     // the ghost being shown: every attempt's samples in run order, and the map of each
     static inputrun ghostrun;
     static string ghostfile = "", ghostkey = "", ghostlabel = "";
+    static bool ghostisreplay = false; // chosen by file rather than being a PB
+    static int ghostruntime = -1;
     static vector<ghostsample> samples;
     static vector<int> samplemaps;
 
@@ -58,7 +60,9 @@ namespace game
         samplemaps.setsize(0);
         ghostrun.clear();
         replayinfo info;
+        ghostruntime = -1;
         if(!file[0] || !readreplay(file, &ghostrun, info)) return false;
+        ghostruntime = info.finished ? info.runtime : -1;
         loopvk(ghostrun.attempts) loopv(ghostrun.attempts[k]->trace)
         {
             samples.add(ghostrun.attempts[k]->trace[i]);
@@ -89,9 +93,11 @@ namespace game
         copystring(ghostkey, key);
         string source = "pb", file = "", label = "";
         statsghostchoice(first->map, kind, first->mode, source, file, label);
+        ghostisreplay = false;
         if(!strcmp(source, "file") && loadghost(file))
         {
             copystring(ghostlabel, label[0] ? label : "ghost");
+            ghostisreplay = true;
             return;
         }
         bool seg = segmented || ghostsegpb || !strcmp(source, "segpb");
@@ -103,6 +109,16 @@ namespace game
     }
 
     const char *ghostname() { return ghostlabel; }
+
+    bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&s, const vector<int> *&maps, int &runtime)
+    {
+        if(!ghostisreplay || samples.empty()) return false;
+        file = ghostfile;
+        s = &samples;
+        maps = &samplemaps;
+        runtime = ghostruntime;
+        return true;
+    }
 
     // the ghost's sample at run tick t on the current map, interpolated; false if none
     static bool ghostat(int t, ghostsample &out)

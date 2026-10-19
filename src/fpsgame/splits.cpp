@@ -280,7 +280,8 @@ namespace game
     }
 
     // whether the segment a-b touches the box (slab test)
-    static bool segmenthitsbox(const vec &a, const vec &b, const vec &lo, const vec &hi)
+    // entry: where along a-b the box is first touched, 0..1
+    static bool segmenthitsbox(const vec &a, const vec &b, const vec &lo, const vec &hi, float *entry = NULL)
     {
         float t0 = 0, t1 = 1;
         loopi(3)
@@ -293,7 +294,68 @@ namespace game
             t1 = min(t1, f);
             if(t0 > t1) return false;
         }
+        if(entry) *entry = t0;
         return true;
+    }
+
+    // the chosen ghost replay's splits: recorded ones for a run of this player, else the zones
+    // rebuilt from its ghost path; with its finish
+    static vector<splittime> ghostsplits;
+    static bool ghostcompare = false;
+    static string ghostcomparekey = "";
+
+    static void zonesfrompath(const vector<ghostsample> &samples, const vector<int> &maps)
+    {
+        vec eye(0, 0, player1->eyeheight);
+        loopv(defs) if(defs[i].type == SPLIT_ZONE)
+        {
+            const splitdef &d = defs[i];
+            int tick = -1;
+            loopvj(samples)
+            {
+                vec b = vec(samples[j].o).sub(eye);
+                if(j && maps[j-1] == maps[j])
+                {
+                    vec a = vec(samples[j-1].o).sub(eye);
+                    float entry;
+                    if(segmenthitsbox(a, b, d.lo, d.hi, &entry)) { tick = int(ceilf(samples[j-1].tick + entry*(samples[j].tick - samples[j-1].tick))); break; }
+                }
+                else if(insidebox(b, d.lo, d.hi)) { tick = samples[j].tick; break; }
+            }
+            if(tick < 0) continue;
+            splittime &t = ghostsplits.add();
+            copystring(t.name, d.name);
+            t.tick = tick;
+        }
+    }
+
+    static void refreshghostcomparison()
+    {
+        const char *file;
+        const vector<ghostsample> *samples;
+        const vector<int> *maps;
+        int runtime;
+        if(!ghostchosenreplay(file, samples, maps, runtime)) { ghostcompare = false; ghostcomparekey[0] = '\0'; return; }
+        defformatstring(key, "%s|%s|%d", file, defskey, statsversion());
+        if(ghostcompare && !strcmp(key, ghostcomparekey)) return;
+        copystring(ghostcomparekey, key);
+        ghostcompare = true;
+        if(statssplitsofreplay(file, ghostsplits)) return;
+        ghostsplits.setsize(0);
+        zonesfrompath(*samples, *maps);
+        if(runtime >= 0)
+        {
+            splittime &f = ghostsplits.add();
+            copystring(f.name, "finish");
+            f.tick = runtime / SIMTICK;
+        }
+    }
+
+    static int ghosttick(const char *name)
+    {
+        if(!ghostcompare) return -1;
+        loopv(ghostsplits) if(!strcmp(ghostsplits[i].name, name)) return ghostsplits[i].tick;
+        return -1;
     }
 
     void splittick()
@@ -311,6 +373,7 @@ namespace game
         if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(map, kind); hits.setsize(0); }
         if(editing) return;
         refreshcomparison(first->map, kind, first->mode);
+        refreshghostcomparison();
 
         bool running;
         int t = runtimerticks(running);
@@ -399,8 +462,9 @@ namespace game
         const char *name = defs[h.def].name, *prev = i ? defs[hits[i-1].def].name : "";
         string t, d1 = "", d2 = "";
         formattime(t, h.tick);
-        int pb = pbtick(name);
+        int pb = pbtick(name), gt = ghosttick(name);
         if(pb >= 0) { string d; formatdelta(d, h.tick - pb); formatstring(d1, "  \f7pb %s", d); }
+        if(gt >= 0) { string d; formatdelta(d, h.tick - gt); concformatstring(d1, "  \f7%s %s", ghostname(), d); }
         int best = bestsegment(prev, name), seg = h.tick - (i ? hits[i-1].tick : 0);
         if(best >= 0) { string d; formatdelta(d, seg - best); formatstring(d2, "  \f7best %s", d); }
         nformatstring(dst, MAXSTRLEN, "\f7%s %s%s%s%s", name, best >= 0 && seg < best ? "\f2" : "", t, d1, d2);
@@ -436,12 +500,14 @@ namespace game
         while(alphas.length() < lines.length()) alphas.add(alpha);
         bool running;
         int t = runtimerticks(running);
-        if(splithud && runtimerfinished() && pbms >= 0)
+        int gt = ghosttick("finish");
+        if(splithud && runtimerfinished() && (pbms >= 0 || gt >= 0))
         {
-            string ft, d, l;
+            string ft, l;
             formattime(ft, t);
-            formatdelta(d, t - pbms/SIMTICK);
-            formatstring(l, "\f7finish %s%s  \f7pb %s", t < pbms/SIMTICK ? "\f2" : "", ft, d);
+            formatstring(l, "\f7finish %s%s", pbms >= 0 && t < pbms/SIMTICK ? "\f2" : "", ft);
+            if(pbms >= 0) { string d; formatdelta(d, t - pbms/SIMTICK); concformatstring(l, "  \f7pb %s", d); }
+            if(gt >= 0) { string g; formatdelta(g, t - gt); concformatstring(l, "  \f7%s %s", ghostname(), g); }
             lines.insert(0, newstring(l));
             alphas.insert(0, 255);
         }

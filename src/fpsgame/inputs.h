@@ -182,6 +182,11 @@ namespace game
         int ticks;
     };
     extern void splitresults(vector<splittime> &out);
+    extern bool statssplitsofreplay(const char *file, vector<splittime> &out);
+    // the chosen ghost when it is a replay rather than a PB: its file, samples (with the attempt
+    // index of each) and run time in ms (-1 unfinished)
+    extern bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&samples, const vector<int> *&maps, int &runtime);
+    extern const char *ghostname();
     extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
     extern const inputattempt *inputrunfirst();
     extern void ghostattach(inputrun &run);

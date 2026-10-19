@@ -17,6 +17,7 @@ namespace game
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
     int statsversion() { return 0; }
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
+    bool statssplitsofreplay(const char *file, vector<splittime> &out) { return false; }
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
     static int changes = 0;
@@ -248,6 +249,23 @@ namespace game
         sqlite3_step(st);
         sqlite3_finalize(st);
         changes++;
+    }
+
+    // the splits recorded for the run saved as this replay; false if it has no run here
+    bool statssplitsofreplay(const char *file, vector<splittime> &out)
+    {
+        out.setsize(0);
+        sqlite3_stmt *st = prepare("SELECT s.name, s.tick FROM splits s JOIN attempts a ON a.id = s.attempt WHERE a.replay = ? ORDER BY s.idx");
+        if(!st) return false;
+        bindtext(st, 1, file);
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            splittime &t = out.add();
+            copystring(t.name, (const char *)sqlite3_column_text(st, 0));
+            t.tick = sqlite3_column_int(st, 1);
+        }
+        sqlite3_finalize(st);
+        return out.length() > 0;
     }
 
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label)
