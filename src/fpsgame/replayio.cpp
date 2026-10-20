@@ -117,6 +117,30 @@ namespace sbr2
         return content;
     }
 
+    vector<uchar> &kvwriter::add(const char *key, int type)
+    {
+        loopv(entries) if(!strcmp(entries[i]->key, key)) { entries[i]->type = type; entries[i]->value.setsize(0); return entries[i]->value; }
+        entry *e = entries.add(new entry);
+        copystring(e->key, key);
+        e->type = type;
+        return e->value;
+    }
+
+    static bool keyorder(const kvwriter::entry *a, const kvwriter::entry *b) { return strcmp(a->key, b->key) < 0; }
+
+    void kvwriter::build(vector<uchar> &out)
+    {
+        entries.sort(keyorder);
+        byteswriter w(out);
+        w.var(entries.length());
+        loopv(entries)
+        {
+            w.str(entries[i]->key);
+            w.u8(entries[i]->type);
+            w.bytes(entries[i]->value.getbuf(), entries[i]->value.length());
+        }
+    }
+
     const chunk *reader::find(const char *type, int from) const
     {
         for(int i = from; i < chunks.length(); i++) if(istype(chunks[i]->type, type)) return chunks[i];

@@ -1228,6 +1228,7 @@ VAR(fixedframedraw, 1, 1, 1000);
 // Offline, the game advances in fixed SIMTICK steps of game time, decoupled from frame
 // rate, so identical inputs give identical results on any machine and frame pacing.
 bool simticking = false, insimtick = false;
+int inputsource = INPUTSRC_OTHER;
 static bool simrestarted = false;
 static int simaccum = 0;
 static bool simclockskip = false;
@@ -1499,7 +1500,10 @@ int main(int argc, char **argv)
         updatetime();
  
         checkinput();
-        menuprocess();
+        {
+            inputsourcescope src(INPUTSRC_MENU);
+            menuprocess();
+        }
         tryedit();
 
         if(simticking)
@@ -1524,6 +1528,12 @@ int main(int argc, char **argv)
                 if(simrestarted || !simticking) break;
             }
             curtime = simulated;
+#ifndef HEADLESS
+            static Uint64 lastframe = 0;
+            Uint64 now = SDL_GetPerformanceCounter();
+            if(lastframe) game::frametimed(int(min((now - lastframe)*1000000/SDL_GetPerformanceFrequency(), Uint64(1)<<30)), simulated/SIMTICK);
+            lastframe = now;
+#endif
         }
         else
         {

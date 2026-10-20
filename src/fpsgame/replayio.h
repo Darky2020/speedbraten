@@ -69,6 +69,32 @@ namespace sbr2
         }
     };
 
+    enum { VALUE_SVAR = 0, VALUE_VAR, VALUE_STR, VALUE_BYTES, VALUE_F32, VALUE_BOOL };
+
+    // key-value payload: var count, then (str key, u8 value type, value) per entry, keys sorted
+    // by bytes and unique
+    struct kvwriter
+    {
+        struct entry
+        {
+            string key;
+            int type;
+            vector<uchar> value;
+        };
+        vector<entry *> entries;
+
+        ~kvwriter() { entries.deletecontents(); }
+        void svar(const char *key, long long v) { byteswriter(add(key, VALUE_SVAR)).svar(v); }
+        void var(const char *key, unsigned long long v) { byteswriter(add(key, VALUE_VAR)).var(v); }
+        void str(const char *key, const char *v) { byteswriter(add(key, VALUE_STR)).str(v); }
+        void bytes(const char *key, const uchar *p, int n) { byteswriter w(add(key, VALUE_BYTES)); w.var(n); w.bytes(p, n); }
+        void f32(const char *key, float v) { uint bits; memcpy(&bits, &v, 4); byteswriter(add(key, VALUE_F32)).u32(bits); }
+        void boolean(const char *key, bool v) { byteswriter(add(key, VALUE_BOOL)).u8(v ? 1 : 0); }
+        void build(vector<uchar> &out);
+    private:
+        vector<uchar> &add(const char *key, int type);
+    };
+
     struct chunk
     {
         char type[5];

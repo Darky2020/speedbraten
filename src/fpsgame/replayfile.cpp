@@ -318,6 +318,7 @@ namespace game
     // SBR2 files (the container is in replayio.h):
     //   META   key-value pairs, keys sorted: client, date, flagrun, map, maps, mode, player, race
     //   DATA   var sim version, var files, per file: u8 role, str path, var size, BLAKE3
+    //   run metadata (see tells.cpp), key-value: cLNT, sESS, hIST, pROV, SETS
     //   per attempt:
     //     ATTM var index, str map, u32 map crc, u8 has cfg crc, u32 cfg crc, u32 seed, str team,
     //          svar mode, var flagrun, var race, var start tick, var ticks, var hash groups,
@@ -325,17 +326,21 @@ namespace game
     //          setting, var saved state length, saved state
     //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
     //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
-    //            then as in SBRP, except: command = var id in replaycommands, str arguments;
-    //            map GUI action = str script)
+    //            u8 type, u8 source (INPUTSRC_*), then as in SBRP, except: command = var id in
+    //            replaycommands, str arguments; map GUI action = str script)
     //       HASH var hashes, (var tick delta from the previous hash or lo, groups x u32) per hash
-    //       SPLC (only with state loads) var loads, (var tick, var discarded ticks) per load
+    //       SPLC (only with state loads) var loads, (var tick, var discarded ticks, u8 kind,
+    //            svar wall ms since the run began) per load
+    //       tIME (optional) var wall us, var paused us, var frames, var frames without a tick,
+    //            var frames with 2+ ticks, 8 x var frame-time histogram, var min gamespeed,
+    //            var max gamespeed, var max fixedframe
     //       SEGE
     //     gHST (optional) var samples, samples as in SBRP
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
+    //   wIND   key-value window metadata
     //   END
-    enum { SEGMENTTICKS = 200 };
-    enum { VALUE_SVAR = 0, VALUE_VAR, VALUE_STR, VALUE_BYTES, VALUE_F32, VALUE_BOOL };
-    static const char SBR2KNOWN[] = "META" "DATA" "ATTM" "INPS" "HASH" "SPLC" "RSLT" "SEGE" "END ";
+    enum { SEGMENTTICKS = REPLAYSEGMENTTICKS };
+    static const char SBR2KNOWN[] = "META" "DATA" "SETS" "ATTM" "INPS" "HASH" "SPLC" "RSLT" "SEGE" "END ";
 
     MOD(VAR, replayformat, 1, 1, 2);
 
@@ -387,6 +392,7 @@ namespace game
     static void writeevent(sbr2::byteswriter &w, const inputevent &e)
     {
         w.u8(e.type);
+        w.u8(e.source);
         switch(e.type)
         {
             case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
@@ -429,7 +435,7 @@ namespace game
         if(a.events.length()) { first = min(first, a.events[0].tick); last = max(last, a.events[a.events.length()-1].tick); }
         if(hashes.length()) { first = min(first, hashes[0]->tick); last = max(last, hashes.last()->tick); }
         if(a.splices.length()) { first = min(first, a.splices[0].tick); last = max(last, a.splices[a.splices.length()-1].tick); }
-        int ev = 0, hs = 0, sp = 0;
+        int ev = 0, hs = 0, sp = 0, tm = 0;
         for(int seg = max(first, 0)/SEGMENTTICKS; seg <= last/SEGMENTTICKS; seg++)
         {
             int lo = seg*SEGMENTTICKS, hi = lo + SEGMENTTICKS;
@@ -468,8 +474,32 @@ namespace game
             {
                 p.setsize(0);
                 w.var(n);
-                loopi(n) { w.var(a.splices[sp].tick); w.var(a.splices[sp].discarded); sp++; }
+                loopi(n)
+                {
+                    const inputsplice &s = a.splices[sp++];
+                    w.var(s.tick);
+                    w.var(s.discarded);
+                    w.u8(s.kind);
+                    w.svar(s.wallms);
+                }
                 out.add("SPLC", p);
+            }
+
+            while(tm < a.timing.length() && a.timing[tm].segment < seg) tm++;
+            if(tm < a.timing.length() && a.timing[tm].segment == seg)
+            {
+                const segmenttiming &t = a.timing[tm];
+                p.setsize(0);
+                w.var(t.wallus);
+                w.var(t.pausedus);
+                w.var(t.frames);
+                w.var(t.frames0);
+                w.var(t.frames2);
+                loopi(segmenttiming::BUCKETS) w.var(t.hist[i]);
+                w.var(t.speedmin);
+                w.var(t.speedmax);
+                w.var(t.fixedframe);
+                out.add("tIME", p, true);
             }
             out.endsegment(hi);
         }
@@ -497,14 +527,14 @@ namespace game
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(8);
-        kvkey(w, "client", VALUE_STR); w.str(info.client);
-        kvkey(w, "date", VALUE_VAR); w.var(info.date);
-        kvkey(w, "flagrun", VALUE_VAR); w.var(info.flagrun);
-        kvkey(w, "map", VALUE_STR); w.str(run.attempts.length() ? run.attempts[0]->map : "");
-        kvkey(w, "maps", VALUE_VAR); w.var(run.attempts.length());
-        kvkey(w, "mode", VALUE_SVAR); w.svar(info.mode);
-        kvkey(w, "player", VALUE_STR); w.str(info.player);
-        kvkey(w, "race", VALUE_VAR); w.var(info.race);
+        kvkey(w, "client", sbr2::VALUE_STR); w.str(info.client);
+        kvkey(w, "date", sbr2::VALUE_VAR); w.var(info.date);
+        kvkey(w, "flagrun", sbr2::VALUE_VAR); w.var(info.flagrun);
+        kvkey(w, "map", sbr2::VALUE_STR); w.str(run.attempts.length() ? run.attempts[0]->map : "");
+        kvkey(w, "maps", sbr2::VALUE_VAR); w.var(run.attempts.length());
+        kvkey(w, "mode", sbr2::VALUE_SVAR); w.svar(info.mode);
+        kvkey(w, "player", sbr2::VALUE_STR); w.str(info.player);
+        kvkey(w, "race", sbr2::VALUE_VAR); w.var(info.race);
         out.add("META", p);
 
         vector<const mapdatafile *> files;
@@ -525,6 +555,11 @@ namespace game
         }
         out.add("DATA", p);
 
+        vector<runchunk *> made;
+        if(info.live) tellsencode(run, info, made);
+        const vector<runchunk *> &tells = info.live ? made : run.tells;
+        loopv(tells) if(!tells[i]->late) out.add(tells[i]->type, tells[i]->data);
+
         loopv(run.attempts) writeattempt(out, i, *run.attempts[i], files);
 
         p.setsize(0);
@@ -534,6 +569,8 @@ namespace game
         w.var(info.runtime);
         w.var(info.splices);
         out.add("RSLT", p);
+        loopv(tells) if(tells[i]->late) out.add(tells[i]->type, tells[i]->data);
+        made.deletecontents();
         out.finish();
 
         stream *f = openrawfile(path(file, true), "wb");
@@ -557,29 +594,29 @@ namespace game
             unsigned long long uv = 0;
             switch(type)
             {
-                case VALUE_SVAR: sv = r.svar(); break;
-                case VALUE_VAR: uv = r.var(); break;
-                case VALUE_STR: case VALUE_BYTES:
+                case sbr2::VALUE_SVAR: sv = r.svar(); break;
+                case sbr2::VALUE_VAR: uv = r.var(); break;
+                case sbr2::VALUE_STR: case sbr2::VALUE_BYTES:
                 {
                     unsigned long long len = r.var();
                     if(!r.ok || len > (unsigned long long)r.left()) return false;
-                    if(type == VALUE_STR) { int keep = min(int(len), int(sizeof(s)) - 1); memcpy(s, r.p, keep); s[keep] = '\0'; }
+                    if(type == sbr2::VALUE_STR) { int keep = min(int(len), int(sizeof(s)) - 1); memcpy(s, r.p, keep); s[keep] = '\0'; }
                     r.p += len;
                     break;
                 }
-                case VALUE_F32: r.u32(); break;
-                case VALUE_BOOL: uv = r.u8(); if(uv > 1) return false; break;
+                case sbr2::VALUE_F32: r.u32(); break;
+                case sbr2::VALUE_BOOL: uv = r.u8(); if(uv > 1) return false; break;
                 default: return false;
             }
             if(!r.ok) return false;
-            if(type == VALUE_STR && !strcmp(key, "client")) copystring(info.client, s);
-            else if(type == VALUE_VAR && !strcmp(key, "date")) info.date = uint(uv);
-            else if(type == VALUE_VAR && !strcmp(key, "flagrun")) info.flagrun = int(uv);
-            else if(type == VALUE_STR && !strcmp(key, "map")) copystring(info.map, s);
-            else if(type == VALUE_VAR && !strcmp(key, "maps")) info.maps = int(uv);
-            else if(type == VALUE_SVAR && !strcmp(key, "mode")) info.mode = int(sv);
-            else if(type == VALUE_STR && !strcmp(key, "player")) copystring(info.player, s);
-            else if(type == VALUE_VAR && !strcmp(key, "race")) info.race = int(uv);
+            if(type == sbr2::VALUE_STR && !strcmp(key, "client")) copystring(info.client, s);
+            else if(type == sbr2::VALUE_VAR && !strcmp(key, "date")) info.date = uint(uv);
+            else if(type == sbr2::VALUE_VAR && !strcmp(key, "flagrun")) info.flagrun = int(uv);
+            else if(type == sbr2::VALUE_STR && !strcmp(key, "map")) copystring(info.map, s);
+            else if(type == sbr2::VALUE_VAR && !strcmp(key, "maps")) info.maps = int(uv);
+            else if(type == sbr2::VALUE_SVAR && !strcmp(key, "mode")) info.mode = int(sv);
+            else if(type == sbr2::VALUE_STR && !strcmp(key, "player")) copystring(info.player, s);
+            else if(type == sbr2::VALUE_VAR && !strcmp(key, "race")) info.race = int(uv);
         }
         return r.ok;
     }
@@ -635,6 +672,8 @@ namespace game
             tick += int(r.var());
             e.tick = tick;
             e.type = r.u8();
+            e.source = r.u8();
+            if(e.source > INPUTSRC_RECORDER) return false;
             switch(e.type)
             {
                 case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
@@ -696,9 +735,26 @@ namespace game
             inputsplice &sp = a.splices.add();
             sp.tick = int(r.var());
             sp.discarded = int(r.var());
-            if(sp.tick < lo || sp.tick >= hi || (a.splices.length() > 1 && sp.tick < a.splices[a.splices.length()-2].tick)) return false;
+            sp.kind = r.u8();
+            sp.wallms = int(r.svar());
+            if(sp.kind > inputsplice::AUTO || sp.tick < lo || sp.tick >= hi || (a.splices.length() > 1 && sp.tick < a.splices[a.splices.length()-2].tick)) return false;
         }
         return r.ok && n > 0;
+    }
+
+    static bool readtiming(sbr2::bytesreader &r, inputattempt &a, int segment)
+    {
+        segmenttiming &t = a.timing.add(segmenttiming(segment));
+        t.wallus = (long long)r.var();
+        t.pausedus = (long long)r.var();
+        t.frames = int(r.var());
+        t.frames0 = int(r.var());
+        t.frames2 = int(r.var());
+        loopi(segmenttiming::BUCKETS) t.hist[i] = int(r.var());
+        t.speedmin = int(r.var());
+        t.speedmax = int(r.var());
+        t.fixedframe = int(r.var());
+        return r.ok;
     }
 
     static bool readtrace(sbr2::bytesreader &r, inputattempt &a)
@@ -761,7 +817,7 @@ namespace game
                 if(a && ok) ok = readattempt(r, *a, files);
                 else parsed = false;
             }
-            else if(!memcmp(c.type, "INPS", 4) || !memcmp(c.type, "HASH", 4) || !memcmp(c.type, "SPLC", 4) || !memcmp(c.type, "gHST", 4))
+            else if(!memcmp(c.type, "INPS", 4) || !memcmp(c.type, "HASH", 4) || !memcmp(c.type, "SPLC", 4) || !memcmp(c.type, "tIME", 4) || !memcmp(c.type, "gHST", 4))
             {
                 ok = attempts > 0 && !result;
                 if(!a) parsed = false;
@@ -773,6 +829,7 @@ namespace game
                     inpssegment = c.segment;
                 }
                 else if(!memcmp(c.type, "gHST", 4)) ok = !a->trace.length() && readtrace(r, *a);
+                else if(!memcmp(c.type, "tIME", 4)) ok = inpssegment == c.segment && readtiming(r, *a, lo / SEGMENTTICKS);
                 else
                 {
                     ok = inpssegment == c.segment;
@@ -791,7 +848,17 @@ namespace game
                 info.splices = int(r.var());
                 ok = ok && info.finished <= 1 && started <= 2;
             }
-            else parsed = false;
+            else
+            {
+                parsed = false;
+                if(run && memcmp(c.type, "SEGE", 4) && memcmp(c.type, "END ", 4) && memcmp(c.type, "sIGN", 4))
+                {
+                    runchunk *t = run->tells.add(new runchunk);
+                    memcpy(t->type, c.type, sizeof(t->type));
+                    t->late = result;
+                    t->data = c.data;
+                }
+            }
             if(!ok || !r.ok || (parsed && r.left()))
             {
                 conoutf(CON_ERROR, "replay %s: chunk %d (%s) is malformed or out of place", file, i, c.type);
@@ -929,6 +996,7 @@ namespace game
         info.version = info.format == 2 ? int(sbr2::VERSION) : int(REPLAYVERSION);
         info.simversion = info.format == 2 ? int(SIMVERSION) : int(REPLAYVERSION);
         info.date = uint(time(NULL));
+        info.live = true;
         copystring(info.client, "speedbraten");
         copystring(info.player, player1->name);
         info.mode = first.mode;

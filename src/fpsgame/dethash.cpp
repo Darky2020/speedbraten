@@ -32,12 +32,13 @@ namespace game
         dethashfile->printf("# frame lastmillis player monsters projectiles movables entities rng server actors world\n");
     });
 
-    ICOMMAND(harnessaim, "ff", (float *yaw, float *pitch), { player1->yaw = *yaw; player1->pitch = *pitch; });
-    ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
-    ICOMMAND(harnessjump, "", (), queueinput(INPUT_JUMP, 1));
-    ICOMMAND(harnessattack, "i", (int *down), queueinput(INPUT_ATTACK, *down != 0 ? 1 : 0));
+    ICOMMAND(harnessaim, "ff", (float *yaw, float *pitch), { tellsharness(); player1->yaw = *yaw; player1->pitch = *pitch; });
+    ICOMMAND(harnessmove, "ii", (int *move, int *strafe), { tellsharness(); player1->move = clamp(*move, -1, 1); player1->strafe = clamp(*strafe, -1, 1); });
+    ICOMMAND(harnessjump, "", (), { tellsharness(); inputsourcescope src(INPUTSRC_HARNESS); queueinput(INPUT_JUMP, 1); });
+    ICOMMAND(harnessattack, "i", (int *down), { tellsharness(); inputsourcescope src(INPUTSRC_HARNESS); queueinput(INPUT_ATTACK, *down != 0 ? 1 : 0); });
     ICOMMAND(harnessflag, "if", (int *own, float *dx),
     {
+        tellsharness();
         vec loc;
         if(!flagspawnloc(*own != 0, loc)) { conoutf(CON_ERROR, "harnessflag: no flag"); return; }
         player1->o = loc.add(vec(*dx, 0, player1->eyeheight));
@@ -72,11 +73,12 @@ namespace game
         loopv(ents) if(ents[i]->type >= I_SHELLS && ents[i]->type <= I_QUAD && ents[i]->spawned()) n++;
         intret(n);
     });
-    ICOMMAND(harnesscommand, "s", (char *cmd), queueinput(INPUT_COMMAND, 0, cmd));
+    ICOMMAND(harnesscommand, "s", (char *cmd), { tellsharness(); inputsourcescope src(INPUTSRC_HARNESS); queueinput(INPUT_COMMAND, 0, cmd); });
     // moves player1 onto the n-th entity of the given type; not recorded, so a replay of the
     // attempt does not reproduce it
     ICOMMAND(harnessgotoent, "ii", (int *type, int *n),
     {
+        tellsharness();
         const vector<extentity *> &ents = entities::getents();
         int k = 0;
         loopv(ents) if(ents[i]->type == *type && k++ == *n)
@@ -90,8 +92,8 @@ namespace game
         }
         conoutf(CON_ERROR, "harnessgotoent: no entity #%d of type %d", *n, *type);
     });
-    ICOMMAND(harnessguiclick, "s", (char *action), schedulemenuaction(action, true));
-    ICOMMAND(harnessstall, "i", (int *ms), { if(*ms > 0) SDL_Delay(*ms); });
+    ICOMMAND(harnessguiclick, "s", (char *action), { tellsharness(); schedulemenuaction(action, true); });
+    ICOMMAND(harnessstall, "i", (int *ms), { tellsharness(); if(*ms > 0) SDL_Delay(*ms); });
 
     // bots go into the player group; without bots the group hashes exactly as before
     static void hashbots(dethasher &h)

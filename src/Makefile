@@ -159,6 +159,7 @@ CLIENT_OBJS= \
 	fpsgame/splits.o \
 	fpsgame/spawns.o \
 	fpsgame/replayio.o \
+	fpsgame/tells.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -210,6 +211,12 @@ clean:
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite $(VENDOR_INCLUDES)
+
+# the commit a build comes from, for replay files; rebuilt when the git index changes
+GITCOMMIT:= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+GITDIRTY:= $(shell git status --porcelain --untracked-files=no 2>/dev/null | grep -q . && echo 1 || echo 0)
+fpsgame/tells.o headless/fpsgame/tells.o: CXXFLAGS += -DSPEEDBRATEN_COMMIT=\"$(GITCOMMIT)\" -DSPEEDBRATEN_DIRTY=$(GITDIRTY)
+fpsgame/tells.o headless/fpsgame/tells.o: $(wildcard ../.git/index)
 
 # run statistics database; no threads or loadable extensions, so it links the same everywhere
 SQLITE_OBJS= sqlite/sqlite3.o
@@ -593,6 +600,10 @@ fpsgame/replayio.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/replayio.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/replayio.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/replayio.o: fpsgame/replayio.h
+fpsgame/tells.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/tells.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/tells.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/tells.o: fpsgame/inputs.h fpsgame/replayio.h
 fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

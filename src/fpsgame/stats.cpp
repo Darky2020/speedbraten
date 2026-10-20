@@ -6,6 +6,7 @@
 #include "inputs.h"
 #ifndef HEADLESS
 #include "sqlite3.h"
+#include "blake3.h"
 #endif
 
 namespace game
@@ -16,6 +17,7 @@ namespace game
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
     int statsversion() { return 0; }
+    bool statshistory(uchar *head, int &count, int &attempts) { return false; }
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
     bool statssplitsofreplay(const char *file, vector<splittime> &out) { return false; }
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
@@ -141,6 +143,8 @@ namespace game
         sqlite3_finalize(st);
     }
 
+    static void extendhistory(const replayinfo &info);
+
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay)
     {
         sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay) "
@@ -165,8 +169,49 @@ namespace game
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
-        if(added) recordsplits(sqlite3_last_insert_rowid(db), info);
+        if(added) { recordsplits(sqlite3_last_insert_rowid(db), info); extendhistory(info); }
         changes++;
+    }
+
+    // The history chain: head = BLAKE3(head || summary of the attempt) for every attempt
+    // recorded here, kept in meta as historyhead (32 bytes) and historycount.
+    bool statshistory(uchar *head, int &count, int &attempts)
+    {
+        memset(head, 0, 32);
+        count = attempts = 0;
+        sqlite3_stmt *st = prepare("SELECT key, value FROM meta WHERE key IN ('historyhead', 'historycount')");
+        if(!st) return false;
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            const char *key = (const char *)sqlite3_column_text(st, 0);
+            if(!strcmp(key, "historycount")) count = sqlite3_column_int(st, 1);
+            else if(sqlite3_column_bytes(st, 1) == 32) memcpy(head, sqlite3_column_blob(st, 1), 32);
+        }
+        sqlite3_finalize(st);
+        st = prepare("SELECT COUNT(*) FROM attempts");
+        if(!st) return false;
+        if(sqlite3_step(st) == SQLITE_ROW) attempts = sqlite3_column_int(st, 0);
+        sqlite3_finalize(st);
+        return true;
+    }
+
+    static void extendhistory(const replayinfo &info)
+    {
+        uchar head[32];
+        int count, attempts;
+        if(!statshistory(head, count, attempts)) return;
+        defformatstring(summary, "%u %s %s %d %d %d %d %d", info.date, info.map, runkindname(info), info.mode, info.finished, info.runtime, info.ticks, info.splices);
+        blake3_hasher h;
+        blake3_hasher_init(&h);
+        blake3_hasher_update(&h, head, 32);
+        blake3_hasher_update(&h, summary, strlen(summary));
+        blake3_hasher_finalize(&h, head, 32);
+        sqlite3_stmt *st = prepare("INSERT OR REPLACE INTO meta(key, value) VALUES('historyhead', ?), ('historycount', ?)");
+        if(!st) return;
+        sqlite3_bind_blob(st, 1, head, 32, SQLITE_TRANSIENT);
+        sqlite3_bind_int(st, 2, count + 1);
+        sqlite3_step(st);
+        sqlite3_finalize(st);
     }
 
     // the replay file of the fastest finished run with an existing replay; file is a string

@@ -325,6 +325,7 @@ struct hline
 
     void run()
     {
+        inputsourcescope src(INPUTSRC_CONSOLE);
         if(flags&CF_EXECUTE || buf[0]=='/') execute(buf[0]=='/' ? buf+1 : buf);
         else if(action)
         {
@@ -377,6 +378,7 @@ COMMAND(onrelease, "s");
 
 void execbind(keym &k, bool isdown)
 {
+    inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);
     loopv(releaseactions)
     {
         releaseaction &ra = releaseactions[i];

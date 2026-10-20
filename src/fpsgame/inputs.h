@@ -5,6 +5,8 @@
 
 namespace game
 {
+    enum { REPLAYSEGMENTTICKS = 200 };
+
     struct inputcontrols
     {
         uint yaw, pitch;
@@ -22,6 +24,7 @@ namespace game
     struct inputevent
     {
         int tick, type, arg;
+        int source; // INPUTSRC_*
         inputcontrols controls;
         uint cursorx, cursory;
         char *cmd;
@@ -36,7 +39,39 @@ namespace game
     // a saved state was loaded at this tick of the attempt, throwing away the ticks played after it
     struct inputsplice
     {
+        enum { SAVED = 0, AUTO };
         int tick, discarded;
+        int kind;
+        int wallms; // wall time since the run began, -1 unknown
+
+        inputsplice() : tick(0), discarded(0), kind(SAVED), wallms(-1) {}
+    };
+
+    // wall clock of the frames that ended in one segment of an attempt
+    struct segmenttiming
+    {
+        enum { BUCKETS = 8 };
+        int segment;
+        long long wallus, pausedus;
+        int frames, frames0, frames2; // all frames, frames with no tick, with 2 or more ticks
+        int hist[BUCKETS];            // frame times: <2, <4, <8, <16, <33, <66, <250, >=250 ms
+        int speedmin, speedmax;       // gamespeed
+        int fixedframe;               // highest fixedframe
+
+        segmenttiming(int segment = 0) : segment(segment), wallus(0), pausedus(0), frames(0), frames0(0), frames2(0), speedmin(0), speedmax(0), fixedframe(0)
+        {
+            memset(hist, 0, sizeof(hist));
+        }
+    };
+
+    // a chunk of run-level metadata in replay-file form
+    struct runchunk
+    {
+        char type[5];
+        bool late; // stored after the attempts
+        vector<uchar> data;
+
+        runchunk() : late(false) { type[0] = '\0'; }
     };
 
     // player1 on the run timer's clock, for drawing the run as a ghost
@@ -67,6 +102,7 @@ namespace game
         vector<inputsplice> splices;
         vector<ghostsample> trace; // v9+, finished or saved runs only
         vector<mapdatafile> files; // what the map load read; empty in SBRP files
+        vector<segmenttiming> timing; // by segment, empty in SBRP files
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false before v8
@@ -88,6 +124,7 @@ namespace game
             splices.setsize(0);
             trace.setsize(0);
             files.setsize(0);
+            timing.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -107,6 +144,7 @@ namespace game
             dst.splices = splices;
             dst.trace = trace;
             dst.files = files;
+            dst.timing = timing;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             dst.cfgcrc = cfgcrc;
@@ -125,9 +163,10 @@ namespace game
     struct inputrun
     {
         vector<inputattempt *> attempts;
+        vector<runchunk *> tells; // read from a file; a live run's are made when it is saved
 
         ~inputrun() { clear(); }
-        void clear() { attempts.deletecontents(); }
+        void clear() { attempts.deletecontents(); tells.deletecontents(); }
         bool empty() const { return attempts.empty() || (attempts.length() == 1 && attempts[0]->empty()); }
         inputattempt &last() { return *attempts.last(); }
         inputattempt &add() { return *attempts.add(new inputattempt); }
@@ -136,6 +175,7 @@ namespace game
         {
             dst.clear();
             loopv(attempts) attempts[i]->copyto(dst.add());
+            loopv(tells) { runchunk *c = dst.tells.add(new runchunk); memcpy(c->type, tells[i]->type, sizeof(c->type)); c->late = tells[i]->late; c->data = tells[i]->data; }
         }
 
         void moveto(inputrun &dst)
@@ -143,6 +183,8 @@ namespace game
             dst.clear();
             loopv(attempts) dst.attempts.add(attempts[i]);
             attempts.setsize(0);
+            loopv(tells) dst.tells.add(tells[i]);
+            tells.setsize(0);
         }
     };
 
@@ -156,12 +198,22 @@ namespace game
         string client, player, map;
         int mode, flagrun, race, splices, finished, runtime, ticks, maps;
         int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (before v10)
+        bool live;   // describes the run being played now, not one read from a file
 
-        replayinfo() : format(1), version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1)
+        replayinfo() : format(1), version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1), live(false)
         {
             client[0] = player[0] = map[0] = '\0';
         }
     };
+
+    // tells.cpp: session and run counters for the replay file
+    extern void tellsrunstart();
+    extern void tellssave();
+    extern void tellsload();
+    extern void tellsreset();
+    extern void tellsframe(int us);
+    extern int tellsrunms();
+    extern void tellsencode(const inputrun &run, const replayinfo &info, vector<runchunk *> &out);
 
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);
     extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
@@ -171,6 +223,8 @@ namespace game
     extern void statsreplaymoved(const char *from, const char *to);
     extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
     extern int statsversion();
+    // head of the chain over all recorded attempts (32 bytes), its length, and the attempt count
+    extern bool statshistory(uchar *head, int &count, int &attempts);
     // the ghost chosen for a map, kind and mode: source "pb", "segpb" or "file"; label may be empty
     extern bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label);
     extern void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label);

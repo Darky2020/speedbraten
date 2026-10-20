@@ -88,6 +88,8 @@ namespace game
     extern int numdynents();
     extern void rendergame(bool mainpass);
     extern void begindisplay(float alpha);
+    // a frame of offline play took us microseconds of wall time and ran ticks sim ticks
+    extern void frametimed(int us, int ticks);
     extern void begintick();
     extern void enddisplay();
     extern void renderavatar();

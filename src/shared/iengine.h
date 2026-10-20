@@ -622,6 +622,18 @@ extern void schedulemenuaction(const char *action, bool scripted);
 extern bool getmapguistate(vector<char> &names, float &cx, float &cy);
 extern void setmapguistate(const char *names, float cx, float cy);
 extern bool mapguiontop();
+
+// where the command running now came from, for tagging recorded input
+enum { INPUTSRC_OTHER = 0, INPUTSRC_KEY, INPUTSRC_MOUSE, INPUTSRC_CONSOLE, INPUTSRC_MENU, INPUTSRC_HARNESS, INPUTSRC_RECORDER };
+extern int inputsource;
+extern int fixedframe;
+extern bool minimized;
+struct inputsourcescope
+{
+    int old;
+    inputsourcescope(int src) : old(inputsource) { inputsource = src; }
+    ~inputsourcescope() { inputsource = old; }
+};
 extern void g3d_limitscale(float scale);
 
 extern char *p1xbratenversion;

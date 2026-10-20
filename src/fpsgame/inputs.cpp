@@ -61,11 +61,11 @@ namespace game
     // whole chain, so a state's history is its own chain however many loads came between.
     struct inputbranch
     {
-        int parent, forktick, discarded;
+        int parent, forktick, discarded, kind, wallms;
         vector<inputevent> events;
         vector<tickhash> hashes;
 
-        inputbranch(int parent, int forktick, int discarded) : parent(parent), forktick(forktick), discarded(discarded) {}
+        inputbranch(int parent, int forktick, int discarded, int kind, int wallms) : parent(parent), forktick(forktick), discarded(discarded), kind(kind), wallms(wallms) {}
         ~inputbranch() { loopv(events) DELETEA(events[i].cmd); }
     };
     static vector<inputbranch *> branches;
@@ -74,7 +74,7 @@ namespace game
     static void resetbranches()
     {
         branches.deletecontents();
-        branches.add(new inputbranch(-1, 0, 0));
+        branches.add(new inputbranch(-1, 0, 0, inputsplice::SAVED, -1));
         curbranch = 0;
     }
 
@@ -111,12 +111,21 @@ namespace game
             inputsplice &sp = a.splices.add();
             sp.tick = br.forktick;
             sp.discarded = br.discarded;
+            sp.kind = br.kind;
+            sp.wallms = br.wallms;
         }
     }
 
     // Moves the current branch's input out of the recording into the tree, starts a branch at
     // tick of branch from, and makes the recording that branch's chain.
-    static void forkrecording(int from, int tick)
+    // drops the timing of the segments after tick
+    static void cuttiming(inputattempt &a, int tick)
+    {
+        int seg = tick / REPLAYSEGMENTTICKS;
+        while(a.timing.length() && a.timing.last().segment > seg) a.timing.pop();
+    }
+
+    static void forkrecording(int from, int tick, int kind)
     {
         if(recording.attempts.empty() || curbranch < 0) return;
         inputattempt &rec = recording.last();
@@ -125,13 +134,14 @@ namespace game
         loopv(rec.hashes) if(rec.hashes[i].tick > cur.forktick) cur.hashes.add(rec.hashes[i]);
         int discarded = rec.ticks - commontick(curbranch, rec.ticks, from, tick);
         curbranch = branches.length();
-        branches.add(new inputbranch(from, tick, max(discarded, 0)));
+        branches.add(new inputbranch(from, tick, max(discarded, 0), kind, tellsrunms()));
         loopv(rec.events) DELETEA(rec.events[i].cmd);
         rec.events.setsize(0);
         rec.hashes.setsize(0);
         rec.splices.setsize(0);
         addchain(rec, curbranch, tick);
         rec.ticks = tick;
+        cuttiming(rec, tick);
     }
 
     // The attempt from a saved state on: the state, then the events and hashes after its tick.
@@ -150,6 +160,9 @@ namespace game
         n = 0;
         loopv(a.splices) if(a.splices[i].tick <= from.tick) n++; else break;
         a.splices.remove(0, n);
+        n = 0;
+        loopv(a.timing) if(a.timing[i].segment < from.tick / REPLAYSEGMENTTICKS) n++; else break;
+        a.timing.remove(0, n);
     }
 
     // Flagruns and races are judged per life: the replay of a finished run starts at the
@@ -188,14 +201,14 @@ namespace game
 
     // A live load keeps the keys the player holds now: the state's movement and attack belong
     // to the moment it was saved, and the keys pressed then are not held any more.
-    static bool loadlivestate(statestart &st)
+    static bool loadlivestate(statestart &st, int kind)
     {
         fpsent &d = *player1;
         bool keys[6] = { d.k_left, d.k_right, d.k_forward, d.k_backward, d.k_up, d.k_down };
         schar move = d.move, strafe = d.strafe, vertical = d.vertical;
         bool jumping = d.jumping, attacking = d.attacking;
         if(!restorestate(st.state)) return false;
-        if(!replaying && !recordingoff) forkrecording(st.branch, st.tick);
+        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
         if(lifestart.valid() && !onchain(lifestart.branch, lifestart.tick, st.branch, st.tick)) lifestart.clear();
         while(autostates.length() && autostates.last()->tick > st.tick) delete autostates.pop();
         d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
@@ -206,7 +219,7 @@ namespace game
 
     static void loadautostate();
 
-    bool loadsavedstate() { return savedstart.valid() && loadlivestate(savedstart); }
+    bool loadsavedstate() { return savedstart.valid() && loadlivestate(savedstart, inputsplice::SAVED); }
 
     // the save and load requests of savestate, loadstate and loadautostate, at a tick boundary
     void runstateops()
@@ -219,6 +232,7 @@ namespace game
             savedstart.tick = tick;
             savedstart.branch = curbranch;
             readsettings(savedstart.settings);
+            if(!replaying && !recordingoff) tellssave();
         }
         if(autoloadpending) { autoloadpending = false; loadautostate(); }
     }
@@ -280,7 +294,7 @@ namespace game
         for(int i = autostates.length()-1; i >= 0; i--) if(autostates[i]->tick <= curtick - margin)
         {
             int back = curtick - autostates[i]->tick;
-            if(loadlivestate(*autostates[i]))
+            if(loadlivestate(*autostates[i], inputsplice::AUTO))
             {
                 conoutf("auto state loaded (%.1f s back)", back*SIMTICK/1000.0f);
                 holdafterload();
@@ -376,6 +390,7 @@ namespace game
         e.tick = 0;
         e.type = type;
         e.arg = arg;
+        e.source = inputsource;
         e.cursorx = e.cursory = 0;
         e.cmd = cmd ? newstring(cmd) : NULL;
     }
@@ -486,6 +501,7 @@ namespace game
             inputevent &e = a.events.add();
             e.tick = curtick;
             e.type = INPUT_SETTING;
+            e.source = INPUTSRC_RECORDER;
             e.arg = val;
             memset(&e.controls, 0, sizeof(e.controls));
             e.cursorx = e.cursory = 0;
@@ -750,6 +766,7 @@ namespace game
             inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_CONTROLS;
+            e.source = INPUTSRC_RECORDER;
             e.arg = 0;
             e.controls = c;
             e.cursorx = e.cursory = 0;
@@ -765,6 +782,7 @@ namespace game
             inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_GUI;
+            e.source = INPUTSRC_RECORDER;
             e.arg = 0;
             memset(&e.controls, 0, sizeof(e.controls));
             e.cursorx = lastcursorx = floatbits(cx);
@@ -779,6 +797,7 @@ namespace game
             inputevent &e = rec.events.add();
             e.tick = curtick;
             e.type = INPUT_ZOOM;
+            e.source = INPUTSRC_RECORDER;
             e.arg = zoom;
             memset(&e.controls, 0, sizeof(e.controls));
             e.cursorx = e.cursory = 0;
@@ -845,7 +864,7 @@ namespace game
         }
         seedgame();
         if(!chained && !recording.empty()) recording.moveto(previous);
-        if(!chained) { recording.clear(); runsaved = false; recordingran = false; }
+        if(!chained) { recording.clear(); runsaved = false; recordingran = false; tellsrunstart(); }
         inputattempt &a = recording.add();
         a.seed = gameseed;
         copystring(a.map, name);
@@ -853,6 +872,29 @@ namespace game
         a.flagrun = server::flagrunactive() ? 1 : 0;
         a.race = server::racerulesactive() ? 1 : 0;
         recordsettings(a);
+    }
+
+    void frametimed(int us, int ticks)
+    {
+        tellsframe(us);
+        if(replaying || recordingoff || recording.attempts.empty() || !connected) return;
+        inputattempt &a = recording.last();
+        int seg = max(curtick, 0) / REPLAYSEGMENTTICKS;
+        cuttiming(a, curtick);
+        if(a.timing.empty() || a.timing.last().segment != seg) a.timing.add(segmenttiming(seg));
+        segmenttiming &t = a.timing.last();
+        static const int limits[segmenttiming::BUCKETS-1] = { 2000, 4000, 8000, 16000, 33000, 66000, 250000 };
+        int bucket = 0;
+        while(bucket < segmenttiming::BUCKETS-1 && us >= limits[bucket]) bucket++;
+        t.hist[bucket]++;
+        t.wallus += us;
+        if(ispaused() || holdsim()) t.pausedus += us;
+        if(!ticks) t.frames0++;
+        else if(ticks >= 2) t.frames2++;
+        int speed = scaletime(1);
+        if(!t.frames++) t.speedmin = t.speedmax = speed;
+        else { t.speedmin = min(t.speedmin, speed); t.speedmax = max(t.speedmax, speed); }
+        t.fixedframe = max(t.fixedframe, fixedframe);
     }
 
     void playinputrun(const inputrun &src, const char *file)
@@ -932,6 +974,7 @@ namespace game
         if(!connected || multiplayer(false)) { conoutf(CON_ERROR, "speedrunreset only works offline"); return; }
         if(resetarmtick >= 0) return;
         resetarmtick = curtick;
+        tellsreset();
         if(speedrunresetidle > 0) conoutf("\f2resetting in %.1f s - move or shoot to cancel", speedrunresetidle/1000.0f);
     });
 
@@ -1116,6 +1159,7 @@ namespace game
                 e.tick = parseint(w[1]);
                 e.type = parseint(w[2]);
                 e.arg = parseint(w[3]);
+                e.source = INPUTSRC_OTHER;
                 inputcontrols &c = e.controls;
                 c.yaw = uint(strtoul(w[4], NULL, 10));
                 c.pitch = uint(strtoul(w[5], NULL, 10));

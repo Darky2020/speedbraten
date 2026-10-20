@@ -4,7 +4,7 @@ BLAKE3 hash chain). Independent of the game's C++ code, for checking files and f
 
 Usage:
   sbr2.py check <file.sbr2>    verify CRCs, chain and content hash; print segment heads
-  sbr2.py dump <file.sbr2>     also list every chunk
+  sbr2.py dump <file.sbr2>     also list every chunk, with key-value, tIME and SPLC contents
 
 Needs Python 3.14+ (compression.zstd) and the blake3 module (pip install blake3).
 
@@ -206,10 +206,53 @@ def parse(data):
             if s.take(32) != content or s.left():
                 raise FormatError("content hash mismatch")
             ended = True
-        chunks.append((name, flags, len(stored), len(raw), segment - (1 if ctype == b"SEGE" else 0)))
+        chunks.append((name, flags, len(stored), len(raw), segment - (1 if ctype == b"SEGE" else 0), raw))
     if not ended:
         raise FormatError("no END chunk")
     return chunks, heads, content
+
+
+KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND"}
+
+
+def decode_kv(raw):
+    r, out = Reader(raw), []
+    for _ in range(r.var()):
+        key = r.take(r.var()).decode()
+        t = r.take(1)[0]
+        if t == 0:
+            v = r.var()
+            v = (v >> 1) ^ -(v & 1)
+        elif t == 1:
+            v = r.var()
+        elif t == 2:
+            v = r.take(r.var()).decode("utf-8", "replace")
+        elif t == 3:
+            v = r.take(r.var()).hex()
+        elif t == 4:
+            import struct
+            v = round(struct.unpack("<f", r.take(4))[0], 6)
+        elif t == 5:
+            v = bool(r.take(1)[0])
+        else:
+            raise FormatError("kv: unknown value type %d" % t)
+        out.append((key, v))
+    return out
+
+
+def decode_time(raw):
+    r = Reader(raw)
+    names = ["wallus", "pausedus", "frames", "frames0", "frames2"] + ["h%d" % i for i in range(8)] + ["speedmin", "speedmax", "fixedframe"]
+    return [(n, r.var()) for n in names]
+
+
+def decode_splc(raw):
+    r, out = Reader(raw), []
+    for _ in range(r.var()):
+        tick, discarded, kind = r.var(), r.var(), r.take(1)[0]
+        w = r.var()
+        out.append("tick %d discarded %d %s wallms %d" % (tick, discarded, "auto" if kind else "saved", (w >> 1) ^ -(w & 1)))
+    return out
 
 
 def main():
@@ -222,8 +265,15 @@ def main():
         print("FAIL:", e)
         sys.exit(1)
     if sys.argv[1] == "dump":
-        for i, (name, flags, stored, raw, seg) in enumerate(chunks):
+        for i, (name, flags, stored, raw, seg, data) in enumerate(chunks):
             print("chunk %d %s segment %d flags %d %d bytes (stored %d)" % (i, name, seg, flags, raw, stored))
+            if name in KV_CHUNKS:
+                print("    " + ", ".join("%s=%s" % kv for kv in decode_kv(data)))
+            elif name == "tIME":
+                print("    " + " ".join("%s=%d" % kv for kv in decode_time(data)))
+            elif name == "SPLC":
+                for line in decode_splc(data):
+                    print("    " + line)
     for i, head in enumerate(heads):
         print("head %d %s" % (i, head.hex()))
     print("ok, content %s" % content.hex())
