@@ -39,7 +39,7 @@ namespace game
     //          svar mode, var flagrun, var race, var start tick, var ticks, var hash groups,
     //          var files, var DATA index per file, var settings, (str name, svar value) per
     //          setting, var saved state length, saved state
-    //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
+    //     per segment of segmentticks() ticks [lo, hi), by absolute tick:
     //     Lists are stored as columns: each field of every entry, then the next field.
     //       INPS var lo, var hi-lo, var events; columns: var tick delta (from the previous event
     //            or lo), u8 type, u8 source (INPUTSRC_*); for the controls events: svar yaw,
@@ -69,7 +69,9 @@ namespace game
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
     //   wIND, rSTA  key-value window metadata, raw input statistics
     //   END
-    enum { SEGMENTTICKS = REPLAYSEGMENTTICKS };
+    // longer segments compress better; runs in the other modes are short and get a witness
+    // signature every second
+    static int segmentticks(const inputattempt &a) { return m_check(a.mode, M_DMSP | M_CLASSICSP) ? 5*REPLAYSEGMENTTICKS : REPLAYSEGMENTTICKS; }
 
     static void kvkey(sbr2::byteswriter &w, const char *key, int type) { w.str(key); w.u8(type); }
 
@@ -256,9 +258,10 @@ namespace game
         if(a.splices.length()) { first = min(first, a.splices[0].tick); last = max(last, a.splices[a.splices.length()-1].tick); }
         if(a.raw.length()) { first = min(first, a.raw[0].tick); last = max(last, a.raw[a.raw.length()-1].tick); }
         int ev = 0, hs = 0, sp = 0, tm = 0, rw = 0;
-        for(int seg = max(first, 0)/SEGMENTTICKS; seg <= last/SEGMENTTICKS; seg++)
+        int segticks = segmentticks(a);
+        for(int seg = max(first, 0)/segticks; seg <= last/segticks; seg++)
         {
-            int lo = seg*SEGMENTTICKS, hi = lo + SEGMENTTICKS;
+            int lo = seg*segticks, hi = lo + segticks;
             int n = 0;
             while(ev + n < a.events.length() && a.events[ev + n].tick < hi) n++;
             p.setsize(0);
@@ -302,10 +305,25 @@ namespace game
                 out.add("SPLC", p);
             }
 
-            while(tm < a.timing.length() && a.timing[tm].segment < seg) tm++;
-            if(tm < a.timing.length() && a.timing[tm].segment == seg)
+            // timing is kept per second; this segment's seconds are merged
+            segmenttiming t(lo / REPLAYSEGMENTTICKS);
+            int seconds = 0;
+            while(tm < a.timing.length() && a.timing[tm].segment < lo / REPLAYSEGMENTTICKS) tm++;
+            for(; tm < a.timing.length() && a.timing[tm].segment < hi / REPLAYSEGMENTTICKS; tm++)
             {
-                const segmenttiming &t = a.timing[tm];
+                const segmenttiming &s = a.timing[tm];
+                t.wallus += s.wallus;
+                t.pausedus += s.pausedus;
+                t.frames0 += s.frames0;
+                t.frames2 += s.frames2;
+                loopi(segmenttiming::BUCKETS) t.hist[i] += s.hist[i];
+                t.speedmin = seconds++ ? min(t.speedmin, s.speedmin) : s.speedmin;
+                t.speedmax = max(t.speedmax, s.speedmax);
+                t.fixedframe = max(t.fixedframe, s.fixedframe);
+                t.frames += s.frames;
+            }
+            if(seconds)
+            {
                 p.setsize(0);
                 w.var(t.wallus);
                 w.var(t.pausedus);
@@ -745,7 +763,7 @@ namespace game
                     inpssegment = c.segment;
                 }
                 else if(!memcmp(c.type, "gHST", 4)) ok = !a->trace.length() && readtrace(r, *a);
-                else if(!memcmp(c.type, "tIME", 4)) ok = inpssegment == c.segment && readtiming(r, *a, lo / SEGMENTTICKS);
+                else if(!memcmp(c.type, "tIME", 4)) ok = inpssegment == c.segment && readtiming(r, *a, lo / REPLAYSEGMENTTICKS);
                 else if(!memcmp(c.type, "rAWI", 4)) ok = inpssegment == c.segment && readraw(r, *a, lo, hi, binds);
                 else
                 {
