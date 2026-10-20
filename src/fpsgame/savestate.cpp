@@ -177,8 +177,18 @@ namespace game
         if(snapshotrefusal()) { conoutf(CON_ERROR, "savestate: %s", snapshotrefusal()); return false; }
         snapio s(buf, true);
         if(!snapheader(s)) return false;
+        int oldmillis = lastmillis;
         snapall(s);
         if(!s.ok) conoutf(CON_ERROR, "savestate: the saved state is damaged; the game is now in an undefined state");
+        // effects carry timestamps of the clock; after it moved they would play backwards
+        else if(lastmillis != oldmillis)
+        {
+            clearparticles();
+            cleardecals();
+            cleardynlights();
+            clearragdolls();
+            cleardamagescreen();
+        }
         return s.ok;
     }
 

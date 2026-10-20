@@ -986,6 +986,9 @@ void removetrackedparticles(physent *owner)
 
 VARP(particleglare, 0, 2, 100);
 
+// harness: the number of live particles
+ICOMMAND(harnessparticles, "", (), { int n = 0; loopi(sizeof(parts)/sizeof(parts[0])) n += parts[i]->count(); intret(n); });
+
 VARN(debugparticles, dbgparts, 0, 0, 1);
 
 void debugparticles()

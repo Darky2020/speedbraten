@@ -320,6 +320,9 @@ extern vec calcmodelpreviewpos(const vec &radius, float &yaw);
 extern void damageblend(int n);
 extern void damagecompass(int n, const vec &loc);
 extern void cleardamagescreen();
+extern void clearparticles();
+extern void cleardecals();
+extern void cleardynlights();
 
 extern vec minimapcenter, minimapradius, minimapscale;
 extern void bindminimap();
