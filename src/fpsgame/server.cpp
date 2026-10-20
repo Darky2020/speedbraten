@@ -573,8 +573,10 @@ namespace server
         return sec*1000;
     }
 
+    // race rules: every item is there from the start
     bool delayspawn(int type)
     {
+        if(raceruleson) return false;
         switch(type)
         {
             case I_GREENARMOUR:
@@ -2426,7 +2428,7 @@ namespace server
                             sents[i].spawned = true;
                             sendf(-1, 1, "ri2", N_ITEMSPAWN, i);
                         }
-                        else if(sents[i].spawntime<=10000 && oldtime>10000 && (sents[i].type==I_QUAD || sents[i].type==I_BOOST))
+                        else if(!raceruleson && sents[i].spawntime<=10000 && oldtime>10000 && (sents[i].type==I_QUAD || sents[i].type==I_BOOST))
                         {
                             sendf(-1, 1, "ri2", N_ANNOUNCE, sents[i].type);
                         }
