@@ -621,6 +621,7 @@ extern void g3d_setcursor(float x, float y);
 extern void schedulemenuaction(const char *action, bool scripted);
 extern bool getmapguistate(vector<char> &names, float &cx, float &cy);
 extern void setmapguistate(const char *names, float cx, float cy);
+extern bool mapguiontop();
 extern void g3d_limitscale(float scale);
 
 extern char *p1xbratenversion;

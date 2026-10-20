@@ -496,8 +496,8 @@ namespace game
     bool queuemenuinput(const char *cmd, bool scripted)
     {
         if(!simticking || insimtick || !connected) return false;
-        if(scripted) queueinput(INPUT_COMMAND, 0, cmd);
-        else deferinput(INPUT_COMMAND, 0, cmd);
+        if(scripted) queueinput(INPUT_MAPGUI, 0, cmd);
+        else deferinput(INPUT_MAPGUI, 0, cmd);
         return true;
     }
 
@@ -508,7 +508,13 @@ namespace game
             case INPUT_CONTROLS: lastcontrols = e.controls; break;
             case INPUT_JUMP: if(canjump()) player1->jumping = true; break;
             case INPUT_ATTACK: doattack(e.arg != 0); break;
-            case INPUT_COMMAND: if(e.cmd) execute(e.cmd); break;
+            // arg 1: a command outside the replay command list, read from a replay file
+            case INPUT_COMMAND:
+                if(!e.cmd) break;
+                if(e.arg) conoutf(CON_ERROR, "replay command refused: %s", e.cmd);
+                else execute(e.cmd);
+                break;
+            case INPUT_MAPGUI: if(e.cmd && mapguiontop()) execute(e.cmd); break;
             case INPUT_GUI: setmapguistate(e.cmd ? e.cmd : "", bitsfloat(e.cursorx), bitsfloat(e.cursory)); break;
             case INPUT_ZOOM: zoom = e.arg; break;
             case INPUT_SETTING:

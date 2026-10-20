@@ -152,8 +152,9 @@ namespace game
                 const inputevent &e = a.events[i];
                 w.var(e.tick - last);
                 last = e.tick;
-                w.u8(e.type);
-                switch(e.type)
+                int type = e.type == INPUT_MAPGUI ? int(INPUT_COMMAND) : e.type;
+                w.u8(type);
+                switch(type)
                 {
                     case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
                     case INPUT_COMMAND: w.str(e.cmd ? e.cmd : ""); break;
@@ -324,7 +325,8 @@ namespace game
     //          setting, var saved state length, saved state
     //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
     //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
-    //            then as in SBRP)
+    //            then as in SBRP, except: command = var id in replaycommands, str arguments;
+    //            map GUI action = str script)
     //       HASH var hashes, (var tick delta from the previous hash or lo, groups x u32) per hash
     //       SPLC (only with state loads) var loads, (var tick, var discarded ticks) per load
     //       SEGE
@@ -348,13 +350,48 @@ namespace game
         return -1;
     }
 
+    // The commands an SBR2 file can hold, by id: never reorder or remove. Id 0 holds any other
+    // command, which playback refuses.
+    static const char * const replaycommands[] =
+    {
+        "", "respawn", "respawnnow", "speedrunrespawn", "suicide", "taunt", "dropflag", "setspawnat", "clearspawnat",
+        "nextweapon", "setweapon", "weapon", "cycleweapon", "addbot", "delbot", "botlimit", "botbalance",
+        "cleargui", "clearmapguis"
+    };
+
+    // arguments that can't run other commands or read variables
+    static bool plainargs(const char *s, int len)
+    {
+        loopi(len) if(!isalnum(uchar(s[i])) && !strchr(" \".-+_", s[i])) return false;
+        return true;
+    }
+
+    static void writecommand(sbr2::byteswriter &w, const char *cmd)
+    {
+        const char *space = strchr(cmd, ' ');
+        int namelen = space ? int(space - cmd) : int(strlen(cmd));
+        for(int id = 1; id < int(sizeof(replaycommands)/sizeof(replaycommands[0])); id++)
+        {
+            if(int(strlen(replaycommands[id])) != namelen || strncmp(cmd, replaycommands[id], namelen)) continue;
+            const char *args = space ? space + 1 : "";
+            if(space && !*args) break;
+            if(!plainargs(args, strlen(args))) break;
+            w.var(id);
+            w.str(args);
+            return;
+        }
+        w.var(0);
+        w.str(cmd);
+    }
+
     static void writeevent(sbr2::byteswriter &w, const inputevent &e)
     {
         w.u8(e.type);
         switch(e.type)
         {
             case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
-            case INPUT_COMMAND: w.str(e.cmd ? e.cmd : ""); break;
+            case INPUT_COMMAND: writecommand(w, e.cmd ? e.cmd : ""); break;
+            case INPUT_MAPGUI: w.str(e.cmd ? e.cmd : ""); break;
             case INPUT_GUI: w.u32(e.cursorx); w.u32(e.cursory); w.str(e.cmd ? e.cmd : ""); break;
             case INPUT_SETTING: w.svar(e.arg); w.str(e.cmd ? e.cmd : ""); break;
             default: w.svar(e.arg); break;
@@ -601,7 +638,22 @@ namespace game
             switch(e.type)
             {
                 case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
-                case INPUT_COMMAND: case INPUT_GUI: case INPUT_SETTING:
+                case INPUT_COMMAND:
+                {
+                    unsigned long long id = r.var(), len = r.var();
+                    if(!r.ok || len > (unsigned long long)r.left() || id >= sizeof(replaycommands)/sizeof(replaycommands[0])) return false;
+                    const char *args = (const char *)r.p;
+                    r.p += len;
+                    if(!id) { e.cmd = newstring(args, size_t(len)); e.arg = 1; break; }
+                    if(!plainargs(args, int(len))) return false;
+                    vector<char> cmd;
+                    cmd.put(replaycommands[id], strlen(replaycommands[id]));
+                    if(len) { cmd.add(' '); cmd.put(args, int(len)); }
+                    cmd.add('\0');
+                    e.cmd = newstring(cmd.getbuf());
+                    break;
+                }
+                case INPUT_MAPGUI: case INPUT_GUI: case INPUT_SETTING:
                 {
                     if(e.type == INPUT_GUI) { e.cursorx = r.u32(); e.cursory = r.u32(); }
                     if(e.type == INPUT_SETTING) e.arg = int(r.svar());

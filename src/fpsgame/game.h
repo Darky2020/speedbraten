@@ -985,7 +985,7 @@ namespace game
     extern void seedgame();
 
     // inputs
-    enum { INPUT_CONTROLS = 0, INPUT_JUMP, INPUT_ATTACK, INPUT_COMMAND, INPUT_GUI, INPUT_ZOOM, INPUT_SETTING };
+    enum { INPUT_CONTROLS = 0, INPUT_JUMP, INPUT_ATTACK, INPUT_COMMAND, INPUT_GUI, INPUT_ZOOM, INPUT_SETTING, INPUT_MAPGUI };
     extern void queueinput(int type, int arg = 0, const char *cmd = NULL);
     extern bool deferinput(int type, int arg = 0, const char *cmd = NULL);
     extern bool dethashactive();
