@@ -48,8 +48,9 @@ namespace game
     //            bodies in order: jump, attack, zoom = svar; command = var id in replaycommands,
     //            str arguments; GUI = u32 cursor x, u32 cursor y, str GUI names; setting = svar
     //            value, str name; map GUI action = str script
-    //       rAWI (optional) var base us, var base SDL ms, var events; columns: svar us delta,
-    //            svar ms delta (from the previous event or the bases), svar tick delta (from the
+    //       rAWI (optional) var base time (in RAWTIMEUNIT µs), var base SDL ms, var events;
+    //            columns: svar time delta (from the previous event or the base), svar SDL ms
+    //            minus base ms minus floor(time since base / 1 ms), svar tick delta (from the
     //            previous event or lo), u8 kind; for the motion events: svar dx, svar dy,
     //            u8 flags; then the other events' bodies in order: key = var scancode,
     //            var keycode, u8 flags, var bind+1; button = u8 button, var bind+1; wheel =
@@ -172,23 +173,28 @@ namespace game
         loopi(sizeof(cols)/sizeof(cols[0])) w.bytes(cols[i]->getbuf(), cols[i]->length());
     }
 
-    // Raw events in columns: us, SDL ms and tick deltas, kinds, then dx, dy and flags of the
-    // motion events, then the other events' bodies in order.
+    enum { RAWTIMEUNIT = 100 }; // raw event times are stored in units of this many µs
+
+    static long long floordiv(long long a, long long b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+
+    // Raw events in columns: time deltas (RAWTIMEUNIT), SDL ms as an offset from the time
+    // column, tick deltas, kinds, then dx, dy and flags of the motion events, then the other
+    // events' bodies in order.
     static void writeraw(sbr2::byteswriter &w, const rawevent *evs, int n, int lo, const vector<const char *> &binds)
     {
         vector<uchar> us, ms, ticks, kinds, dxs, dys, flags, bodies;
         sbr2::byteswriter wus(us), wms(ms), wt(ticks), wx(dxs), wy(dys), wb(bodies);
-        long long lastus = evs[0].us;
-        uint lastms = evs[0].sdlms;
+        long long base = max(evs[0].us, 0LL) / RAWTIMEUNIT, last = base;
+        uint basems = evs[0].sdlms;
         int lasttick = lo;
         loopi(n)
         {
             const rawevent &e = evs[i];
-            wus.svar(e.us - lastus);
-            wms.svar(int(e.sdlms - lastms));
+            long long t = max(e.us, 0LL) / RAWTIMEUNIT;
+            wus.svar(t - last);
+            wms.svar(int(e.sdlms - basems) - floordiv(t - base, 1000 / RAWTIMEUNIT));
             wt.svar(e.tick - lasttick);
-            lastus = e.us;
-            lastms = e.sdlms;
+            last = t;
             lasttick = e.tick;
             kinds.add(uchar(e.kind));
             switch(e.kind)
@@ -200,8 +206,8 @@ namespace game
                 case rawevent::FOCUS: wb.u8(e.flags); break;
             }
         }
-        w.var(max(evs[0].us, 0LL));
-        w.var(evs[0].sdlms);
+        w.var(base);
+        w.var(basems);
         w.var(n);
         const vector<uchar> *cols[] = { &us, &ms, &ticks, &kinds, &dxs, &dys, &flags, &bodies };
         loopi(sizeof(cols)/sizeof(cols[0])) w.bytes(cols[i]->getbuf(), cols[i]->length());
@@ -595,12 +601,16 @@ namespace game
 
     static bool readraw(sbr2::bytesreader &r, inputattempt &a, int lo, int hi, const vector<const char *> &binds)
     {
-        long long us = (long long)r.var();
-        uint ms = uint(r.var());
+        long long base = (long long)r.var(), t = base;
+        uint basems = uint(r.var());
         int n = int(r.var()), tick = lo, first = a.raw.length();
         if(!r.ok || n < 0 || n > r.left()) return false;
-        loopi(n) { rawevent &e = a.raw.add(); us += r.svar(); e.us = us; }
-        loopi(n) { ms += uint(int(r.svar())); a.raw[first + i].sdlms = ms; }
+        loopi(n) { rawevent &e = a.raw.add(); t += r.svar(); e.us = t * RAWTIMEUNIT; }
+        loopi(n)
+        {
+            rawevent &e = a.raw[first + i];
+            e.sdlms = basems + uint(int(r.svar() + floordiv(e.us / RAWTIMEUNIT - base, 1000 / RAWTIMEUNIT)));
+        }
         loopi(n)
         {
             tick += int(r.svar());

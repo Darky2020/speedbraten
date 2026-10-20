@@ -381,6 +381,7 @@ def check_history(export, replays):
 
 
 KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND", "rSTA"}
+RAW_TIME_UNIT = 100  # raw event times are stored in units of 100 us
 RAW_KINDS = ["keydown", "keyup", "buttondown", "buttonup", "motion", "wheel", "focus"]
 SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder", "map"]
 
@@ -396,14 +397,15 @@ def decode_binds(raw):
 
 
 def decode_raw(raw, lo):
-    """rAWI payload (columns) -> list of dicts (tick, us, ms, kind, ...)."""
+    """rAWI payload (columns) -> list of dicts (tick, us, ms, kind, ...); us has 100 us resolution."""
     r = Reader(raw)
-    us, ms, n = r.var(), r.var(), r.var()
+    base, basems, n = r.var(), r.var(), r.var()
     evs = [{} for _ in range(n)]
+    t = base
     for e in evs:
-        us += svar_of(r); e["us"] = us
+        t += svar_of(r); e["us"] = t * RAW_TIME_UNIT
     for e in evs:
-        ms += svar_of(r); e["ms"] = ms
+        e["ms"] = basems + svar_of(r) + (e["us"] // RAW_TIME_UNIT - base) // (1000 // RAW_TIME_UNIT)
     tick = lo
     for e in evs:
         tick += svar_of(r); e["tick"] = tick
