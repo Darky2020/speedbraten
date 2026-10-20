@@ -565,7 +565,7 @@ fpsgame/inputs.o: fpsgame/inputs.h
 fpsgame/replayfile.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/replayfile.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/replayfile.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
-fpsgame/replayfile.o: fpsgame/inputs.h
+fpsgame/replayfile.o: fpsgame/inputs.h fpsgame/replayio.h
 fpsgame/runtimer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/runtimer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/runtimer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

@@ -66,6 +66,7 @@ namespace game
         int starttick;                   // tick of the snapshot, 0 without one
         vector<inputsplice> splices;
         vector<ghostsample> trace; // v9+, finished or saved runs only
+        vector<mapdatafile> files; // what the map load read; empty in SBRP files
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false before v8
@@ -86,6 +87,7 @@ namespace game
             starttick = 0;
             splices.setsize(0);
             trace.setsize(0);
+            files.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -104,6 +106,7 @@ namespace game
             dst.starttick = starttick;
             dst.splices = splices;
             dst.trace = trace;
+            dst.files = files;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             dst.cfgcrc = cfgcrc;
@@ -146,13 +149,15 @@ namespace game
     // Metadata stored at the start of a replay file.
     struct replayinfo
     {
-        int version;
+        int format;     // 1 SBRP, 2 SBR2
+        int version;    // of the format
+        int simversion; // compared with REPLAYSIMVERSION: older replays will likely desync
         uint date;
         string client, player, map;
         int mode, flagrun, race, splices, finished, runtime, ticks, maps;
         int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (before v10)
 
-        replayinfo() : version(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1)
+        replayinfo() : format(1), version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1)
         {
             client[0] = player[0] = map[0] = '\0';
         }

@@ -520,6 +520,26 @@ namespace game
         }
     }
 
+    static const mapdatafile *finddatafile(const vector<mapdatafile> &files, const char *path)
+    {
+        loopv(files) if(!strcmp(files[i].path, path)) return &files[i];
+        return NULL;
+    }
+
+    static void checkdatafiles(const vector<mapdatafile> &recorded)
+    {
+        const vector<mapdatafile> &loaded = getmapdatafiles();
+        loopv(recorded)
+        {
+            const mapdatafile *f = finddatafile(loaded, recorded[i].path);
+            if(!f) conoutf(CON_ERROR, "replay was recorded with %s, which this game did not load", recorded[i].path);
+            else if(f->size != recorded[i].size || memcmp(f->hash, recorded[i].hash, sizeof(f->hash)))
+                conoutf(CON_ERROR, "replay was recorded with a different %s: it will likely not play back correctly", recorded[i].path);
+        }
+        loopv(loaded) if(!finddatafile(recorded, loaded[i].path))
+            conoutf(CON_ERROR, "replay was recorded without %s: it will likely not play back correctly", loaded[i].path);
+    }
+
     static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng", "server", "actors", "world" };
 
     static int replaydesyncgroups = 0, replayhashpos = 0;
@@ -669,6 +689,7 @@ namespace game
                 conoutf(CON_ERROR, "replay was recorded on a different version of %s (map crc %08x, loaded %08x): it will not play back correctly", a.map, a.mapcrc, getmapcrc());
             if(curtick == 1 && a.hascfgcrc && getmapcfgcrc() != a.cfgcrc)
                 conoutf(CON_ERROR, "replay was recorded with a different %s.cfg (crc %08x, loaded %08x): it will likely not play back correctly", a.map, a.cfgcrc, getmapcfgcrc());
+            if(curtick == 1 && a.files.length()) checkdatafiles(a.files);
             // mirrors the recording: setting changes come first in a tick, and changes made
             // by the tick's own input are not events
             while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick && a.events[replaypos].type == INPUT_SETTING)
@@ -704,6 +725,7 @@ namespace game
             rec.mapcrc = getmapcrc();
             rec.cfgcrc = getmapcfgcrc();
             rec.hascfgcrc = true;
+            rec.files = getmapdatafiles();
         }
         recordsettingchanges(rec);
         while(pending.length())

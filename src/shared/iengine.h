@@ -389,6 +389,15 @@ extern void getmapfilenames(const char *fname, const char *cname, char *pakname,
 extern uint getmapcrc();
 extern uint getmapcfgcrc();
 extern void clearmapcrc();
+// a file load_world read: role 0 the map, 1 a map cfg; path as the game names it
+struct mapdatafile
+{
+    int role;
+    uint size;
+    string path;
+    uchar hash[32]; // BLAKE3
+};
+extern const vector<mapdatafile> &getmapdatafiles();
 extern bool loadents(const char *fname, vector<entity> &ents, uint *crc = NULL);
 
 // physics

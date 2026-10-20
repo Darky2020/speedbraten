@@ -1,6 +1,9 @@
 // worldio.cpp: loading & saving of maps and savegames
 
 #include "engine.h"
+#ifndef STANDALONE
+#include "blake3.h"
+#endif
 
 void validmapname(char *dst, const char *src, const char *prefix = NULL, const char *alt = "untitled", size_t maxlen = 100)
 {
@@ -995,11 +998,29 @@ bool save_world(const char *mname, bool nolms)
 }
 
 static uint mapcrc = 0, mapcfgcrc = 0;
+static vector<mapdatafile> mapdatafiles;
 
 uint getmapcrc() { return mapcrc; }
 // 0 when the map has no cfg
 uint getmapcfgcrc() { return mapcfgcrc; }
-void clearmapcrc() { mapcrc = mapcfgcrc = 0; }
+void clearmapcrc() { mapcrc = mapcfgcrc = 0; mapdatafiles.setsize(0); }
+const vector<mapdatafile> &getmapdatafiles() { return mapdatafiles; }
+
+static void addmapdatafile(int role, const char *name)
+{
+    size_t len = 0;
+    char *buf = loadfile(path(name, true), &len, false);
+    if(!buf) return;
+    mapdatafile &f = mapdatafiles.add();
+    f.role = role;
+    f.size = uint(len);
+    copystring(f.path, name);
+    blake3_hasher h;
+    blake3_hasher_init(&h);
+    blake3_hasher_update(&h, buf, len);
+    blake3_hasher_finalize(&h, f.hash, sizeof(f.hash));
+    delete[] buf;
+}
 
 static uint filecrc(const char *name)
 {
@@ -1251,6 +1272,8 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     }
 
     mapcrc = f->getcrc();
+    mapdatafiles.setsize(0);
+    addmapdatafile(0, ogzname);
     delete f;
 
     conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);
@@ -1261,6 +1284,8 @@ bool load_world(const char *mname, const char *cname)        // still supports a
     execfile("data/default_map_settings.cfg", false);
     execfile(cfgname, false);
     mapcfgcrc = filecrc(cfgname);
+    addmapdatafile(1, "data/default_map_settings.cfg");
+    addmapdatafile(1, cfgname);
     identflags &= ~IDF_OVERRIDDEN;
    
     extern void fixlightmapnormals();
