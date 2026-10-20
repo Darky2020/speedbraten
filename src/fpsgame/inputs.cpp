@@ -586,7 +586,15 @@ namespace game
         while(replayhashpos < a.hashes.length() && a.hashes[replayhashpos].tick < curtick) replayhashpos++;
         if(replayhashpos >= a.hashes.length() || a.hashes[replayhashpos].tick != curtick) return;
         const tickhash &want = a.hashes[replayhashpos];
+        if(want.combined)
+        {
+            if(replaydesync || combinedhash(h.groups, a.hashgroups) == want.groups[0]) return;
+            replaydesync = curtick;
+            conoutf(CON_ERROR, "replay desync at tick %d (%.3f s)", curtick, (curtick-1)*SIMTICK/1000.0f);
+            return;
+        }
         vector<char> diff;
+        bool named = replaydesyncgroups != 0;
         loopi(a.hashgroups) if(h.groups[i] != want.groups[i] && !(replaydesyncgroups & (1<<i)))
         {
             replaydesyncgroups |= 1<<i;
@@ -600,6 +608,7 @@ namespace game
             replaydesync = curtick;
             conoutf(CON_ERROR, "replay desync at tick %d (%.3f s): %s", curtick, (curtick-1)*SIMTICK/1000.0f, diff.getbuf());
         }
+        else if(!named) conoutf(CON_ERROR, "replay desync, by tick %d (%.3f s): %s", curtick, (curtick-1)*SIMTICK/1000.0f, diff.getbuf());
         else logoutf("replay desync spreads at tick %d (%.3f s): %s", curtick, (curtick-1)*SIMTICK/1000.0f, diff.getbuf());
     }
 

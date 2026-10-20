@@ -34,7 +34,18 @@ namespace game
     {
         int tick;
         uint groups[DETHASH_GROUPS];
+        bool combined; // groups[0] holds combinedhash() of the groups, the rest is unknown
+
+        tickhash() : tick(0), combined(false) {}
     };
+
+    // one value standing for all groups of a state hash
+    static inline uint combinedhash(const uint *groups, int n)
+    {
+        uchar b[4*DETHASH_GROUPS];
+        loopi(n) loopj(4) b[4*i + j] = uchar(groups[i] >> (8*j));
+        return uint(crc32(crc32(0, Z_NULL, 0), b, 4*n));
+    }
 
     // a saved state was loaded at this tick of the attempt, throwing away the ticks played after it
     struct inputsplice

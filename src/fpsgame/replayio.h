@@ -18,7 +18,7 @@
 
 namespace sbr2
 {
-    enum { VERSION = 2, HASHSIZE = 32, FLAG_ZSTD = 1 };
+    enum { VERSION = 1, HASHSIZE = 32, FLAG_ZSTD = 1 };
 
     struct byteswriter
     {

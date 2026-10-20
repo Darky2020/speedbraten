@@ -115,7 +115,7 @@ class _PyBlake3:
 if blake3 is None:
     blake3 = _PyBlake3
 
-VERSION = 2
+VERSION = 1
 KNOWN_REQUIRED = {b"META", b"SETS", b"DATA", b"ATTM", b"INPS", b"HASH", b"SPLC", b"RSLT", b"SEGE", b"END "}
 
 
@@ -396,44 +396,58 @@ def decode_binds(raw):
 
 
 def decode_raw(raw, lo):
-    """rAWI payload -> list of dicts (tick, us, ms, kind, ...)."""
+    """rAWI payload (columns) -> list of dicts (tick, us, ms, kind, ...)."""
     r = Reader(raw)
-    us, ms, out, tick = r.var(), r.var(), [], lo
-    for _ in range(r.var()):
-        us += svar_of(r)
-        ms += svar_of(r)
-        tick += svar_of(r)
-        kind = r.take(1)[0]
-        e = {"tick": tick, "us": us, "ms": ms, "kind": RAW_KINDS[kind] if kind < len(RAW_KINDS) else kind}
-        if kind in (0, 1):
+    us, ms, n = r.var(), r.var(), r.var()
+    evs = [{} for _ in range(n)]
+    for e in evs:
+        us += svar_of(r); e["us"] = us
+    for e in evs:
+        ms += svar_of(r); e["ms"] = ms
+    tick = lo
+    for e in evs:
+        tick += svar_of(r); e["tick"] = tick
+    for e in evs:
+        k = r.take(1)[0]
+        e["kind"] = RAW_KINDS[k] if k < len(RAW_KINDS) else k
+    motion = [e for e in evs if e["kind"] == "motion"]
+    for e in motion: e["dx"] = svar_of(r)
+    for e in motion: e["dy"] = svar_of(r)
+    for e in motion: e["flags"] = r.take(1)[0]
+    for e in evs:
+        k = e["kind"]
+        if k in ("keydown", "keyup"):
             e.update(scancode=r.var(), keycode=r.var(), flags=r.take(1)[0], bind=r.var())
-        elif kind in (2, 3):
+        elif k in ("buttondown", "buttonup"):
             e.update(button=r.take(1)[0], bind=r.var())
-        elif kind == 4:
-            e.update(dx=svar_of(r), dy=svar_of(r), flags=r.take(1)[0])
-        elif kind == 5:
+        elif k == "wheel":
             e.update(dx=svar_of(r), dy=svar_of(r), bind=r.var())
-        elif kind == 6:
+        elif k == "focus":
             e.update(flags=r.take(1)[0])
-        else:
-            raise FormatError("rAWI: unknown kind %d" % kind)
-        out.append(e)
-    return out
+        elif k != "motion":
+            raise FormatError("rAWI: unknown kind %s" % k)
+    return evs
 
 
 def decode_events(raw):
-    """INPS payload -> (lo, list of (tick, type, source))."""
+    """INPS payload (columns) -> (lo, list of (tick, type, source))."""
     r = Reader(raw)
     lo = r.var()
     r.var()
-    tick, out = lo, []
-    for _ in range(r.var()):
+    n = r.var()
+    ticks, tick = [], lo
+    for _ in range(n):
         tick += r.var()
-        etype, source = r.take(1)[0], r.take(1)[0]
+        ticks.append(tick)
+    types = list(r.take(n))
+    sources = list(r.take(n))
+    controls = types.count(0)
+    for _ in range(2 * controls):
+        r.var()
+    r.take(controls)
+    for etype in types:
         if etype == 0:
-            r.var()
-            r.var()
-            r.take(1)
+            continue
         elif etype in (1, 2, 5):
             r.var()
         elif etype == 3:
@@ -449,9 +463,9 @@ def decode_events(raw):
             r.take(r.var())
         else:
             raise FormatError("INPS: unknown event type %d" % etype)
-        out.append((tick, etype, source))
-    return lo, out
-
+    if r.left():
+        raise FormatError("INPS: trailing bytes")
+    return lo, list(zip(ticks, types, sources))
 
 def rawcheck(chunks):
     """Sim events from a key or mouse need a raw key/button/wheel event in the same tick."""

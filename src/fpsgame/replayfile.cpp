@@ -12,6 +12,8 @@ namespace game
     // SIMVERSION: the simulation's version, stored in every replay. REPLAYSIMVERSION: oldest
     // version the current simulation still plays back; bump both when the simulation changes.
     enum { SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 50 };
+    // ghost path precision: positions in 1/GHOSTPOSSCALE units, angles in 1/GHOSTANGLESCALE degrees
+    enum { GHOSTPOSSCALE = 4, GHOSTANGLESCALE = 2 };
 
     static int packcontrols(const inputcontrols &c)
     {
@@ -38,28 +40,31 @@ namespace game
     //          var files, var DATA index per file, var settings, (str name, svar value) per
     //          setting, var saved state length, saved state
     //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
-    //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
-    //            u8 type, u8 source (INPUTSRC_*), then by type: controls = svar yaw, svar pitch
-    //            (float bits minus those of the chunk's previous controls event, or of 0),
-    //            u8 packed move/strafe/vertical/jumping/attacking; jump, attack, zoom = svar;
-    //            command = var id in replaycommands, str arguments; GUI = u32 cursor x,
-    //            u32 cursor y, str GUI names; setting = svar value, str name; map GUI action =
-    //            str script)
-    //       rAWI (optional) var base us, var base SDL ms, var events, per event: svar us delta,
-    //            svar ms delta (from the previous event or the bases), svar tick delta (from
-    //            the previous event or lo), u8 kind, then key: var scancode, var keycode,
-    //            u8 flags, var bind+1; button: u8 button, var bind+1; motion: svar dx, svar dy,
-    //            u8 flags; wheel: svar x, svar y, var bind+1; focus: u8 flags
-    //       HASH var hashes, (var tick delta from the previous hash or lo, groups x u32) per hash
+    //     Lists are stored as columns: each field of every entry, then the next field.
+    //       INPS var lo, var hi-lo, var events; columns: var tick delta (from the previous event
+    //            or lo), u8 type, u8 source (INPUTSRC_*); for the controls events: svar yaw,
+    //            svar pitch (float bits minus those of the chunk's previous controls event, or
+    //            of 0), u8 packed move/strafe/vertical/jumping/attacking; then the other events'
+    //            bodies in order: jump, attack, zoom = svar; command = var id in replaycommands,
+    //            str arguments; GUI = u32 cursor x, u32 cursor y, str GUI names; setting = svar
+    //            value, str name; map GUI action = str script
+    //       rAWI (optional) var base us, var base SDL ms, var events; columns: svar us delta,
+    //            svar ms delta (from the previous event or the bases), svar tick delta (from the
+    //            previous event or lo), u8 kind; for the motion events: svar dx, svar dy,
+    //            u8 flags; then the other events' bodies in order: key = var scancode,
+    //            var keycode, u8 flags, var bind+1; button = u8 button, var bind+1; wheel =
+    //            svar x, svar y, var bind+1; focus = u8 flags
+    //       HASH var hashes; columns: var tick delta (from the previous hash or lo), u32
+    //            combinedhash(); then the groups of the last hash, u32 each
     //       SPLC (only with state loads) var loads, (var tick, var discarded ticks, u8 kind,
     //            svar wall ms since the run began) per load
     //       tIME (optional) var wall us, var paused us, var frames, var frames without a tick,
     //            var frames with 2+ ticks, 8 x var frame-time histogram, var min gamespeed,
     //            var max gamespeed, var max fixedframe
     //       SEGE
-    //     gHST (optional) var samples, per sample: var run tick delta, svar x, y, z in 1/16
-    //          units and svar yaw, pitch in 1/100 degrees (each minus the previous sample's),
-    //          var flags
+    //     gHST (optional) var samples; columns: var run tick delta; svar x, y, z in
+    //          1/GHOSTPOSSCALE units and svar yaw, pitch in 1/GHOSTANGLESCALE degrees (each minus
+    //          the previous sample's); var flags
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
     //   wIND, rSTA  key-value window metadata, raw input statistics
     //   END
@@ -125,61 +130,91 @@ namespace game
         w.str(cmd);
     }
 
-    // yaw, pitch: the float bits of the previous controls event in the chunk
-    static void writeevent(sbr2::byteswriter &w, const inputevent &e, uint &yaw, uint &pitch)
-    {
-        w.u8(e.type);
-        w.u8(e.source);
-        switch(e.type)
-        {
-            case INPUT_CONTROLS:
-                w.svar(int(e.controls.yaw - yaw));
-                w.svar(int(e.controls.pitch - pitch));
-                w.u8(packcontrols(e.controls));
-                yaw = e.controls.yaw;
-                pitch = e.controls.pitch;
-                break;
-            case INPUT_COMMAND: writecommand(w, e.cmd ? e.cmd : ""); break;
-            case INPUT_MAPGUI: w.str(e.cmd ? e.cmd : ""); break;
-            case INPUT_GUI: w.u32(e.cursorx); w.u32(e.cursory); w.str(e.cmd ? e.cmd : ""); break;
-            case INPUT_SETTING: w.svar(e.arg); w.str(e.cmd ? e.cmd : ""); break;
-            default: w.svar(e.arg); break;
-        }
-    }
-
     static int bindindex(const vector<const char *> &binds, const char *bind)
     {
         if(bind) loopv(binds) if(binds[i] == bind) return i + 1;
         return 0;
     }
 
+    // Events in columns: tick deltas, types, sources, then yaw, pitch and packed keys of the
+    // controls events, then the other events' bodies in order.
+    static void writeevents(sbr2::byteswriter &w, const inputevent *evs, int n, int lo)
+    {
+        vector<uchar> ticks, types, sources, yaws, pitches, keys, bodies;
+        sbr2::byteswriter wt(ticks), wy(yaws), wp(pitches), wb(bodies);
+        int prev = lo;
+        uint yaw = 0, pitch = 0;
+        loopi(n)
+        {
+            const inputevent &e = evs[i];
+            wt.var(e.tick - prev);
+            prev = e.tick;
+            types.add(uchar(e.type));
+            sources.add(uchar(e.source));
+            switch(e.type)
+            {
+                case INPUT_CONTROLS:
+                    wy.svar(int(e.controls.yaw - yaw));
+                    wp.svar(int(e.controls.pitch - pitch));
+                    keys.add(uchar(packcontrols(e.controls)));
+                    yaw = e.controls.yaw;
+                    pitch = e.controls.pitch;
+                    break;
+                case INPUT_COMMAND: writecommand(wb, e.cmd ? e.cmd : ""); break;
+                case INPUT_MAPGUI: wb.str(e.cmd ? e.cmd : ""); break;
+                case INPUT_GUI: wb.u32(e.cursorx); wb.u32(e.cursory); wb.str(e.cmd ? e.cmd : ""); break;
+                case INPUT_SETTING: wb.svar(e.arg); wb.str(e.cmd ? e.cmd : ""); break;
+                default: wb.svar(e.arg); break;
+            }
+        }
+        w.var(n);
+        const vector<uchar> *cols[] = { &ticks, &types, &sources, &yaws, &pitches, &keys, &bodies };
+        loopi(sizeof(cols)/sizeof(cols[0])) w.bytes(cols[i]->getbuf(), cols[i]->length());
+    }
+
+    // Raw events in columns: us, SDL ms and tick deltas, kinds, then dx, dy and flags of the
+    // motion events, then the other events' bodies in order.
     static void writeraw(sbr2::byteswriter &w, const rawevent *evs, int n, int lo, const vector<const char *> &binds)
     {
-        w.var(evs[0].us);
-        w.var(evs[0].sdlms);
-        w.var(n);
-        long long us = evs[0].us;
-        uint ms = evs[0].sdlms;
-        int tick = lo;
+        vector<uchar> us, ms, ticks, kinds, dxs, dys, flags, bodies;
+        sbr2::byteswriter wus(us), wms(ms), wt(ticks), wx(dxs), wy(dys), wb(bodies);
+        long long lastus = evs[0].us;
+        uint lastms = evs[0].sdlms;
+        int lasttick = lo;
         loopi(n)
         {
             const rawevent &e = evs[i];
-            w.svar(e.us - us);
-            w.svar(int(e.sdlms - ms));
-            w.svar(e.tick - tick);
-            us = e.us;
-            ms = e.sdlms;
-            tick = e.tick;
-            w.u8(e.kind);
+            wus.svar(e.us - lastus);
+            wms.svar(int(e.sdlms - lastms));
+            wt.svar(e.tick - lasttick);
+            lastus = e.us;
+            lastms = e.sdlms;
+            lasttick = e.tick;
+            kinds.add(uchar(e.kind));
             switch(e.kind)
             {
-                case rawevent::KEYDOWN: case rawevent::KEYUP: w.var(e.code); w.var(uint(e.keycode)); w.u8(e.flags); w.var(bindindex(binds, e.bind)); break;
-                case rawevent::BUTTONDOWN: case rawevent::BUTTONUP: w.u8(e.code); w.var(bindindex(binds, e.bind)); break;
-                case rawevent::MOTION: w.svar(e.dx); w.svar(e.dy); w.u8(e.flags); break;
-                case rawevent::WHEEL: w.svar(e.dx); w.svar(e.dy); w.var(bindindex(binds, e.bind)); break;
-                case rawevent::FOCUS: w.u8(e.flags); break;
+                case rawevent::KEYDOWN: case rawevent::KEYUP: wb.var(e.code); wb.var(uint(e.keycode)); wb.u8(e.flags); wb.var(bindindex(binds, e.bind)); break;
+                case rawevent::BUTTONDOWN: case rawevent::BUTTONUP: wb.u8(e.code); wb.var(bindindex(binds, e.bind)); break;
+                case rawevent::MOTION: wx.svar(e.dx); wy.svar(e.dy); flags.add(uchar(e.flags)); break;
+                case rawevent::WHEEL: wb.svar(e.dx); wb.svar(e.dy); wb.var(bindindex(binds, e.bind)); break;
+                case rawevent::FOCUS: wb.u8(e.flags); break;
             }
         }
+        w.var(max(evs[0].us, 0LL));
+        w.var(evs[0].sdlms);
+        w.var(n);
+        const vector<uchar> *cols[] = { &us, &ms, &ticks, &kinds, &dxs, &dys, &flags, &bodies };
+        loopi(sizeof(cols)/sizeof(cols[0])) w.bytes(cols[i]->getbuf(), cols[i]->length());
+    }
+
+    // State hashes: tick deltas, the combined hash of each, then every group of the last one.
+    static void writehashes(sbr2::byteswriter &w, const tickhash * const *hashes, int n, int lo, int groups)
+    {
+        w.var(n);
+        int prev = lo;
+        loopi(n) { w.var(hashes[i]->tick - prev); prev = hashes[i]->tick; }
+        loopi(n) w.u32(combinedhash(hashes[i]->groups, groups));
+        if(n) loopi(groups) w.u32(hashes[n-1]->groups[i]);
     }
 
     static void writeattempt(sbr2::writer &out, int index, const inputattempt &a, const vector<const mapdatafile *> &files, const vector<const char *> &binds)
@@ -218,20 +253,13 @@ namespace game
         for(int seg = max(first, 0)/SEGMENTTICKS; seg <= last/SEGMENTTICKS; seg++)
         {
             int lo = seg*SEGMENTTICKS, hi = lo + SEGMENTTICKS;
-            int n = 0, prev = lo;
+            int n = 0;
             while(ev + n < a.events.length() && a.events[ev + n].tick < hi) n++;
             p.setsize(0);
             w.var(lo);
             w.var(hi - lo);
-            w.var(n);
-            uint yaw = 0, pitch = 0;
-            loopi(n)
-            {
-                const inputevent &e = a.events[ev++];
-                w.var(e.tick - prev);
-                prev = e.tick;
-                writeevent(w, e, yaw, pitch);
-            }
+            writeevents(w, a.events.getbuf() + ev, n, lo);
+            ev += n;
             out.add("INPS", p, true);
 
             n = 0;
@@ -245,17 +273,10 @@ namespace game
             }
 
             n = 0;
-            prev = lo;
             while(hs + n < hashes.length() && hashes[hs + n]->tick < hi) n++;
             p.setsize(0);
-            w.var(n);
-            loopi(n)
-            {
-                const tickhash &h = *hashes[hs++];
-                w.var(h.tick - prev);
-                prev = h.tick;
-                loopj(a.hashgroups) w.u32(h.groups[j]);
-            }
+            writehashes(w, hashes.getbuf() + hs, n, lo, a.hashgroups);
+            hs += n;
             out.add("HASH", p);
 
             n = 0;
@@ -298,16 +319,21 @@ namespace game
         {
             p.setsize(0);
             w.var(a.trace.length());
-            int lasttick = 0, last[5] = { 0, 0, 0, 0, 0 };
-            loopv(a.trace)
+            int lasttick = 0;
+            loopv(a.trace) { w.var(a.trace[i].tick - lasttick); lasttick = a.trace[i].tick; }
+            loopj(5)
             {
-                const ghostsample &g = a.trace[i];
-                w.var(g.tick - lasttick);
-                lasttick = g.tick;
-                int q[5] = { quantize(g.o.x, 16), quantize(g.o.y, 16), quantize(g.o.z, 16), quantize(g.yaw, 100), quantize(g.pitch, 100) };
-                loopj(5) { w.svar(q[j] - last[j]); last[j] = q[j]; }
-                w.var(g.flags);
+                int last = 0;
+                loopv(a.trace)
+                {
+                    const ghostsample &g = a.trace[i];
+                    float v = j < 3 ? g.o[j] : j == 3 ? g.yaw : g.pitch;
+                    int q = quantize(v, j < 3 ? GHOSTPOSSCALE : GHOSTANGLESCALE);
+                    w.svar(q - last);
+                    last = q;
+                }
             }
+            loopv(a.trace) w.var(a.trace[i].flags);
             out.add("gHST", p, true);
         }
     }
@@ -469,27 +495,31 @@ namespace game
     {
         lo = int(r.var());
         hi = lo + int(r.var());
-        int n = int(r.var()), tick = lo;
-        uint yaw = 0, pitch = 0;
+        int n = int(r.var());
+        if(!r.ok || n < 0 || n > r.left()) return false;
+        int first = a.events.length(), tick = lo;
         loopi(n)
         {
-            if(!r.ok) return false;
             inputevent &e = a.events.add();
             memset(&e, 0, sizeof(e));
             tick += int(r.var());
             e.tick = tick;
-            e.type = r.u8();
-            e.source = r.u8();
-            if(e.source > INPUTSRC_MAP) return false;
+            if(tick < lo || tick >= hi) return false;
+        }
+        loopi(n) a.events[first + i].type = r.u8();
+        loopi(n) { inputevent &e = a.events[first + i]; e.source = r.u8(); if(e.source > INPUTSRC_MAP) return false; }
+        if(!r.ok) return false;
+        uint yaw = 0, pitch = 0;
+        loopi(n) if(a.events[first + i].type == INPUT_CONTROLS) { yaw += uint(int(r.svar())); a.events[first + i].controls.yaw = yaw; }
+        loopi(n) if(a.events[first + i].type == INPUT_CONTROLS) { pitch += uint(int(r.svar())); a.events[first + i].controls.pitch = pitch; }
+        loopi(n) if(a.events[first + i].type == INPUT_CONTROLS) unpackcontrols(r.u8(), a.events[first + i].controls);
+        loopi(n)
+        {
+            inputevent &e = a.events[first + i];
+            if(!r.ok) return false;
             switch(e.type)
             {
-                case INPUT_CONTROLS:
-                    yaw += uint(int(r.svar()));
-                    pitch += uint(int(r.svar()));
-                    e.controls.yaw = yaw;
-                    e.controls.pitch = pitch;
-                    unpackcontrols(r.u8(), e.controls);
-                    break;
+                case INPUT_CONTROLS: break;
                 case INPUT_COMMAND:
                 {
                     unsigned long long id = r.var(), len = r.var();
@@ -518,23 +548,31 @@ namespace game
                 case INPUT_JUMP: case INPUT_ATTACK: case INPUT_ZOOM: e.arg = int(r.svar()); break;
                 default: return false;
             }
-            if(tick >= hi) return false;
         }
         return r.ok;
     }
 
     static bool readhashes(sbr2::bytesreader &r, inputattempt &a, int lo, int hi)
     {
-        int n = int(r.var()), tick = lo;
+        int n = int(r.var()), tick = lo, first = a.hashes.length();
+        if(!r.ok || n < 0 || n > r.left()) return false;
         loopi(n)
         {
-            if(!r.ok) return false;
             tickhash &h = a.hashes.add();
             tick += int(r.var());
             h.tick = tick;
+            h.combined = true;
             memset(h.groups, 0, sizeof(h.groups));
-            loopj(a.hashgroups) h.groups[j] = r.u32();
-            if(tick >= hi) return false;
+            if(tick < lo || tick >= hi) return false;
+        }
+        loopi(n) a.hashes[first + i].groups[0] = r.u32();
+        if(n)
+        {
+            tickhash &last = a.hashes.last();
+            uint combined = last.groups[0];
+            loopj(a.hashgroups) last.groups[j] = r.u32();
+            last.combined = false;
+            if(combinedhash(last.groups, a.hashgroups) != combined) return false;
         }
         return r.ok;
     }
@@ -559,29 +597,34 @@ namespace game
     {
         long long us = (long long)r.var();
         uint ms = uint(r.var());
-        int n = int(r.var()), tick = lo;
+        int n = int(r.var()), tick = lo, first = a.raw.length();
+        if(!r.ok || n < 0 || n > r.left()) return false;
+        loopi(n) { rawevent &e = a.raw.add(); us += r.svar(); e.us = us; }
+        loopi(n) { ms += uint(int(r.svar())); a.raw[first + i].sdlms = ms; }
         loopi(n)
         {
-            if(!r.ok) return false;
-            rawevent &e = a.raw.add();
-            us += r.svar();
-            ms += uint(int(r.svar()));
             tick += int(r.svar());
-            e.us = us;
-            e.sdlms = ms;
-            e.tick = tick;
-            e.kind = r.u8();
+            if(tick < lo || tick >= hi) return false;
+            a.raw[first + i].tick = tick;
+        }
+        loopi(n) a.raw[first + i].kind = r.u8();
+        loopi(n) if(a.raw[first + i].kind == rawevent::MOTION) a.raw[first + i].dx = int(r.svar());
+        loopi(n) if(a.raw[first + i].kind == rawevent::MOTION) a.raw[first + i].dy = int(r.svar());
+        loopi(n) if(a.raw[first + i].kind == rawevent::MOTION) a.raw[first + i].flags = r.u8();
+        loopi(n)
+        {
+            rawevent &e = a.raw[first + i];
             int bind = 0;
             switch(e.kind)
             {
                 case rawevent::KEYDOWN: case rawevent::KEYUP: e.code = int(r.var()); e.keycode = int(uint(r.var())); e.flags = r.u8(); bind = int(r.var()); break;
                 case rawevent::BUTTONDOWN: case rawevent::BUTTONUP: e.code = r.u8(); bind = int(r.var()); break;
-                case rawevent::MOTION: e.dx = int(r.svar()); e.dy = int(r.svar()); e.flags = r.u8(); break;
+                case rawevent::MOTION: break;
                 case rawevent::WHEEL: e.dx = int(r.svar()); e.dy = int(r.svar()); bind = int(r.var()); break;
                 case rawevent::FOCUS: e.flags = r.u8(); break;
                 default: return false;
             }
-            if(bind < 0 || bind > binds.length() || tick < lo || tick >= hi) return false;
+            if(!r.ok || bind < 0 || bind > binds.length()) return false;
             e.bind = bind ? binds[bind-1] : NULL;
         }
         return r.ok;
@@ -604,19 +647,22 @@ namespace game
 
     static bool readtrace(sbr2::bytesreader &r, inputattempt &a)
     {
-        int n = int(r.var()), tick = 0, q[5] = { 0, 0, 0, 0, 0 };
-        loopi(n)
+        int n = int(r.var()), tick = 0, first = a.trace.length();
+        if(!r.ok || n < 0 || n > r.left()) return false;
+        loopi(n) { ghostsample &g = a.trace.add(); tick += int(r.var()); g.tick = tick; }
+        loopj(5)
         {
-            if(!r.ok) return false;
-            ghostsample &g = a.trace.add();
-            tick += int(r.var());
-            g.tick = tick;
-            loopj(5) q[j] += int(r.svar());
-            g.o = vec(q[0]/16.0f, q[1]/16.0f, q[2]/16.0f);
-            g.yaw = q[3]/100.0f;
-            g.pitch = q[4]/100.0f;
-            g.flags = int(r.var());
+            int q = 0;
+            loopi(n)
+            {
+                ghostsample &g = a.trace[first + i];
+                q += int(r.svar());
+                if(j < 3) g.o[j] = q / float(GHOSTPOSSCALE);
+                else if(j == 3) g.yaw = q / float(GHOSTANGLESCALE);
+                else g.pitch = q / float(GHOSTANGLESCALE);
+            }
         }
+        loopi(n) a.trace[first + i].flags = int(r.var());
         return r.ok;
     }
 
