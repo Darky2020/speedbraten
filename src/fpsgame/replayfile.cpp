@@ -65,6 +65,21 @@ namespace game
 
     static void kvkey(sbr2::byteswriter &w, const char *key, int type) { w.str(key); w.u8(type); }
 
+    // game text (the game's own 8-bit encoding) as a UTF-8 str
+    static void utf8str(sbr2::byteswriter &w, const char *s)
+    {
+        uchar buf[4*MAXSTRLEN];
+        size_t n = encodeutf8(buf, sizeof(buf), (const uchar *)s, strlen(s));
+        w.var(n);
+        w.bytes(buf, int(n));
+    }
+
+    static void fromutf8(char *dst, const char *src)
+    {
+        size_t n = decodeutf8((uchar *)dst, MAXSTRLEN-1, (const uchar *)src, strlen(src));
+        dst[n] = '\0';
+    }
+
     static void writefloat(sbr2::byteswriter &w, float f) { uint v; memcpy(&v, &f, 4); w.u32(v); }
     static float readfloat(sbr2::bytesreader &r) { uint v = r.u32(); float f; memcpy(&f, &v, 4); return f; }
 
@@ -295,10 +310,10 @@ namespace game
         kvkey(w, "client", sbr2::VALUE_STR); w.str(info.client);
         kvkey(w, "date", sbr2::VALUE_VAR); w.var(info.date);
         kvkey(w, "flagrun", sbr2::VALUE_VAR); w.var(info.flagrun);
-        kvkey(w, "map", sbr2::VALUE_STR); w.str(run.attempts.length() ? run.attempts[0]->map : "");
+        kvkey(w, "map", sbr2::VALUE_STR); utf8str(w, run.attempts.length() ? run.attempts[0]->map : "");
         kvkey(w, "maps", sbr2::VALUE_VAR); w.var(run.attempts.length());
         kvkey(w, "mode", sbr2::VALUE_SVAR); w.svar(info.mode);
-        kvkey(w, "player", sbr2::VALUE_STR); w.str(info.player);
+        kvkey(w, "player", sbr2::VALUE_STR); utf8str(w, info.player);
         kvkey(w, "race", sbr2::VALUE_VAR); w.var(info.race);
         out.add("META", p);
 
@@ -392,10 +407,10 @@ namespace game
             if(type == sbr2::VALUE_STR && !strcmp(key, "client")) copystring(info.client, s);
             else if(type == sbr2::VALUE_VAR && !strcmp(key, "date")) info.date = uint(uv);
             else if(type == sbr2::VALUE_VAR && !strcmp(key, "flagrun")) info.flagrun = int(uv);
-            else if(type == sbr2::VALUE_STR && !strcmp(key, "map")) copystring(info.map, s);
+            else if(type == sbr2::VALUE_STR && !strcmp(key, "map")) fromutf8(info.map, s);
             else if(type == sbr2::VALUE_VAR && !strcmp(key, "maps")) info.maps = int(uv);
             else if(type == sbr2::VALUE_SVAR && !strcmp(key, "mode")) info.mode = int(sv);
-            else if(type == sbr2::VALUE_STR && !strcmp(key, "player")) copystring(info.player, s);
+            else if(type == sbr2::VALUE_STR && !strcmp(key, "player")) fromutf8(info.player, s);
             else if(type == sbr2::VALUE_VAR && !strcmp(key, "race")) info.race = int(uv);
         }
         return r.ok;
@@ -453,7 +468,7 @@ namespace game
             e.tick = tick;
             e.type = r.u8();
             e.source = r.u8();
-            if(e.source > INPUTSRC_RECORDER) return false;
+            if(e.source > INPUTSRC_MAP) return false;
             switch(e.type)
             {
                 case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
@@ -841,7 +856,7 @@ namespace game
             loopv(a.events)
             {
                 const inputevent &e = a.events[i];
-                if(e.type == INPUT_SETTING) settings++;
+                if(e.type == INPUT_SETTING && e.source != INPUTSRC_MAP) settings++;
                 if(e.type == INPUT_COMMAND && e.arg) free++;
                 if(e.source == INPUTSRC_KEY || e.source == INPUTSRC_MOUSE)
                 {
@@ -861,7 +876,7 @@ namespace game
                 fixed = max(fixed, t.fixedframe);
             }
         }
-        defformatstring(d, "%d setting changes", settings);
+        defformatstring(d, "%d setting changes by the player", settings);
         v.check(!settings, "settings", d);
         formatstring(d, "%d commands outside the replay command list", free);
         v.check(!free, "commands", d);

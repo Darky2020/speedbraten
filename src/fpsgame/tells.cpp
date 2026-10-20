@@ -143,17 +143,16 @@ namespace game
         kv.str(key, s);
     }
 
-    // key presses and holds, mouse motion sizes and gaps over the whole run
+    // key presses, auto-repeats and holds, and mouse motion sizes over the whole run
     static void rawstatistics(const inputrun &r, sbr2::kvwriter &kv)
     {
         static const int holdlimits[7] = { 20000, 40000, 60000, 80000, 120000, 200000, 500000 }; // us
         static const int sizelimits[7] = { 2, 4, 8, 16, 32, 64, 128 };                           // |dx|+|dy|
-        int holds[8] = { 0 }, sizes[8] = { 0 }, presses = 0, motions = 0;
-        long long minhold = -1, mingap = -1;
+        int holds[8] = { 0 }, sizes[8] = { 0 }, presses = 0, repeats = 0, motions = 0;
+        long long minhold = -1;
         loopvk(r.attempts)
         {
             const vector<rawevent> &raw = r.attempts[k]->raw;
-            long long lastmotion = -1;
             loopv(raw)
             {
                 const rawevent &e = raw[i];
@@ -161,9 +160,8 @@ namespace game
                 {
                     motions++;
                     sizes[bucket(abs(e.dx) + abs(e.dy), sizelimits, 7)]++;
-                    if(lastmotion >= 0 && e.us > lastmotion && (mingap < 0 || e.us - lastmotion < mingap)) mingap = e.us - lastmotion;
-                    lastmotion = e.us;
                 }
+                else if(e.kind == rawevent::KEYDOWN && e.flags & rawevent::REPEAT) repeats++;
                 else if((e.kind == rawevent::KEYDOWN && !(e.flags & rawevent::REPEAT)) || e.kind == rawevent::BUTTONDOWN)
                 {
                     presses++;
@@ -179,10 +177,10 @@ namespace game
             }
         }
         kv.var("presses", presses);
+        kv.var("repeats", repeats);
         kv.svar("minholdus", minhold);
         histogram(kv, "holdhist", holds, 8);
         kv.var("motions", motions);
-        kv.svar("mingapus", mingap);
         histogram(kv, "motionhist", sizes, 8);
     }
 

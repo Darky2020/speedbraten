@@ -428,6 +428,8 @@ namespace game
     // stores them at the start of each attempt and records every later change; a replay
     // plays with the recorded values and then gives the player's own values back.
     static int cursettings[NUMSIMSETTINGS], usersettings[NUMSIMSETTINGS];
+    // the settings after the last frame that ran a tick, and the ticks recorded this frame
+    static int framesettings[NUMSIMSETTINGS], frameticks = 0;
     static bool settingsforced = false;
 
     static int findsetting(const char *name)
@@ -497,18 +499,22 @@ namespace game
         }
     }
 
-    // records the settings changed since the last tick, other than through recorded input
+    // Records the settings changed since the last tick, other than through recorded input. The
+    // player can only change one between frames; a change at the first tick comes from the map
+    // load, and one made during a tick (another tick already ran this frame, or the value was
+    // there when the last frame's ticks ended) comes from the map's script.
     static void recordsettingchanges(inputattempt &a)
     {
         loopi(NUMSIMSETTINGS)
         {
             int val = getsetting(i);
             if(val == cursettings[i]) continue;
+            bool map = curtick <= 1 || frameticks > 0 || val == framesettings[i];
             cursettings[i] = val;
             inputevent &e = a.events.add();
             e.tick = curtick;
             e.type = INPUT_SETTING;
-            e.source = INPUTSRC_RECORDER;
+            e.source = map ? INPUTSRC_MAP : INPUTSRC_RECORDER;
             e.arg = val;
             memset(&e.controls, 0, sizeof(e.controls));
             e.cursorx = e.cursory = 0;
@@ -815,6 +821,7 @@ namespace game
         h.tick = curtick;
         rec.hashes.add(h);
         rec.ticks = curtick;
+        frameticks++;
     }
 
     static void seedattempt(const inputattempt &a)
@@ -879,6 +886,8 @@ namespace game
         a.flagrun = server::flagrunactive() ? 1 : 0;
         a.race = server::racerulesactive() ? 1 : 0;
         recordsettings(a);
+        readsettings(framesettings);
+        frameticks = 0;
     }
 
     const char *internbind(const char *s, int len)
@@ -900,6 +909,8 @@ namespace game
     void frametimed(int us, int ticks)
     {
         tellsframe(us);
+        if(frameticks) readsettings(framesettings);
+        frameticks = 0;
         if(replaying || recordingoff || recording.attempts.empty() || !connected) return;
         inputattempt &a = recording.last();
         int seg = max(curtick, 0) / REPLAYSEGMENTTICKS;

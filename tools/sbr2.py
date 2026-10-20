@@ -373,7 +373,7 @@ def check_history(export, replays):
 
 KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND", "rSTA"}
 RAW_KINDS = ["keydown", "keyup", "buttondown", "buttonup", "motion", "wheel", "focus"]
-SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder"]
+SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder", "map"]
 
 
 def svar_of(r):
