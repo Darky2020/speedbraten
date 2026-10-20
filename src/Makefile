@@ -592,6 +592,7 @@ fpsgame/spawns.o: fpsgame/inputs.h
 fpsgame/replayio.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/replayio.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/replayio.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/replayio.o: fpsgame/replayio.h
 fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
