@@ -1,23 +1,6 @@
-// Replay files: a run's recorded input plus metadata, gzip-compressed, in replays/ (and
-// replays/kept/ for runs protected from the rolling cleanup of unfinished attempts).
-//
-// Layout (all integers little endian, "var" = unsigned LEB128, "svar" = zigzag LEB128):
-//   "SBRP", var version, u32 date, str client, str player, svar mode, var flagrun,
-//   [v3+: var race], [v7+: var splices], [v10+: var run started], var finished, var runtime ms, var ticks, var maps,
-//   str first map
-//   per map: str map, u32 map crc, u32 seed, str team, svar mode, var flagrun,
-//            [v3+: var race], [v5+: var settings, (str name, svar value) per setting],
-//            [v6+: var snapshot length, snapshot bytes, var start tick (with a snapshot)],
-//            [v7+: var splices, (var tick, var discarded ticks) per splice],
-//            [v8+: u32 map cfg crc, 0 without a cfg],
-//            [v9+: var ghost samples, (var run tick delta, u32 x, u32 y, u32 z, u32 yaw,
-//                  u32 pitch, var flags) per sample],
-//            var ticks, var events, events, [v4+: var groups], var hashes, hashes
-//   event:   var tick delta, u8 type, then by type: controls (u32 yaw, u32 pitch, u8 packed
-//            move/strafe/vertical/jumping/attacking), svar arg (jump/attack/zoom), str
-//            (command), u32 cursor x, u32 cursor y, str (gui), svar value, str name (setting)
-//   hash:    var tick delta, groups x u32 (6 before v4)
-//   str:     var length, bytes
+// Replay files: a run's recorded input plus metadata in SBR2 form (the container is in
+// replayio.h, the run layout below), in replays/ (and replays/kept/ for runs protected from
+// the rolling cleanup of unfinished attempts).
 
 #include "game.h"
 #include "inputs.h"
@@ -26,65 +9,9 @@
 
 namespace game
 {
-    static const uchar REPLAYMAGIC[4] = { 'S', 'B', 'R', 'P' };
-    // SIMVERSION: the simulation's version, stored in SBR2 files (SBRP files use their format
-    // version). REPLAYSIMVERSION: oldest version the current simulation still plays back; bump
-    // both when the simulation changes.
-    enum { REPLAYVERSION = 10, SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
-
-    struct replaywriter
-    {
-        vector<uchar> buf;
-
-        void u8(int v) { buf.add(uchar(v)); }
-        void u32(uint v) { loopi(4) buf.add(uchar(v >> (i*8))); }
-        void f32(float f) { uint v; memcpy(&v, &f, 4); u32(v); }
-        void var(uint v) { do { uchar c = v & 0x7F; v >>= 7; if(v) c |= 0x80; buf.add(c); } while(v); }
-        void svar(int v) { var((uint(v) << 1) ^ uint(v >> 31)); }
-        void str(const char *s) { int len = strlen(s); var(len); buf.put((const uchar *)s, len); }
-    };
-
-    struct replayreader
-    {
-        const uchar *p, *end;
-        bool ok;
-
-        replayreader(const vector<uchar> &b) : p(b.getbuf()), end(b.getbuf() + b.length()), ok(true) {}
-
-        int u8() { if(p >= end) { ok = false; return 0; } return *p++; }
-        uint u32() { uint v = 0; loopi(4) v |= uint(u8()) << (i*8); return v; }
-        float f32() { uint v = u32(); float f; memcpy(&f, &v, 4); return f; }
-        uint var()
-        {
-            uint v = 0;
-            for(int shift = 0; shift < 35; shift += 7)
-            {
-                int c = u8();
-                v |= uint(c & 0x7F) << shift;
-                if(!(c & 0x80)) return v;
-            }
-            ok = false;
-            return 0;
-        }
-        int svar() { uint v = var(); return int(v >> 1) ^ -int(v & 1); }
-        void str(char *dst, int maxlen)
-        {
-            uint len = var();
-            if(len > uint(end - p)) { ok = false; dst[0] = '\0'; return; }
-            int n = min(int(len), maxlen-1);
-            memcpy(dst, p, n);
-            dst[n] = '\0';
-            p += len;
-        }
-        char *newstr()
-        {
-            uint len = var();
-            if(len > uint(end - p)) { ok = false; return newstring(""); }
-            char *s = newstring((const char *)p, len);
-            p += len;
-            return s;
-        }
-    };
+    // SIMVERSION: the simulation's version, stored in every replay. REPLAYSIMVERSION: oldest
+    // version the current simulation still plays back; bump both when the simulation changes.
+    enum { SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
 
     static int packcontrols(const inputcontrols &c)
     {
@@ -100,222 +27,6 @@ namespace game
         c.attacking = (v>>7)&1;
     }
 
-    static bool writesbrp(const char *file, const inputrun &run, const replayinfo &info)
-    {
-        replaywriter w;
-        w.buf.put(REPLAYMAGIC, sizeof(REPLAYMAGIC));
-        w.var(REPLAYVERSION);
-        w.u32(info.date);
-        w.str(info.client);
-        w.str(info.player);
-        w.svar(info.mode);
-        w.var(info.flagrun);
-        w.var(info.race);
-        w.var(info.splices);
-        w.var(info.started != 0 ? 1 : 0);
-        w.var(info.finished);
-        w.var(info.runtime);
-        w.var(info.ticks);
-        w.var(run.attempts.length());
-        w.str(run.attempts.length() ? run.attempts[0]->map : "");
-        loopvk(run.attempts)
-        {
-            const inputattempt &a = *run.attempts[k];
-            w.str(a.map);
-            w.u32(a.mapcrc);
-            w.u32(a.seed);
-            w.str(a.team);
-            w.svar(a.mode);
-            w.var(a.flagrun);
-            w.var(a.race);
-            w.var(a.settings.length());
-            loopv(a.settings) { w.str(a.settings[i].name); w.svar(a.settings[i].value); }
-            w.var(a.snapshot.length());
-            if(a.snapshot.length()) { w.buf.put(a.snapshot.getbuf(), a.snapshot.length()); w.var(a.starttick); }
-            w.var(a.splices.length());
-            loopv(a.splices) { w.var(a.splices[i].tick); w.var(a.splices[i].discarded); }
-            w.u32(a.cfgcrc);
-            w.var(a.trace.length());
-            int lasttick = 0;
-            loopv(a.trace)
-            {
-                const ghostsample &g = a.trace[i];
-                w.var(g.tick - lasttick);
-                lasttick = g.tick;
-                w.f32(g.o.x); w.f32(g.o.y); w.f32(g.o.z); w.f32(g.yaw); w.f32(g.pitch);
-                w.var(g.flags);
-            }
-            w.var(a.ticks);
-            w.var(a.events.length());
-            int last = 0;
-            loopv(a.events)
-            {
-                const inputevent &e = a.events[i];
-                w.var(e.tick - last);
-                last = e.tick;
-                int type = e.type == INPUT_MAPGUI ? int(INPUT_COMMAND) : e.type;
-                w.u8(type);
-                switch(type)
-                {
-                    case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
-                    case INPUT_COMMAND: w.str(e.cmd ? e.cmd : ""); break;
-                    case INPUT_GUI: w.u32(e.cursorx); w.u32(e.cursory); w.str(e.cmd ? e.cmd : ""); break;
-                    case INPUT_SETTING: w.svar(e.arg); w.str(e.cmd ? e.cmd : ""); break;
-                    default: w.svar(e.arg); break;
-                }
-            }
-            vector<const tickhash *> hashes;
-            loopv(a.hashes) if(a.hashes[i].tick % REPLAYHASHSTEP == 0 || a.hashes[i].tick == a.ticks) hashes.add(&a.hashes[i]);
-            w.var(a.hashgroups);
-            w.var(hashes.length());
-            last = 0;
-            loopv(hashes)
-            {
-                w.var(hashes[i]->tick - last);
-                last = hashes[i]->tick;
-                loopj(a.hashgroups) w.u32(hashes[i]->groups[j]);
-            }
-        }
-        stream *f = opengzfile(path(file, true), "wb");
-        if(!f) return false;
-        f->write(w.buf.getbuf(), w.buf.length());
-        delete f;
-        return true;
-    }
-
-    static bool readsbrp(const char *file, inputrun *run, replayinfo &info)
-    {
-        stream *f = opengzfile(path(file, true), "rb");
-        if(!f) return false;
-        vector<uchar> buf;
-        uchar chunk[4096];
-        for(;;)
-        {
-            size_t n = f->read(chunk, sizeof(chunk));
-            if(!n) break;
-            buf.put(chunk, n);
-            if(!run && buf.length() >= 1024) break;
-        }
-        delete f;
-        if(buf.length() < int(sizeof(REPLAYMAGIC)) || memcmp(buf.getbuf(), REPLAYMAGIC, sizeof(REPLAYMAGIC))) return false;
-        replayreader r(buf);
-        r.p += sizeof(REPLAYMAGIC);
-        info.format = 1;
-        info.version = r.var();
-        info.simversion = info.version;
-        if(info.version < 1 || info.version > REPLAYVERSION) return false;
-        info.date = r.u32();
-        r.str(info.client, sizeof(info.client));
-        r.str(info.player, sizeof(info.player));
-        info.mode = r.svar();
-        info.flagrun = r.var();
-        info.race = info.version >= 3 ? r.var() : 0;
-        info.splices = info.version >= 7 ? r.var() : 0;
-        info.started = info.version >= 10 ? int(r.var()) : -1;
-        info.finished = r.var();
-        info.runtime = r.var();
-        info.ticks = r.var();
-        info.maps = r.var();
-        r.str(info.map, sizeof(info.map));
-        if(!r.ok) return false;
-        if(!run) return true;
-        run->clear();
-        loopk(info.maps)
-        {
-            inputattempt &a = run->add();
-            r.str(a.map, sizeof(a.map));
-            a.mapcrc = r.u32();
-            a.seed = r.u32();
-            r.str(a.team, sizeof(a.team));
-            a.mode = r.svar();
-            a.flagrun = r.var();
-            a.race = info.version >= 3 ? r.var() : 0;
-            if(info.version >= 5)
-            {
-                int settings = r.var();
-                loopi(settings)
-                {
-                    if(!r.ok) break;
-                    inputsetting &s = a.settings.add();
-                    r.str(s.name, sizeof(s.name));
-                    s.value = r.svar();
-                }
-            }
-            if(info.version >= 6)
-            {
-                uint len = r.var();
-                if(len > uint(r.end - r.p)) { r.ok = false; break; }
-                a.snapshot.put(r.p, len);
-                r.p += len;
-                if(len) a.starttick = r.var();
-            }
-            if(info.version >= 7)
-            {
-                int n = r.var();
-                loopi(n)
-                {
-                    if(!r.ok) break;
-                    inputsplice &sp = a.splices.add();
-                    sp.tick = r.var();
-                    sp.discarded = r.var();
-                }
-            }
-            if(info.version >= 8)
-            {
-                a.cfgcrc = r.u32();
-                a.hascfgcrc = true;
-            }
-            if(info.version >= 9)
-            {
-                int n = r.var(), tick = 0;
-                loopi(n)
-                {
-                    if(!r.ok) break;
-                    ghostsample &g = a.trace.add();
-                    tick += r.var();
-                    g.tick = tick;
-                    g.o.x = r.f32(); g.o.y = r.f32(); g.o.z = r.f32(); g.yaw = r.f32(); g.pitch = r.f32();
-                    g.flags = r.var();
-                }
-            }
-            a.ticks = r.var();
-            int events = r.var(), tick = 0;
-            loopi(events)
-            {
-                if(!r.ok) break;
-                inputevent &e = a.events.add();
-                memset(&e, 0, sizeof(e));
-                tick += r.var();
-                e.tick = tick;
-                e.type = r.u8();
-                switch(e.type)
-                {
-                    case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
-                    case INPUT_COMMAND: e.cmd = r.newstr(); break;
-                    case INPUT_GUI: e.cursorx = r.u32(); e.cursory = r.u32(); e.cmd = r.newstr(); break;
-                    case INPUT_SETTING: e.arg = r.svar(); e.cmd = r.newstr(); break;
-                    default: e.arg = r.svar(); break;
-                }
-            }
-            a.hashgroups = info.version >= 4 ? r.var() : int(DETHASH_LEGACYGROUPS);
-            if(a.hashgroups < 1 || a.hashgroups > DETHASH_GROUPS) { r.ok = false; break; }
-            int hashes = r.var();
-            tick = 0;
-            loopi(hashes)
-            {
-                if(!r.ok) break;
-                tickhash &h = a.hashes.add();
-                tick += r.var();
-                h.tick = tick;
-                memset(h.groups, 0, sizeof(h.groups));
-                loopj(a.hashgroups) h.groups[j] = r.u32();
-            }
-            if(!r.ok) break;
-        }
-        if(!r.ok) { run->clear(); return false; }
-        return true;
-    }
-
     // SBR2 files (the container is in replayio.h):
     //   META   key-value pairs, keys sorted: client, date, flagrun, map, maps, mode, player, race
     //   DATA   var sim version, var files, per file: u8 role, str path, var size, BLAKE3
@@ -328,8 +39,11 @@ namespace game
     //          setting, var saved state length, saved state
     //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
     //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
-    //            u8 type, u8 source (INPUTSRC_*), then as in SBRP, except: command = var id in
-    //            replaycommands, str arguments; map GUI action = str script)
+    //            u8 type, u8 source (INPUTSRC_*), then by type: controls = u32 yaw, u32 pitch,
+    //            u8 packed move/strafe/vertical/jumping/attacking; jump, attack, zoom = svar;
+    //            command = var id in replaycommands, str arguments; GUI = u32 cursor x,
+    //            u32 cursor y, str GUI names; setting = svar value, str name; map GUI action =
+    //            str script)
     //       rAWI (optional) var base us, var base SDL ms, var events, per event: svar us delta,
     //            svar ms delta (from the previous event or the bases), svar tick delta (from
     //            the previous event or lo), u8 kind, then key: var scancode, var keycode,
@@ -342,13 +56,12 @@ namespace game
     //            var frames with 2+ ticks, 8 x var frame-time histogram, var min gamespeed,
     //            var max gamespeed, var max fixedframe
     //       SEGE
-    //     gHST (optional) var samples, samples as in SBRP
+    //     gHST (optional) var samples, per sample: var run tick delta, f32 x, y, z, yaw, pitch,
+    //          var flags
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
     //   wIND, rSTA  key-value window metadata, raw input statistics
     //   END
     enum { SEGMENTTICKS = REPLAYSEGMENTTICKS };
-
-    MOD(VAR, replayformat, 1, 1, 2);
 
     static void kvkey(sbr2::byteswriter &w, const char *key, int type) { w.str(key); w.u8(type); }
 
@@ -877,7 +590,6 @@ namespace game
         sbr2::reader rd;
         if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
         info = replayinfo();
-        info.format = 2;
         info.version = sbr2::VERSION;
         if(run) run->clear();
         vector<mapdatafile> files;
@@ -990,7 +702,7 @@ namespace game
 
     bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content)
     {
-        return info.format == 2 ? writesbr2(file, run, info, content) : writesbrp(file, run, info);
+        return writesbr2(file, run, info, content);
     }
 
     // With run == NULL only the header is read.
@@ -998,34 +710,14 @@ namespace game
     {
         stream *f = openrawfile(path(file, true), "rb");
         if(!f) return false;
-        uchar magic[4];
-        if(f->read(magic, sizeof(magic)) != sizeof(magic) || memcmp(magic, "SBR2", 4))
-        {
-            delete f;
-            if(!readsbrp(file, run, info)) return false;
-        }
-        else
-        {
-            vector<uchar> buf;
-            buf.put(magic, sizeof(magic));
-            uchar chunk[65536];
-            for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
-            delete f;
-            if(!readsbr2(file, buf, run, info)) return false;
-        }
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+        delete f;
+        if(buf.length() < 4 || memcmp(buf.getbuf(), "SBR2", 4) || !readsbr2(file, buf, run, info)) return false;
         if(run && info.simversion < REPLAYSIMVERSION) conoutf(CON_ERROR, "replay %s was made with an older build: it will likely desync", file);
         return true;
     }
-
-    static void replayconvert(const char *from, const char *to)
-    {
-        inputrun run;
-        replayinfo info;
-        if(!readreplay(from, &run, info) || run.empty()) { conoutf(CON_ERROR, "could not read %s", from); return; }
-        if(writesbr2(to, run, info)) conoutf("replayconvert: wrote %s", to);
-        else conoutf(CON_ERROR, "could not write %s", to);
-    }
-    COMMAND(replayconvert, "ss");
 
     // replayverify: checks a replay for leaderboard use and prints one line per check
     struct verifier
@@ -1311,9 +1003,8 @@ namespace game
     {
         info.started = 1;
         const inputattempt &first = *run.attempts[0];
-        info.format = replayformat == 2 ? 2 : 1;
-        info.version = info.format == 2 ? int(sbr2::VERSION) : int(REPLAYVERSION);
-        info.simversion = info.format == 2 ? int(SIMVERSION) : int(REPLAYVERSION);
+        info.version = sbr2::VERSION;
+        info.simversion = SIMVERSION;
         info.date = uint(time(NULL));
         info.live = true;
         copystring(info.client, "speedbraten");
@@ -1362,7 +1053,7 @@ namespace game
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
         uchar content[sbr2::HASHSIZE];
         bool written = writereplay(file, finished ? traced : run, info, content);
-        if(started) statsrecord(run, info, written ? file : NULL, written && info.format == 2 ? content : NULL);
+        if(started) statsrecord(run, info, written ? file : NULL, written ? content : NULL);
         if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);
         else rotatereplays();

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **New replay file format (SBR2).** Replays from v0.1.0 can't be read any more.
+  - Files are split into 1-second segments, each with a CRC, zstd compression and a BLAKE3
+    hash chain; the whole file ends in a content hash.
+  - A replay now also holds the raw keyboard and mouse input, frame timing, the hashes of the
+    map files it was played on, and how the run was produced (client build, session, history,
+    window, input settings).
+  - Recorded commands are limited to a fixed list; anything else is refused on playback.
+  - `replayverify <file>` checks a replay for leaderboard use (map files, timing, pause,
+    gamespeed, fixedframe, provenance, raw input) and its witness signatures.
+  - `statsexporthistory <file>` exports the chain over all your recorded attempts, which
+    `tools/sbr2.py history` can check replays against.
+  - `tools/sbr2.py` reads and checks replay files outside the game.
 - Choose which ghost to race per map and mode: your PB, your segmented PB, or any replay (for
   example a world record copied into `replays/`), with your own label. The choice is saved, and
   the label shows above the ghost and on the time difference line. Replays made before v0.1.0

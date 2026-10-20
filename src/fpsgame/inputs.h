@@ -96,20 +96,20 @@ namespace game
     {
         vector<inputevent> events;
         vector<tickhash> hashes;
-        vector<inputsetting> settings; // values at the start of the attempt; empty before v5
+        vector<inputsetting> settings; // values at the start of the attempt
         vector<uchar> snapshot;          // saved state the attempt starts from instead of map start
         int starttick;                   // tick of the snapshot, 0 without one
         vector<inputsplice> splices;
-        vector<ghostsample> trace; // v9+, finished or saved runs only
-        vector<mapdatafile> files; // what the map load read; empty in SBRP files
-        vector<segmenttiming> timing; // by segment, empty in SBRP files
-        vector<rawevent> raw;         // binds point into internbind's pool; empty in SBRP files
+        vector<ghostsample> trace; // finished or saved runs only
+        vector<mapdatafile> files; // what the map load read
+        vector<segmenttiming> timing; // by segment
+        vector<rawevent> raw;         // binds point into internbind's pool
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
-        bool hascfgcrc; // false before v8
+        bool hascfgcrc; // false in the oldest replays, which have no cfg crc
         string map, team;
         int mode, flagrun, race, ticks;
-        int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS for replays made before v4
+        int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS in the oldest replays
 
         inputattempt() : starttick(0), seed(0), mapcrc(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
         ~inputattempt() { clear(); }
@@ -194,16 +194,15 @@ namespace game
     // Metadata stored at the start of a replay file.
     struct replayinfo
     {
-        int format;     // 1 SBRP, 2 SBR2
-        int version;    // of the format
+        int version;    // of the container
         int simversion; // compared with REPLAYSIMVERSION: older replays will likely desync
         uint date;
         string client, player, map;
         int mode, flagrun, race, splices, finished, runtime, ticks, maps;
-        int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (before v10)
+        int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (the oldest replays)
         bool live;   // describes the run being played now, not one read from a file
 
-        replayinfo() : format(1), version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1), live(false)
+        replayinfo() : version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1), live(false)
         {
             client[0] = player[0] = map[0] = '\0';
         }

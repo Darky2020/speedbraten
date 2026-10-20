@@ -82,9 +82,14 @@ platform. Replays and the gold tests depend on it.
 - **No fast math:** the compiler flags (`-fno-fast-math -ffp-contract=off`) and
   `src/shared/detmath.h` keep floating point identical across platforms. Don't change them
   without the `fpconform` workflow passing.
-- **Replay file format** (`src/fpsgame/replayfile.cpp`): bump `REPLAYVERSION` for a new field and
-  keep reading every older version. Bump `REPLAYSIMVERSION` only when the simulation itself
-  changes so that older replays can no longer play back.
+- **Replay file format (SBR2):** the container (chunks, CRCs, zstd, the BLAKE3 hash chain) is in
+  `src/fpsgame/replayio.{h,cpp}`; the run layout is described at the top of the SBR2 code in
+  `src/fpsgame/replayfile.cpp`.
+  - New data goes into a new chunk type. A lowercase first letter marks an optional chunk that
+    older readers skip; an uppercase one is required, and older readers refuse the file.
+  - Bump `SIMVERSION` and `REPLAYSIMVERSION` together only when the simulation itself changes
+    so that older replays can no longer play back.
+  - `tools/sbr2.py` is an independent reader of the format; change it with the layout.
 
 ## Testing
 
