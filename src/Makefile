@@ -158,6 +158,7 @@ CLIENT_OBJS= \
 	fpsgame/ghost.o \
 	fpsgame/splits.o \
 	fpsgame/spawns.o \
+	fpsgame/replayio.o \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -202,19 +203,28 @@ all: client server
 
 clean:
 	cd enet && make clean && cd ..
-	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) $(SQLITE_OBJS) sauer_client sauer_server sauer_resim
+	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) sauer_client sauer_server sauer_resim
 	-$(RM) -r headless
 
 %-standalone.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite
+$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite $(VENDOR_INCLUDES)
 
 # run statistics database; no threads or loadable extensions, so it links the same everywhere
 SQLITE_OBJS= sqlite/sqlite3.o
 SQLITE_FLAGS= -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
 sqlite/sqlite3.o: sqlite/sqlite3.c
 	$(CC) $(CFLAGS) $(SQLITE_FLAGS) -c -o $@ $<
+
+# replay files: zstd compression, BLAKE3 hashes, Ed25519 signatures; in the client and sauer_resim.
+# Portable code paths only (no assembly or SIMD), so every target builds them the same way.
+VENDOR_OBJS= zstd/zstd.o blake3/blake3.o blake3/blake3_dispatch.o blake3/blake3_portable.o \
+	monocypher/monocypher.o monocypher/monocypher-ed25519.o
+VENDOR_FLAGS= -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
+VENDOR_INCLUDES= -Izstd -Iblake3 -Imonocypher
+$(VENDOR_OBJS): %.o: %.c
+	$(CC) $(CFLAGS) $(VENDOR_FLAGS) $(VENDOR_INCLUDES) -c -o $@ $<
 
 $(SERVER_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE
 
@@ -223,8 +233,8 @@ OUTBIN=speedbraten_$(firstword $(subst -, ,$(TARGET)))
 ifneq (,$(findstring linux,$(TARGET)))
 client:	libenet
 endif
-client: $(CLIENT_OBJS) $(SQLITE_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(SQLITE_OBJS) $(LIBS) $(CLIENT_LIBS)
+client: $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(LIBS) $(CLIENT_LIBS)
 
 server: $(SERVER_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_server $(SERVER_OBJS) $(LIBS)
@@ -239,13 +249,13 @@ endif
 # RESIM_DEPS: a folder with include/ and lib/ holding zlib and enet built for TARGET
 # (tools/resimbuild.sh), used instead of the platform's libraries
 ifdef RESIM_DEPS
-RESIM_CXXINCLUDES= -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include $(RESIM_INCLUDES)
+RESIM_CXXINCLUDES= -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include $(RESIM_INCLUDES) $(VENDOR_INCLUDES)
 RESIM_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
 ifneq (,$(findstring windows,$(TARGET)))
 RESIM_LINK+= -lws2_32 -lwinmm
 endif
 else
-RESIM_CXXINCLUDES= $(INCLUDES) $(RESIM_INCLUDES)
+RESIM_CXXINCLUDES= $(INCLUDES) $(RESIM_INCLUDES) $(VENDOR_INCLUDES)
 RESIM_LINK= $(LIBS)
 endif
 
@@ -260,8 +270,8 @@ ifndef RESIM_DEPS
 resim: libenet
 endif
 endif
-resim: $(RESIM_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_resim $(RESIM_OBJS) $(RESIM_LINK)
+resim: $(RESIM_OBJS) $(VENDOR_OBJS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_resim $(RESIM_OBJS) $(VENDOR_OBJS) $(RESIM_LINK)
 
 .PHONY: resim
 
@@ -579,6 +589,9 @@ fpsgame/spawns.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/spawns.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/spawns.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/spawns.o: fpsgame/inputs.h
+fpsgame/replayio.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/replayio.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/replayio.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/speedometer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/speedometer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/speedometer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
