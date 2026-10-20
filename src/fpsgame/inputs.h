@@ -221,11 +221,13 @@ namespace game
     extern const char *internbind(const char *s, int len);
     extern void tellsencode(const inputrun &run, const replayinfo &info, vector<runchunk *> &out);
 
-    extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);
+    // content, if given, receives an SBR2 file's content hash (32 bytes)
+    extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content = NULL);
     extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
     extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
-    extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay);
+    // content: the replay's SBR2 content hash (32 bytes), or NULL
+    extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content = NULL);
     extern void statsreplaymoved(const char *from, const char *to);
     extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
     extern int statsversion();

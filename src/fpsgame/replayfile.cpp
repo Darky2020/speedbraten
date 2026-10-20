@@ -22,6 +22,7 @@
 #include "game.h"
 #include "inputs.h"
 #include "replayio.h"
+#include "blake3.h"
 
 namespace game
 {
@@ -346,7 +347,6 @@ namespace game
     //   wIND, rSTA  key-value window metadata, raw input statistics
     //   END
     enum { SEGMENTTICKS = REPLAYSEGMENTTICKS };
-    static const char SBR2KNOWN[] = "META" "DATA" "SETS" "ATTM" "INPS" "HASH" "SPLC" "RSLT" "SEGE" "END ";
 
     MOD(VAR, replayformat, 1, 1, 2);
 
@@ -573,7 +573,7 @@ namespace game
         }
     }
 
-    static bool writesbr2(const char *file, const inputrun &run, const replayinfo &info)
+    static bool writesbr2(const char *file, const inputrun &run, const replayinfo &info, uchar *content = NULL)
     {
         sbr2::writer out;
         vector<uchar> p;
@@ -638,6 +638,7 @@ namespace game
         loopv(tells) if(tells[i]->late) out.add(tells[i]->type, tells[i]->data);
         made.deletecontents();
         out.finish();
+        if(content) memcpy(content, out.content, sbr2::HASHSIZE);
 
         stream *f = openrawfile(path(file, true), "wb");
         if(!f) return false;
@@ -874,7 +875,7 @@ namespace game
     static bool readsbr2(const char *file, const vector<uchar> &buf, inputrun *run, replayinfo &info)
     {
         sbr2::reader rd;
-        if(!rd.parse(buf.getbuf(), buf.length(), SBR2KNOWN)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
+        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
         info = replayinfo();
         info.format = 2;
         info.version = sbr2::VERSION;
@@ -987,9 +988,9 @@ namespace game
         return true;
     }
 
-    bool writereplay(const char *file, const inputrun &run, const replayinfo &info)
+    bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content)
     {
-        return info.format == 2 ? writesbr2(file, run, info) : writesbrp(file, run, info);
+        return info.format == 2 ? writesbr2(file, run, info, content) : writesbrp(file, run, info);
     }
 
     // With run == NULL only the header is read.
@@ -1025,6 +1026,212 @@ namespace game
         else conoutf(CON_ERROR, "could not write %s", to);
     }
     COMMAND(replayconvert, "ss");
+
+    // replayverify: checks a replay for leaderboard use and prints one line per check
+    struct verifier
+    {
+        int fails, warns;
+        verifier() : fails(0), warns(0) {}
+
+        void pass(const char *name, const char *detail = "") { conoutf("\f0PASS\f7 %s %s", name, detail); }
+        void fail(const char *name, const char *detail = "") { conoutf("\f3FAIL\f7 %s %s", name, detail); fails++; }
+        void warn(const char *name, const char *detail = "") { conoutf("\f2WARN\f7 %s %s", name, detail); warns++; }
+        void check(bool ok, const char *name, const char *detail = "") { if(ok) pass(name, detail); else fail(name, detail); }
+    };
+
+    static const runchunk *findtells(const inputrun &run, const char *type)
+    {
+        loopv(run.tells) if(!memcmp(run.tells[i]->type, type, 4)) return run.tells[i];
+        return NULL;
+    }
+
+    static long long tellvalue(const inputrun &run, const char *type, const char *key, long long missing)
+    {
+        const runchunk *c = findtells(run, type);
+        long long v = missing;
+        if(c) sbr2::kvfind(c->data, key, &v);
+        return v;
+    }
+
+    // file: a list of hex public keys, one per line, or a single key in hex
+    static void loadwitnesskeys(const char *file, vector<uchar> &keys)
+    {
+        uchar key[32];
+        if(file && sbr2::fromhex(file, key, 32)) { keys.put(key, 32); return; }
+        stream *f = openutf8file(path(file && file[0] ? file : "witnesskeys.txt", true), "r");
+        if(!f) return;
+        char line[512];
+        while(f->getline(line, sizeof(line)))
+        {
+            char *s = line;
+            while(*s && isspace(uchar(*s))) s++;
+            char *e = s + strlen(s);
+            while(e > s && isspace(uchar(e[-1]))) *--e = '\0';
+            uchar key[32];
+            if(sbr2::fromhex(s, key, 32)) keys.put(key, 32);
+        }
+        delete f;
+    }
+
+    static void verifysignatures(verifier &v, const sbr2::reader &rd, const char *keyfile)
+    {
+        vector<uchar> keys;
+        loadwitnesskeys(keyfile, keys);
+        int good = 0, unknown = 0, bad = 0, final = 0;
+        loopv(rd.chunks)
+        {
+            const sbr2::chunk &c = *rd.chunks[i];
+            if(memcmp(c.type, "sIGN", 4)) continue;
+            sbr2::signature s;
+            if(!s.read(c.data.getbuf(), c.data.length())) { bad++; continue; }
+            const uchar *expected = s.scope == sbr2::signature::FINAL ? rd.content :
+                                    s.segment < rd.heads.length() / sbr2::HASHSIZE ? &rd.heads[s.segment * sbr2::HASHSIZE] : NULL;
+            const uchar *key = NULL;
+            for(int k = 0; k + 32 <= keys.length(); k += 32)
+            {
+                uchar id[8];
+                sbr2::keyid(&keys[k], id);
+                if(!memcmp(id, s.keyid, 8)) { key = &keys[k]; break; }
+            }
+            if(!key) unknown++;
+            else if(!expected || memcmp(expected, s.hash, sbr2::HASHSIZE) || !s.check(key)) bad++;
+            else { good++; if(s.scope == sbr2::signature::FINAL) final++; }
+        }
+        defformatstring(detail, "%d valid (%d final), %d unknown key, %d bad, %d trusted keys", good, final, unknown, bad, keys.length() / 32);
+        if(bad) v.fail("signatures", detail);
+        else if(!final) v.warn("signatures", detail);
+        else v.pass("signatures", detail);
+    }
+
+    static void verifydata(verifier &v, const inputrun &run)
+    {
+        int files = 0, mismatched = 0;
+        string first = "";
+        loopvk(run.attempts) loopv(run.attempts[k]->files)
+        {
+            const mapdatafile &f = run.attempts[k]->files[i];
+            files++;
+            size_t len = 0;
+            char *buf = loadfile(path(f.path, true), &len, false);
+            uchar hash[32];
+            bool same = false;
+            if(buf)
+            {
+                blake3_hasher h;
+                blake3_hasher_init(&h);
+                blake3_hasher_update(&h, buf, len);
+                blake3_hasher_finalize(&h, hash, sizeof(hash));
+                same = len == f.size && !memcmp(hash, f.hash, sizeof(hash));
+                delete[] buf;
+            }
+            if(!same && !mismatched++) copystring(first, f.path);
+        }
+        if(!files) { v.fail("data", "no file hashes (converted or older replay)"); return; }
+        defformatstring(detail, "%d files%s%s", files, mismatched ? ", differs or missing: " : " match", first);
+        v.check(!mismatched, "data", detail);
+    }
+
+    static void verifyrules(verifier &v, const inputrun &run, const replayinfo &info)
+    {
+        bool segmented = info.splices > 0;
+        bool cleanstart = true;
+        loopv(run.attempts) if(run.attempts[i]->snapshot.length() || run.attempts[i]->starttick) cleanstart = false;
+        if(segmented) { defformatstring(d, "%d state loads", info.splices); v.warn("segmented", d); }
+        else v.check(cleanstart, "start", cleanstart ? "map start" : "starts from a saved state");
+
+        int settings = 0, free = 0, sourced = 0, unbacked = 0, slowmo = 0;
+        long long pausedus = 0;
+        int speedmin = 100, speedmax = 100, fixed = 0, timed = 0;
+        loopvk(run.attempts)
+        {
+            const inputattempt &a = *run.attempts[k];
+            loopv(a.settings) if(!strcmp(a.settings[i].name, "slowmosp") && a.settings[i].value) slowmo = 1;
+            loopv(a.events)
+            {
+                const inputevent &e = a.events[i];
+                if(e.type == INPUT_SETTING) settings++;
+                if(e.type == INPUT_COMMAND && e.arg) free++;
+                if(e.source == INPUTSRC_KEY || e.source == INPUTSRC_MOUSE)
+                {
+                    sourced++;
+                    bool backed = false;
+                    loopvj(a.raw) if(a.raw[j].tick == e.tick && a.raw[j].kind != rawevent::MOTION && a.raw[j].kind != rawevent::FOCUS) { backed = true; break; }
+                    if(!backed) unbacked++;
+                }
+            }
+            loopv(a.timing)
+            {
+                const segmenttiming &t = a.timing[i];
+                timed++;
+                pausedus += t.pausedus;
+                speedmin = min(speedmin, t.speedmin);
+                speedmax = max(speedmax, t.speedmax);
+                fixed = max(fixed, t.fixedframe);
+            }
+        }
+        defformatstring(d, "%d setting changes", settings);
+        v.check(!settings, "settings", d);
+        formatstring(d, "%d commands outside the replay command list", free);
+        v.check(!free, "commands", d);
+        if(!timed) v.fail("timing", "no frame timing (converted or older replay)");
+        else
+        {
+            formatstring(d, "%.3f s paused", pausedus / 1e6);
+            if(segmented) v.warn("pause", d);
+            else v.check(!pausedus, "pause", d);
+            formatstring(d, "%d-%d%s", speedmin, speedmax, slowmo ? " (slowmosp)" : "");
+            v.check(speedmax <= 100 && (speedmin >= 100 || slowmo), "gamespeed", d);
+        }
+        fixed = max(fixed, int(tellvalue(run, "pROV", "fixedframe", 0)));
+        formatstring(d, "%d", fixed);
+        v.check(!fixed, "fixedframe", d);
+
+        if(!findtells(run, "pROV")) v.fail("provenance", "missing");
+        else
+        {
+            static const char * const flags[] = { "harness", "dethash", "edit", "seedforced" };
+            string bad = "";
+            if(tellvalue(run, "pROV", "live", 0) != 1) concatstring(bad, " not-live");
+            loopi(sizeof(flags)/sizeof(flags[0])) if(tellvalue(run, "pROV", flags[i], 0)) { concatstring(bad, " "); concatstring(bad, flags[i]); }
+            v.check(!bad[0], "provenance", bad[0] ? bad : "live");
+        }
+        formatstring(d, "%d of %d key/mouse events without raw input", unbacked, sourced);
+        v.check(!unbacked, "raw input", d);
+
+        long long losses = tellvalue(run, "wIND", "focuslosses", 0), minimizes = tellvalue(run, "wIND", "minimizes", 0);
+        formatstring(d, "%lld focus losses, %lld minimizes", losses, minimizes);
+        if(losses || minimizes) v.warn("window", d);
+        else v.pass("window", d);
+    }
+
+    static void replayverify(const char *file, const char *keyfile)
+    {
+        verifier v;
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) { conoutf(CON_ERROR, "replayverify: could not open %s", file); intret(-1); return; }
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+        delete f;
+        conoutf("replayverify: %s", file);
+        sbr2::reader rd;
+        inputrun run;
+        replayinfo info;
+        if(buf.length() < 4 || memcmp(buf.getbuf(), "SBR2", 4)) v.fail("format", "not an SBR2 file");
+        else if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) v.fail("container", rd.error);
+        else if(!readsbr2(file, buf, &run, info)) v.fail("contents", "malformed");
+        else
+        {
+            defformatstring(d, "%d segments", rd.heads.length() / sbr2::HASHSIZE);
+            v.pass("container", d);
+            verifysignatures(v, rd, keyfile);
+            verifydata(v, run);
+            verifyrules(v, run, info);
+        }
+        conoutf("replayverify: %d failed, %d warnings: %s", v.fails, v.warns, v.fails ? "\f3not eligible" : "\f0eligible");
+        intret(v.fails);
+    }
+    ICOMMAND(replayverify, "ss", (char *file, char *keys), replayverify(file, keys));
 
     MOD(VARP, replayautosave, 0, 1, 1);
     MOD(VARP, replaymaxunfinished, 0, 20, 1000);
@@ -1153,8 +1360,9 @@ namespace game
         for(int n = 2; fileexists(realpath(file), "r") && n < 100; n++)
             formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
-        bool written = writereplay(file, finished ? traced : run, info);
-        if(started) statsrecord(run, info, written ? file : NULL);
+        uchar content[sbr2::HASHSIZE];
+        bool written = writereplay(file, finished ? traced : run, info, content);
+        if(started) statsrecord(run, info, written ? file : NULL, written && info.format == 2 ? content : NULL);
         if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);
         else rotatereplays();

@@ -44,8 +44,9 @@ namespace game
         uint startms;
         int saves, loads, focuslosses, minimizes, fixedframe;
         long long focuslostus;
-        bool harness, dethash, edit;
+        bool harness, dethash, edit, seedforced;
     } run;
+    extern int fixedgameseed;
     static bool lastfocus = true, lastminimized = false;
 
     void tellsrunstart()
@@ -74,6 +75,7 @@ namespace game
         lastminimized = minimized;
         if(editmode) run.edit = true;
         if(dethashactive()) run.dethash = true;
+        if(fixedgameseed) run.seedforced = true;
         run.fixedframe = max(run.fixedframe, fixedframe);
     }
 
@@ -236,6 +238,7 @@ namespace game
         prov.boolean("dethash", run.dethash);
         prov.var("fixedframe", run.fixedframe);
         prov.boolean("edit", run.edit);
+        prov.boolean("seedforced", run.seedforced);
         addchunk(out, "pROV", prov);
 
         sbr2::kvwriter settings;

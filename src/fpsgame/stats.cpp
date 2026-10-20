@@ -7,12 +7,13 @@
 #ifndef HEADLESS
 #include "sqlite3.h"
 #include "blake3.h"
+#include "replayio.h"
 #endif
 
 namespace game
 {
 #ifdef HEADLESS
-    void statsrecord(const inputrun &run, const replayinfo &info, const char *replay) {}
+    void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content) {}
     void statsreplaymoved(const char *from, const char *to) {}
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
@@ -88,6 +89,10 @@ namespace game
             db = NULL;
             dbfailed = true;
         }
+        // databases from before the content column: their history chain used another summary
+        // layout, so it starts over
+        else if(sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN content BLOB", NULL, NULL, NULL) == SQLITE_OK)
+            dbexec("DELETE FROM meta WHERE key IN ('historyhead', 'historycount')");
         return db;
     }
 
@@ -143,12 +148,12 @@ namespace game
         sqlite3_finalize(st);
     }
 
-    static void extendhistory(const replayinfo &info);
+    static void extendhistory(const replayinfo &info, const uchar *content);
 
-    void statsrecord(const inputrun &run, const replayinfo &info, const char *replay)
+    void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content)
     {
-        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay) "
-                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content) "
+                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if(!st) return;
         const inputattempt &first = *run.attempts[0];
         sqlite3_bind_int64(st, 1, info.date);
@@ -166,10 +171,12 @@ namespace game
         else sqlite3_bind_null(st, 11);
         sqlite3_bind_int(st, 12, replaylongestidle(run));
         bindtext(st, 13, replay);
+        if(content) sqlite3_bind_blob(st, 14, content, sbr2::HASHSIZE, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(st, 14);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
-        if(added) { recordsplits(sqlite3_last_insert_rowid(db), info); extendhistory(info); }
+        if(added) { recordsplits(sqlite3_last_insert_rowid(db), info); extendhistory(info, content); }
         changes++;
     }
 
@@ -195,17 +202,40 @@ namespace game
         return true;
     }
 
-    static void extendhistory(const replayinfo &info)
+    // summary = var date, str map, str kind, svar mode, var finished, var runtime ms, var ticks,
+    // var splices, content hash (32 bytes, zeros without an SBR2 replay)
+    static void historysummary(vector<uchar> &out, uint date, const char *map, const char *kind, int mode, int finished, int runtime, int ticks, int splices, const uchar *content)
+    {
+        sbr2::byteswriter w(out);
+        w.var(date);
+        w.str(map);
+        w.str(kind);
+        w.svar(mode);
+        w.var(finished);
+        w.var(runtime);
+        w.var(ticks);
+        w.var(splices);
+        uchar zero[32] = { 0 };
+        w.bytes(content ? content : zero, 32);
+    }
+
+    static void historystep(uchar *head, const vector<uchar> &summary)
+    {
+        blake3_hasher h;
+        blake3_hasher_init(&h);
+        blake3_hasher_update(&h, head, 32);
+        blake3_hasher_update(&h, summary.getbuf(), summary.length());
+        blake3_hasher_finalize(&h, head, 32);
+    }
+
+    static void extendhistory(const replayinfo &info, const uchar *content)
     {
         uchar head[32];
         int count, attempts;
         if(!statshistory(head, count, attempts)) return;
-        defformatstring(summary, "%u %s %s %d %d %d %d %d", info.date, info.map, runkindname(info), info.mode, info.finished, info.runtime, info.ticks, info.splices);
-        blake3_hasher h;
-        blake3_hasher_init(&h);
-        blake3_hasher_update(&h, head, 32);
-        blake3_hasher_update(&h, summary, strlen(summary));
-        blake3_hasher_finalize(&h, head, 32);
+        vector<uchar> summary;
+        historysummary(summary, info.date, info.map, runkindname(info), info.mode, info.finished, info.finished ? info.runtime : 0, info.ticks, info.splices, content);
+        historystep(head, summary);
         sqlite3_stmt *st = prepare("INSERT OR REPLACE INTO meta(key, value) VALUES('historyhead', ?), ('historycount', ?)");
         if(!st) return;
         sqlite3_bind_blob(st, 1, head, 32, SQLITE_TRANSIENT);
@@ -276,6 +306,45 @@ namespace game
         sqlite3_finalize(st);
         return true;
     }
+
+    // Writes the attempts in the history chain, oldest first: "SBR2-history 1", the count, then
+    // per attempt the summary and the head after it, in hex. Anyone can recompute the chain
+    // from 32 zero bytes and match it against the heads replays carry.
+    static void statsexporthistory(const char *file)
+    {
+        uchar stored[32], head[32];
+        int count = 0, attempts = 0;
+        if(!statshistory(stored, count, attempts)) { conoutf(CON_ERROR, "statsexporthistory: no statistics database"); return; }
+        sqlite3_stmt *st = prepare("SELECT date, map, kind, mode, finished, runtime, ticks, splices, content FROM "
+                                   "(SELECT * FROM attempts ORDER BY id DESC LIMIT ?) ORDER BY id");
+        if(!st) return;
+        sqlite3_bind_int(st, 1, count);
+        stream *f = openutf8file(path(file, true), "w");
+        if(!f) { sqlite3_finalize(st); conoutf(CON_ERROR, "statsexporthistory: could not write %s", file); return; }
+        f->printf("SBR2-history 1\n%d\n", count);
+        memset(head, 0, sizeof(head));
+        int n = 0;
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            const uchar *content = sqlite3_column_bytes(st, 8) == 32 ? (const uchar *)sqlite3_column_blob(st, 8) : NULL;
+            vector<uchar> summary;
+            historysummary(summary, uint(sqlite3_column_int64(st, 0)), (const char *)sqlite3_column_text(st, 1), (const char *)sqlite3_column_text(st, 2),
+                           sqlite3_column_int(st, 3), sqlite3_column_int(st, 4), sqlite3_column_int(st, 5), sqlite3_column_int(st, 6), sqlite3_column_int(st, 7), content);
+            historystep(head, summary);
+            vector<char> hex;
+            hex.growbuf(summary.length()*2 + 1);
+            sbr2::tohex(summary.getbuf(), summary.length(), hex.getbuf());
+            string headhex;
+            sbr2::tohex(head, 32, headhex);
+            f->printf("%s %s\n", hex.getbuf(), headhex);
+            n++;
+        }
+        sqlite3_finalize(st);
+        delete f;
+        bool match = n == count && !memcmp(head, stored, 32);
+        conoutf(match ? CON_INFO : CON_ERROR, "statsexporthistory: wrote %d attempts to %s%s", n, file, match ? "" : " (they don't reproduce the stored head)");
+    }
+    COMMAND(statsexporthistory, "s");
 
     // a replay file was renamed or moved (to = NULL: deleted); its run keeps its row, and a ghost
     // chosen from it follows it or, once deleted, goes back to the PB

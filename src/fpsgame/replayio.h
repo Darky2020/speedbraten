@@ -137,6 +137,42 @@ namespace sbr2
     };
 
     void tohex(const uchar *p, int n, char *out);
+    // exactly 2*n hex digits into n bytes
+    bool fromhex(const char *s, uchar *out, int n);
+
+    // the chunk types replay files of this build understand
+    extern const char KNOWNCHUNKS[];
+
+    // appends a chunk to a file's bytes (no hashing: for sIGN after END)
+    void appendchunk(vector<uchar> &out, const char *type, const vector<uchar> &payload);
+
+    // A witness signature (sIGN chunk) over a segment's chain head (scope SEGMENT) or the
+    // content hash (scope FINAL).
+    struct signature
+    {
+        enum { VERSION = 1, ED25519 = 1 };
+        enum { SEGMENT = 0, FINAL = 1 };
+        int version, algorithm, scope, segment;
+        uchar keyid[8], session[16], nonce[16], hash[HASHSIZE], sig[64];
+        unsigned long long counter, recvus;
+        vector<uchar> extras; // key-value
+
+        signature() : version(VERSION), algorithm(ED25519), scope(FINAL), segment(0), counter(0), recvus(0)
+        {
+            memset(keyid, 0, sizeof(keyid)); memset(session, 0, sizeof(session)); memset(nonce, 0, sizeof(nonce));
+            memset(hash, 0, sizeof(hash)); memset(sig, 0, sizeof(sig));
+        }
+        // the signed bytes: "SBR2-sig" and every field before the signature
+        void signedbytes(vector<uchar> &out) const;
+        void sign(const uchar *seed); // fills keyid and sig from a 32-byte Ed25519 seed
+        bool check(const uchar *publickey) const;
+        void write(vector<uchar> &payload) const;
+        bool read(const uchar *p, int len);
+    };
+    // a key's value in a key-value payload: svar/var/bool values in num, str values in str
+    bool kvfind(const vector<uchar> &data, const char *key, long long *num, char *str = NULL, int strsize = 0);
+    void keyid(const uchar *publickey, uchar *id);
+    void publickey(const uchar *seed, uchar *out);
 }
 
 #endif

@@ -7,6 +7,12 @@ Usage:
   sbr2.py dump <file.sbr2>     also list every chunk, with key-value, tIME, SPLC and raw input contents
   sbr2.py rawcheck <file.sbr2> check that every sim event tagged as coming from a key or mouse
                                button has a raw key/button/wheel event in the same tick
+  sbr2.py verify <file.sbr2> <keys.txt>
+                               also check the witness signatures (sIGN) against trusted Ed25519
+                               public keys (hex, one per line)
+  sbr2.py history <export.txt> [file.sbr2...]
+                               recompute an attempt history exported with statsexporthistory,
+                               and check where each replay sits in it
 
 Needs Python 3.14+ (compression.zstd) and the blake3 module (pip install blake3).
 
@@ -19,6 +25,8 @@ Format (see the design doc for the chunk contents):
   running digest; at SEGE: head = BLAKE3("SBR2-seg" || head || digest), digest restarts;
   END = var(segments) || BLAKE3("SBR2-end" || head || digest); only sIGN may follow END.
 """
+import hashlib
+import struct
 import sys
 import zlib
 
@@ -214,6 +222,155 @@ def parse(data):
     return chunks, heads, content
 
 
+# Ed25519 signature check (RFC 8032, section 6 reference code)
+_P = 2**255 - 19
+_Q = 2**252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, -1, _P) % _P
+_SQRTM1 = pow(2, (_P - 1) // 4, _P)
+
+
+def _add(a, b):
+    A, B = (a[1] - a[0]) * (b[1] - b[0]) % _P, (a[1] + a[0]) * (b[1] + b[0]) % _P
+    C, D = 2 * a[3] * b[3] * _D % _P, 2 * a[2] * b[2] % _P
+    E, F, G, H = B - A, D - C, D + C, B + A
+    return (E * F % _P, G * H % _P, F * G % _P, E * H % _P)
+
+
+def _mul(s, pt):
+    acc = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            acc = _add(acc, pt)
+        pt = _add(pt, pt)
+        s >>= 1
+    return acc
+
+
+def _equal(a, b):
+    return (a[0] * b[2] - b[0] * a[2]) % _P == 0 and (a[1] * b[2] - b[1] * a[2]) % _P == 0
+
+
+def _recover_x(y, sign):
+    if y >= _P:
+        return None
+    x2 = (y * y - 1) * pow(_D * y * y + 1, -1, _P)
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P != 0:
+        x = x * _SQRTM1 % _P
+    if (x * x - x2) % _P != 0:
+        return None
+    if (x & 1) != sign:
+        x = _P - x
+    return x
+
+
+_GY = 4 * pow(5, -1, _P) % _P
+_GX = _recover_x(_GY, 0)
+_G = (_GX, _GY, 1, _GX * _GY % _P)
+
+
+def _decompress(b):
+    y = int.from_bytes(b, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    x = _recover_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % _P)
+
+
+def ed25519_verify(public, msg, sig):
+    if len(public) != 32 or len(sig) != 64:
+        return False
+    A, R = _decompress(public), _decompress(sig[:32])
+    if A is None or R is None:
+        return False
+    s = int.from_bytes(sig[32:], "little")
+    if s >= _Q:
+        return False
+    h = int.from_bytes(hashlib.sha512(sig[:32] + public + msg).digest(), "little") % _Q
+    return _equal(_mul(s, _G), _add(R, _mul(h, A)))
+
+
+def decode_sign(raw):
+    """sIGN payload -> dict with the signed bytes."""
+    r = Reader(raw)
+    d = {"version": r.take(1)[0], "algorithm": r.take(1)[0], "scope": r.take(1)[0]}
+    r.take(1)
+    d["keyid"], d["session"], d["nonce"] = r.take(8), r.take(16), r.take(16)
+    d["segment"], d["counter"] = r.var(), r.var()
+    d["recvus"] = int.from_bytes(r.take(8), "little")
+    d["hash"] = r.take(32)
+    d["extras"] = r.take(r.var())
+    end = r.pos
+    d["sig"] = r.take(64)
+    if r.left():
+        raise FormatError("sIGN: trailing bytes")
+    d["signed"] = b"SBR2-sig" + raw[:end]
+    return d
+
+
+def verify_signatures(chunks, heads, content, keys):
+    """-> list of (status, description) per sIGN chunk."""
+    byid = {}
+    for k in keys:
+        h = blake3()
+        h.update(k)
+        byid[h.digest()[:8]] = k
+    out = []
+    for name, flags, stored, size, seg, data in chunks:
+        if name != "sIGN":
+            continue
+        d = decode_sign(data)
+        what = "content" if d["scope"] == 1 else "segment %d" % d["segment"]
+        expected = content if d["scope"] == 1 else (heads[d["segment"]] if d["segment"] < len(heads) else None)
+        key = byid.get(d["keyid"])
+        if key is None:
+            out.append(("unknown key", "%s, key id %s" % (what, d["keyid"].hex())))
+        elif d["algorithm"] != 1 or expected != d["hash"] or not ed25519_verify(key, d["signed"], d["sig"]):
+            out.append(("BAD", what))
+        else:
+            out.append(("ok", "%s by %s" % (what, key.hex()[:16])))
+    return out
+
+
+def history_summary_content(summary):
+    return summary[-32:]
+
+
+def check_history(export, replays):
+    """Recompute an exported history chain; place each replay in it. -> list of problems."""
+    lines = [l.split() for l in open(export) if l.strip()]
+    if lines[0] != ["SBR2-history", "1"]:
+        raise FormatError("not a history export")
+    count = int(lines[1][0])
+    entries = [(bytes.fromhex(a), bytes.fromhex(b)) for a, b in lines[2:]]
+    problems, head, heads = [], bytes(32), [bytes(32)]
+    if len(entries) != count:
+        problems.append("export lists %d attempts, header says %d" % (len(entries), count))
+    for i, (summary, stated) in enumerate(entries):
+        h = blake3()
+        h.update(head + summary)
+        head = h.digest()
+        heads.append(head)
+        if head != stated:
+            problems.append("attempt %d: head doesn't follow from the summary" % i)
+    print("history: %d attempts, head %s" % (len(entries), head.hex()))
+    for f in replays:
+        chunks, _, content = parse(open(f, "rb").read())
+        hist = dict(decode_kv(next(c[5] for c in chunks if c[0] == "hIST")))
+        n, h = hist.get("historycount"), bytes.fromhex(hist.get("historyhead", ""))
+        if n is not None and n == len(entries) and heads[n] == h:
+            problems.append("%s: recorded after this export (attempt %d)" % (f, n))
+        elif n is None or n >= len(heads) or heads[n] != h:
+            problems.append("%s: its history head isn't in the chain" % f)
+        elif history_summary_content(entries[n][0]) != content:
+            problems.append("%s: attempt %d after its head isn't this replay" % (f, n))
+        else:
+            print("%s: attempt %d in the chain" % (f, n))
+    return problems
+
+
 KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND", "rSTA"}
 RAW_KINDS = ["keydown", "keyup", "buttondown", "buttonup", "motion", "wheel", "focus"]
 SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder"]
@@ -349,7 +506,12 @@ def decode_splc(raw):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("check", "dump", "rawcheck"):
+    if len(sys.argv) >= 3 and sys.argv[1] == "history":
+        problems = check_history(sys.argv[2], sys.argv[3:])
+        for p in problems:
+            print("FAIL:", p)
+        sys.exit(1 if problems else 0)
+    if len(sys.argv) != (4 if sys.argv[1:2] == ["verify"] else 3) or sys.argv[1] not in ("check", "dump", "rawcheck", "verify"):
         sys.exit(__doc__)
     data = open(sys.argv[2], "rb").read()
     try:
@@ -375,6 +537,16 @@ def main():
             elif name == "rAWI":
                 for e in decode_raw(data, lo):
                     print("    " + " ".join("%s=%s" % kv for kv in e.items()))
+    if sys.argv[1] == "verify":
+        keys = [bytes.fromhex(l.strip()) for l in open(sys.argv[3]) if len(l.strip()) == 64]
+        results = verify_signatures(chunks, heads, content, keys)
+        for status, what in results:
+            print("signature %s: %s" % (status, what))
+        if not results:
+            print("no signatures")
+        if any(s == "BAD" for s, _ in results) or not any(s == "ok" for s, _ in results):
+            print("FAIL: no valid signature" if not any(s == "BAD" for s, _ in results) else "FAIL: bad signature")
+            sys.exit(1)
     if sys.argv[1] == "rawcheck":
         checked, problems = rawcheck(chunks)
         for p in problems:

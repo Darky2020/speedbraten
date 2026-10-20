@@ -141,6 +141,155 @@ namespace sbr2
         }
     }
 
+    const char KNOWNCHUNKS[] = "META" "DATA" "SETS" "ATTM" "INPS" "HASH" "SPLC" "RSLT" "SEGE" "END ";
+
+    bool fromhex(const char *s, uchar *out, int n)
+    {
+        if(int(strlen(s)) != 2*n) return false;
+        loopi(n)
+        {
+            if(!isxdigit(uchar(s[2*i])) || !isxdigit(uchar(s[2*i+1]))) return false;
+            char b[3] = { s[2*i], s[2*i+1], '\0' };
+            out[i] = uchar(strtoul(b, NULL, 16));
+        }
+        return true;
+    }
+
+    void appendchunk(vector<uchar> &out, const char *type, const vector<uchar> &payload)
+    {
+        int start = out.length();
+        byteswriter w(out);
+        w.bytes(type, 4);
+        w.var(0);
+        w.var(payload.length());
+        w.bytes(payload.getbuf(), payload.length());
+        w.u32(uint(crc32(crc32(0, Z_NULL, 0), out.getbuf() + start, out.length() - start)));
+    }
+
+    bool kvfind(const vector<uchar> &data, const char *key, long long *num, char *str, int strsize)
+    {
+        bytesreader r(data.getbuf(), data.length());
+        int n = int(r.var());
+        loopi(n)
+        {
+            string k;
+            if(!r.str(k, sizeof(k))) return false;
+            int type = r.u8();
+            bool match = !strcmp(k, key);
+            switch(type)
+            {
+                case VALUE_SVAR: { long long v = r.svar(); if(match && num) *num = v; break; }
+                case VALUE_VAR: case VALUE_BOOL: { long long v = type == VALUE_VAR ? (long long)r.var() : r.u8(); if(match && num) *num = v; break; }
+                case VALUE_STR: case VALUE_BYTES:
+                {
+                    unsigned long long len = r.var();
+                    if(!r.ok || len > (unsigned long long)r.left()) return false;
+                    if(match && str && strsize > 0) { int keep = min(int(len), strsize - 1); memcpy(str, r.p, keep); str[keep] = '\0'; }
+                    r.p += len;
+                    break;
+                }
+                case VALUE_F32: r.u32(); break;
+                default: return false;
+            }
+            if(!r.ok) return false;
+            if(match) return true;
+        }
+        return false;
+    }
+
+    void keyid(const uchar *publickey, uchar *id)
+    {
+        uchar h[HASHSIZE];
+        blake3_hasher b;
+        blake3_hasher_init(&b);
+        blake3_hasher_update(&b, publickey, 32);
+        blake3_hasher_finalize(&b, h, HASHSIZE);
+        memcpy(id, h, 8);
+    }
+
+    void publickey(const uchar *seed, uchar *out)
+    {
+        uchar s[32], sk[64];
+        memcpy(s, seed, 32);
+        crypto_ed25519_key_pair(sk, out, s);
+        memset(sk, 0, sizeof(sk));
+    }
+
+    static void writefields(const signature &s, vector<uchar> &out)
+    {
+        byteswriter w(out);
+        w.u8(s.version);
+        w.u8(s.algorithm);
+        w.u8(s.scope);
+        w.u8(0);
+        w.bytes(s.keyid, 8);
+        w.bytes(s.session, 16);
+        w.bytes(s.nonce, 16);
+        w.var(s.segment);
+        w.var(s.counter);
+        w.u64(s.recvus);
+        w.bytes(s.hash, HASHSIZE);
+        w.var(s.extras.length());
+        w.bytes(s.extras.getbuf(), s.extras.length());
+    }
+
+    void signature::signedbytes(vector<uchar> &out) const
+    {
+        out.put((const uchar *)"SBR2-sig", 8);
+        writefields(*this, out);
+    }
+
+    void signature::sign(const uchar *seed)
+    {
+        uchar s[32], sk[64], pk[32];
+        memcpy(s, seed, 32);
+        crypto_ed25519_key_pair(sk, pk, s);
+        sbr2::keyid(pk, keyid);
+        vector<uchar> msg;
+        signedbytes(msg);
+        crypto_ed25519_sign(sig, sk, msg.getbuf(), msg.length());
+        memset(sk, 0, sizeof(sk));
+    }
+
+    bool signature::check(const uchar *publickey) const
+    {
+        uchar id[8];
+        sbr2::keyid(publickey, id);
+        if(memcmp(id, keyid, 8) || algorithm != ED25519) return false;
+        vector<uchar> msg;
+        signedbytes(msg);
+        return !crypto_ed25519_check(sig, publickey, msg.getbuf(), msg.length());
+    }
+
+    void signature::write(vector<uchar> &payload) const
+    {
+        writefields(*this, payload);
+        payload.put(sig, 64);
+    }
+
+    bool signature::read(const uchar *p, int len)
+    {
+        bytesreader r(p, len);
+        version = r.u8();
+        algorithm = r.u8();
+        scope = r.u8();
+        r.u8();
+        r.bytes(keyid, 8);
+        r.bytes(session, 16);
+        r.bytes(nonce, 16);
+        segment = int(r.var());
+        counter = r.var();
+        recvus = r.u64();
+        r.bytes(hash, HASHSIZE);
+        unsigned long long n = r.var();
+        if(!r.ok || n > (unsigned long long)r.left()) return false;
+        extras.setsize(0);
+        extras.put(r.p, int(n));
+        r.p += n;
+        r.bytes(sig, 64);
+        return r.ok && !r.left() && version == VERSION && scope <= FINAL;
+    }
+
     const chunk *reader::find(const char *type, int from) const
     {
         for(int i = from; i < chunks.length(); i++) if(istype(chunks[i]->type, type)) return chunks[i];
@@ -319,6 +468,54 @@ namespace game
     });
 
     // sbr2check file: verifies an SBR2 file and prints its chunks, segment heads and content hash
+    static void replaytestkey(const char *seedhex)
+    {
+        uchar seed[32], pk[32];
+        if(!sbr2::fromhex(seedhex, seed, 32)) { conoutf(CON_ERROR, "replaytestkey: the seed is 64 hex digits"); return; }
+        sbr2::publickey(seed, pk);
+        string hex;
+        tohex(pk, 32, hex);
+        conoutf("replaytestkey: %s", hex);
+        result(hex);
+    }
+    COMMAND(replaytestkey, "s");
+
+    // Until a witness exists: appends a signature made with the key of this seed, over the
+    // content hash (scope 1) or the chain head of a segment (scope 0).
+    static void replaysign(const char *file, const char *seedhex, int scope, int segment)
+    {
+        uchar seed[32];
+        if(!sbr2::fromhex(seedhex, seed, 32)) { conoutf(CON_ERROR, "replaysign: the seed is 64 hex digits"); return; }
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) { conoutf(CON_ERROR, "replaysign: could not open %s", file); return; }
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+        delete f;
+        sbr2::reader rd;
+        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replaysign: %s", rd.error); return; }
+        sbr2::signature s;
+        s.scope = scope ? int(sbr2::signature::FINAL) : int(sbr2::signature::SEGMENT);
+        if(s.scope == sbr2::signature::SEGMENT)
+        {
+            if(segment < 0 || segment >= rd.heads.length() / sbr2::HASHSIZE) { conoutf(CON_ERROR, "replaysign: no segment %d", segment); return; }
+            s.segment = segment;
+            memcpy(s.hash, &rd.heads[segment * sbr2::HASHSIZE], sbr2::HASHSIZE);
+        }
+        else memcpy(s.hash, rd.content, sbr2::HASHSIZE);
+        s.recvus = (unsigned long long)time(NULL) * 1000000;
+        s.sign(seed);
+        vector<uchar> payload;
+        s.write(payload);
+        sbr2::appendchunk(buf, "sIGN", payload);
+        f = openrawfile(path(file, true), "wb");
+        if(!f) { conoutf(CON_ERROR, "replaysign: could not write %s", file); return; }
+        f->write(buf.getbuf(), buf.length());
+        delete f;
+        conoutf("replaysign: signed %s (%s)", file, s.scope ? "content" : "segment");
+    }
+    ICOMMAND(replaysign, "ssii", (char *file, char *seed, int *scope, int *segment), replaysign(file, seed, *scope, *segment));
+
     ICOMMAND(sbr2check, "s", (char *file),
     {
         stream *f = openrawfile(path(file, true), "rb");
