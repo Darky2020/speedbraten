@@ -603,6 +603,8 @@ namespace game
 
         gamemode = mode;
         nextmode = mode;
+        // the player spawns during the load, in the new mode's spawn group
+        setclientmode();
         if(editmode) toggleedit();
         if(m_demo) { entities::resetspawns(); return; }
         // the player spawns during the load, and must not collide with the old map's monsters

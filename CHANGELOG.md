@@ -29,6 +29,10 @@
 - The ghost isn't shown while you watch the replay it comes from.
 - Loading a state clears particles, decals, dynamic lights and ragdolls from before the load,
   instead of playing them backwards.
+- Fixed: after a CTF game (flagruns included), the next map could put you in the middle of the
+  map instead of at its start, because the spawn still used the CTF team's spawn points. Going
+  the other way, the first spawn of a flagrun after a non-CTF game ignored the team spawns.
+  Replays recorded with the wrong spawn desync.
 - Races: every item, including quad damage and the health boost, is there from the start
   instead of appearing after up to 70 seconds, and there is no "will spawn in 10 seconds"
   announcement. Race replays recorded before this will desync.
