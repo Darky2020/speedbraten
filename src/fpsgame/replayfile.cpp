@@ -319,6 +319,7 @@ namespace game
     //   META   key-value pairs, keys sorted: client, date, flagrun, map, maps, mode, player, race
     //   DATA   var sim version, var files, per file: u8 role, str path, var size, BLAKE3
     //   run metadata (see tells.cpp), key-value: cLNT, sESS, hIST, pROV, SETS
+    //   bIND   (optional) var binds, str per bind: the bind actions rAWI refers to
     //   per attempt:
     //     ATTM var index, str map, u32 map crc, u8 has cfg crc, u32 cfg crc, u32 seed, str team,
     //          svar mode, var flagrun, var race, var start tick, var ticks, var hash groups,
@@ -328,6 +329,11 @@ namespace game
     //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
     //            u8 type, u8 source (INPUTSRC_*), then as in SBRP, except: command = var id in
     //            replaycommands, str arguments; map GUI action = str script)
+    //       rAWI (optional) var base us, var base SDL ms, var events, per event: svar us delta,
+    //            svar ms delta (from the previous event or the bases), svar tick delta (from
+    //            the previous event or lo), u8 kind, then key: var scancode, var keycode,
+    //            u8 flags, var bind+1; button: u8 button, var bind+1; motion: svar dx, svar dy,
+    //            u8 flags; wheel: svar x, svar y, var bind+1; focus: u8 flags
     //       HASH var hashes, (var tick delta from the previous hash or lo, groups x u32) per hash
     //       SPLC (only with state loads) var loads, (var tick, var discarded ticks, u8 kind,
     //            svar wall ms since the run began) per load
@@ -337,7 +343,7 @@ namespace game
     //       SEGE
     //     gHST (optional) var samples, samples as in SBRP
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
-    //   wIND   key-value window metadata
+    //   wIND, rSTA  key-value window metadata, raw input statistics
     //   END
     enum { SEGMENTTICKS = REPLAYSEGMENTTICKS };
     static const char SBR2KNOWN[] = "META" "DATA" "SETS" "ATTM" "INPS" "HASH" "SPLC" "RSLT" "SEGE" "END ";
@@ -404,7 +410,42 @@ namespace game
         }
     }
 
-    static void writeattempt(sbr2::writer &out, int index, const inputattempt &a, const vector<const mapdatafile *> &files)
+    static int bindindex(const vector<const char *> &binds, const char *bind)
+    {
+        if(bind) loopv(binds) if(binds[i] == bind) return i + 1;
+        return 0;
+    }
+
+    static void writeraw(sbr2::byteswriter &w, const rawevent *evs, int n, int lo, const vector<const char *> &binds)
+    {
+        w.var(evs[0].us);
+        w.var(evs[0].sdlms);
+        w.var(n);
+        long long us = evs[0].us;
+        uint ms = evs[0].sdlms;
+        int tick = lo;
+        loopi(n)
+        {
+            const rawevent &e = evs[i];
+            w.svar(e.us - us);
+            w.svar(int(e.sdlms - ms));
+            w.svar(e.tick - tick);
+            us = e.us;
+            ms = e.sdlms;
+            tick = e.tick;
+            w.u8(e.kind);
+            switch(e.kind)
+            {
+                case rawevent::KEYDOWN: case rawevent::KEYUP: w.var(e.code); w.var(uint(e.keycode)); w.u8(e.flags); w.var(bindindex(binds, e.bind)); break;
+                case rawevent::BUTTONDOWN: case rawevent::BUTTONUP: w.u8(e.code); w.var(bindindex(binds, e.bind)); break;
+                case rawevent::MOTION: w.svar(e.dx); w.svar(e.dy); w.u8(e.flags); break;
+                case rawevent::WHEEL: w.svar(e.dx); w.svar(e.dy); w.var(bindindex(binds, e.bind)); break;
+                case rawevent::FOCUS: w.u8(e.flags); break;
+            }
+        }
+    }
+
+    static void writeattempt(sbr2::writer &out, int index, const inputattempt &a, const vector<const mapdatafile *> &files, const vector<const char *> &binds)
     {
         vector<uchar> p;
         sbr2::byteswriter w(p);
@@ -435,7 +476,8 @@ namespace game
         if(a.events.length()) { first = min(first, a.events[0].tick); last = max(last, a.events[a.events.length()-1].tick); }
         if(hashes.length()) { first = min(first, hashes[0]->tick); last = max(last, hashes.last()->tick); }
         if(a.splices.length()) { first = min(first, a.splices[0].tick); last = max(last, a.splices[a.splices.length()-1].tick); }
-        int ev = 0, hs = 0, sp = 0, tm = 0;
+        if(a.raw.length()) { first = min(first, a.raw[0].tick); last = max(last, a.raw[a.raw.length()-1].tick); }
+        int ev = 0, hs = 0, sp = 0, tm = 0, rw = 0;
         for(int seg = max(first, 0)/SEGMENTTICKS; seg <= last/SEGMENTTICKS; seg++)
         {
             int lo = seg*SEGMENTTICKS, hi = lo + SEGMENTTICKS;
@@ -453,6 +495,16 @@ namespace game
                 writeevent(w, e);
             }
             out.add("INPS", p, true);
+
+            n = 0;
+            while(rw + n < a.raw.length() && a.raw[rw + n].tick < hi) n++;
+            if(n)
+            {
+                p.setsize(0);
+                writeraw(w, &a.raw[rw], n, lo, binds);
+                rw += n;
+                out.add("rAWI", p, true);
+            }
 
             n = 0;
             prev = lo;
@@ -560,7 +612,21 @@ namespace game
         const vector<runchunk *> &tells = info.live ? made : run.tells;
         loopv(tells) if(!tells[i]->late) out.add(tells[i]->type, tells[i]->data);
 
-        loopv(run.attempts) writeattempt(out, i, *run.attempts[i], files);
+        vector<const char *> binds;
+        loopv(run.attempts) loopvj(run.attempts[i]->raw)
+        {
+            const char *bind = run.attempts[i]->raw[j].bind;
+            if(bind && binds.find(bind) < 0) binds.add(bind);
+        }
+        if(binds.length())
+        {
+            p.setsize(0);
+            w.var(binds.length());
+            loopv(binds) w.str(binds[i]);
+            out.add("bIND", p, true);
+        }
+
+        loopv(run.attempts) writeattempt(out, i, *run.attempts[i], files, binds);
 
         p.setsize(0);
         w.u8(info.finished ? 1 : 0);
@@ -742,6 +808,38 @@ namespace game
         return r.ok && n > 0;
     }
 
+    static bool readraw(sbr2::bytesreader &r, inputattempt &a, int lo, int hi, const vector<const char *> &binds)
+    {
+        long long us = (long long)r.var();
+        uint ms = uint(r.var());
+        int n = int(r.var()), tick = lo;
+        loopi(n)
+        {
+            if(!r.ok) return false;
+            rawevent &e = a.raw.add();
+            us += r.svar();
+            ms += uint(int(r.svar()));
+            tick += int(r.svar());
+            e.us = us;
+            e.sdlms = ms;
+            e.tick = tick;
+            e.kind = r.u8();
+            int bind = 0;
+            switch(e.kind)
+            {
+                case rawevent::KEYDOWN: case rawevent::KEYUP: e.code = int(r.var()); e.keycode = int(uint(r.var())); e.flags = r.u8(); bind = int(r.var()); break;
+                case rawevent::BUTTONDOWN: case rawevent::BUTTONUP: e.code = r.u8(); bind = int(r.var()); break;
+                case rawevent::MOTION: e.dx = int(r.svar()); e.dy = int(r.svar()); e.flags = r.u8(); break;
+                case rawevent::WHEEL: e.dx = int(r.svar()); e.dy = int(r.svar()); bind = int(r.var()); break;
+                case rawevent::FOCUS: e.flags = r.u8(); break;
+                default: return false;
+            }
+            if(bind < 0 || bind > binds.length() || tick < lo || tick >= hi) return false;
+            e.bind = bind ? binds[bind-1] : NULL;
+        }
+        return r.ok;
+    }
+
     static bool readtiming(sbr2::bytesreader &r, inputattempt &a, int segment)
     {
         segmenttiming &t = a.timing.add(segmenttiming(segment));
@@ -785,6 +883,7 @@ namespace game
         bool meta = false, data = false, result = false;
         int attempts = 0, lo = 0, hi = 0, nexttick = 0, inpssegment = -1;
         inputattempt *a = NULL;
+        vector<const char *> binds;
         loopv(rd.chunks)
         {
             const sbr2::chunk &c = *rd.chunks[i];
@@ -817,7 +916,19 @@ namespace game
                 if(a && ok) ok = readattempt(r, *a, files);
                 else parsed = false;
             }
-            else if(!memcmp(c.type, "INPS", 4) || !memcmp(c.type, "HASH", 4) || !memcmp(c.type, "SPLC", 4) || !memcmp(c.type, "tIME", 4) || !memcmp(c.type, "gHST", 4))
+            else if(!memcmp(c.type, "bIND", 4))
+            {
+                ok = data && !attempts && binds.empty();
+                int n = int(r.var());
+                loopj(n)
+                {
+                    unsigned long long len = r.var();
+                    if(!r.ok || len > (unsigned long long)r.left()) { ok = false; break; }
+                    binds.add(internbind((const char *)r.p, int(len)));
+                    r.p += len;
+                }
+            }
+            else if(!memcmp(c.type, "INPS", 4) || !memcmp(c.type, "HASH", 4) || !memcmp(c.type, "SPLC", 4) || !memcmp(c.type, "tIME", 4) || !memcmp(c.type, "rAWI", 4) || !memcmp(c.type, "gHST", 4))
             {
                 ok = attempts > 0 && !result;
                 if(!a) parsed = false;
@@ -830,6 +941,7 @@ namespace game
                 }
                 else if(!memcmp(c.type, "gHST", 4)) ok = !a->trace.length() && readtrace(r, *a);
                 else if(!memcmp(c.type, "tIME", 4)) ok = inpssegment == c.segment && readtiming(r, *a, lo / SEGMENTTICKS);
+                else if(!memcmp(c.type, "rAWI", 4)) ok = inpssegment == c.segment && readraw(r, *a, lo, hi, binds);
                 else
                 {
                     ok = inpssegment == c.segment;

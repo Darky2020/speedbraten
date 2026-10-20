@@ -90,6 +90,8 @@ namespace game
     extern void begindisplay(float alpha);
     // a frame of offline play took us microseconds of wall time and ran ticks sim ticks
     extern void frametimed(int us, int ticks);
+    extern void rawinput(const rawevent &e);
+    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
     extern void begintick();
     extern void enddisplay();
     extern void renderavatar();

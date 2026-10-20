@@ -117,6 +117,9 @@ int SDLCALL SDL_setenv(const char *name, const char *value, int overwrite)
 #endif
 }
 
+Uint64 SDLCALL SDL_GetPerformanceCounter(void) { return Uint64(SDL_GetTicks()) * 1000; }
+Uint64 SDLCALL SDL_GetPerformanceFrequency(void) { return 1000000; }
+
 Uint32 SDLCALL SDL_GetTicks(void)
 {
 #ifdef WIN32

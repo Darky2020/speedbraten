@@ -103,6 +103,7 @@ namespace game
         vector<ghostsample> trace; // v9+, finished or saved runs only
         vector<mapdatafile> files; // what the map load read; empty in SBRP files
         vector<segmenttiming> timing; // by segment, empty in SBRP files
+        vector<rawevent> raw;         // binds point into internbind's pool; empty in SBRP files
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false before v8
@@ -125,6 +126,7 @@ namespace game
             trace.setsize(0);
             files.setsize(0);
             timing.setsize(0);
+            raw.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -145,6 +147,7 @@ namespace game
             dst.trace = trace;
             dst.files = files;
             dst.timing = timing;
+            dst.raw = raw;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             dst.cfgcrc = cfgcrc;
@@ -213,6 +216,9 @@ namespace game
     extern void tellsreset();
     extern void tellsframe(int us);
     extern int tellsrunms();
+    extern long long tellsrunus();
+    // a lasting copy of a bind action for raw events; the same text gives the same pointer
+    extern const char *internbind(const char *s, int len);
     extern void tellsencode(const inputrun &run, const replayinfo &info, vector<runchunk *> &out);
 
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info);

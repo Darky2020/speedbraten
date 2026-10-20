@@ -628,6 +628,23 @@ enum { INPUTSRC_OTHER = 0, INPUTSRC_KEY, INPUTSRC_MOUSE, INPUTSRC_CONSOLE, INPUT
 extern int inputsource;
 extern int fixedframe;
 extern bool minimized;
+// a key, mouse or focus event as SDL delivered it, before the game handles it
+struct rawevent
+{
+    enum { KEYDOWN = 0, KEYUP, BUTTONDOWN, BUTTONUP, MOTION, WHEEL, FOCUS };
+    enum { REPEAT = 1<<0, GRABBED = 1<<1, GAINED = 1<<2 };
+    int tick, kind;
+    long long us;      // since the run began, when the game read the event
+    uint sdlms;        // SDL's event timestamp
+    int code, keycode; // key: scancode and keycode; button: SDL button
+    int dx, dy;        // motion, wheel
+    int flags;
+    const char *bind;  // what the key or button is bound to now, NULL if nothing
+
+    rawevent(int kind = KEYDOWN, uint sdlms = 0) : tick(0), kind(kind), us(0), sdlms(sdlms), code(0), keycode(0), dx(0), dy(0), flags(0), bind(NULL) {}
+};
+extern const char *getbindaction(int code);
+
 struct inputsourcescope
 {
     int old;

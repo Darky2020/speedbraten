@@ -4,7 +4,9 @@ BLAKE3 hash chain). Independent of the game's C++ code, for checking files and f
 
 Usage:
   sbr2.py check <file.sbr2>    verify CRCs, chain and content hash; print segment heads
-  sbr2.py dump <file.sbr2>     also list every chunk, with key-value, tIME and SPLC contents
+  sbr2.py dump <file.sbr2>     also list every chunk, with key-value, tIME, SPLC and raw input contents
+  sbr2.py rawcheck <file.sbr2> check that every sim event tagged as coming from a key or mouse
+                               button has a raw key/button/wheel event in the same tick
 
 Needs Python 3.14+ (compression.zstd) and the blake3 module (pip install blake3).
 
@@ -212,7 +214,98 @@ def parse(data):
     return chunks, heads, content
 
 
-KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND"}
+KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND", "rSTA"}
+RAW_KINDS = ["keydown", "keyup", "buttondown", "buttonup", "motion", "wheel", "focus"]
+SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder"]
+
+
+def svar_of(r):
+    v = r.var()
+    return (v >> 1) ^ -(v & 1)
+
+
+def decode_binds(raw):
+    r = Reader(raw)
+    return [r.take(r.var()).decode("utf-8", "replace") for _ in range(r.var())]
+
+
+def decode_raw(raw, lo):
+    """rAWI payload -> list of dicts (tick, us, ms, kind, ...)."""
+    r = Reader(raw)
+    us, ms, out, tick = r.var(), r.var(), [], lo
+    for _ in range(r.var()):
+        us += svar_of(r)
+        ms += svar_of(r)
+        tick += svar_of(r)
+        kind = r.take(1)[0]
+        e = {"tick": tick, "us": us, "ms": ms, "kind": RAW_KINDS[kind] if kind < len(RAW_KINDS) else kind}
+        if kind in (0, 1):
+            e.update(scancode=r.var(), keycode=r.var(), flags=r.take(1)[0], bind=r.var())
+        elif kind in (2, 3):
+            e.update(button=r.take(1)[0], bind=r.var())
+        elif kind == 4:
+            e.update(dx=svar_of(r), dy=svar_of(r), flags=r.take(1)[0])
+        elif kind == 5:
+            e.update(dx=svar_of(r), dy=svar_of(r), bind=r.var())
+        elif kind == 6:
+            e.update(flags=r.take(1)[0])
+        else:
+            raise FormatError("rAWI: unknown kind %d" % kind)
+        out.append(e)
+    return out
+
+
+def decode_events(raw):
+    """INPS payload -> (lo, list of (tick, type, source))."""
+    r = Reader(raw)
+    lo = r.var()
+    r.var()
+    tick, out = lo, []
+    for _ in range(r.var()):
+        tick += r.var()
+        etype, source = r.take(1)[0], r.take(1)[0]
+        if etype == 0:
+            r.take(9)
+        elif etype in (1, 2, 5):
+            r.var()
+        elif etype == 3:
+            r.var()
+            r.take(r.var())
+        elif etype == 4:
+            r.take(8)
+            r.take(r.var())
+        elif etype == 6:
+            r.var()
+            r.take(r.var())
+        elif etype == 7:
+            r.take(r.var())
+        else:
+            raise FormatError("INPS: unknown event type %d" % etype)
+        out.append((tick, etype, source))
+    return lo, out
+
+
+def rawcheck(chunks):
+    """Sim events from a key or mouse need a raw key/button/wheel event in the same tick."""
+    attempt, lo, problems, checked = -1, 0, [], 0
+    sim, raw = {}, {}
+    for name, flags, stored, size, seg, data in chunks:
+        if name == "ATTM":
+            attempt += 1
+        elif name == "INPS":
+            lo, evs = decode_events(data)
+            for tick, etype, source in evs:
+                if source in (1, 2):
+                    sim.setdefault((attempt, tick), []).append((etype, SOURCES[source]))
+        elif name == "rAWI":
+            for e in decode_raw(data, lo):
+                if e["kind"] in ("keydown", "keyup", "buttondown", "buttonup", "wheel"):
+                    raw[(attempt, e["tick"])] = True
+    for (a, tick), evs in sorted(sim.items()):
+        checked += len(evs)
+        if (a, tick) not in raw:
+            problems.append("attempt %d tick %d: %s without a raw key/button event" % (a, tick, ", ".join("type %d from %s" % ev for ev in evs)))
+    return checked, problems
 
 
 def decode_kv(raw):
@@ -256,7 +349,7 @@ def decode_splc(raw):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("check", "dump"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("check", "dump", "rawcheck"):
         sys.exit(__doc__)
     data = open(sys.argv[2], "rb").read()
     try:
@@ -274,6 +367,21 @@ def main():
             elif name == "SPLC":
                 for line in decode_splc(data):
                     print("    " + line)
+            elif name == "bIND":
+                for j, b in enumerate(decode_binds(data)):
+                    print("    %d: %s" % (j + 1, b))
+            elif name == "INPS":
+                lo = Reader(data).var()
+            elif name == "rAWI":
+                for e in decode_raw(data, lo):
+                    print("    " + " ".join("%s=%s" % kv for kv in e.items()))
+    if sys.argv[1] == "rawcheck":
+        checked, problems = rawcheck(chunks)
+        for p in problems:
+            print("FAIL:", p)
+        print("%d key/mouse sim events, %d without raw input" % (checked, len(problems)))
+        if problems:
+            sys.exit(1)
     for i, head in enumerate(heads):
         print("head %d %s" % (i, head.hex()))
     print("ok, content %s" % content.hex())

@@ -64,6 +64,7 @@ namespace game
         int parent, forktick, discarded, kind, wallms;
         vector<inputevent> events;
         vector<tickhash> hashes;
+        vector<rawevent> raw;
 
         inputbranch(int parent, int forktick, int discarded, int kind, int wallms) : parent(parent), forktick(forktick), discarded(discarded), kind(kind), wallms(wallms) {}
         ~inputbranch() { loopv(events) DELETEA(events[i].cmd); }
@@ -106,6 +107,7 @@ namespace game
             if(e.cmd) e.cmd = newstring(e.cmd);
         }
         loopv(br.hashes) if(br.hashes[i].tick <= limit) a.hashes.add(br.hashes[i]);
+        loopv(br.raw) if(br.raw[i].tick <= limit) a.raw.add(br.raw[i]);
         if(br.parent >= 0)
         {
             inputsplice &sp = a.splices.add();
@@ -132,12 +134,14 @@ namespace game
         inputbranch &cur = *branches[curbranch];
         loopv(rec.events) if(rec.events[i].tick > cur.forktick) { cur.events.add(rec.events[i]); rec.events[i].cmd = NULL; }
         loopv(rec.hashes) if(rec.hashes[i].tick > cur.forktick) cur.hashes.add(rec.hashes[i]);
+        loopv(rec.raw) if(rec.raw[i].tick > cur.forktick) cur.raw.add(rec.raw[i]);
         int discarded = rec.ticks - commontick(curbranch, rec.ticks, from, tick);
         curbranch = branches.length();
         branches.add(new inputbranch(from, tick, max(discarded, 0), kind, tellsrunms()));
         loopv(rec.events) DELETEA(rec.events[i].cmd);
         rec.events.setsize(0);
         rec.hashes.setsize(0);
+        rec.raw.setsize(0);
         rec.splices.setsize(0);
         addchain(rec, curbranch, tick);
         rec.ticks = tick;
@@ -163,6 +167,9 @@ namespace game
         n = 0;
         loopv(a.timing) if(a.timing[i].segment < from.tick / REPLAYSEGMENTTICKS) n++; else break;
         a.timing.remove(0, n);
+        n = 0;
+        loopv(a.raw) if(a.raw[i].tick <= from.tick) n++; else break;
+        a.raw.remove(0, n);
     }
 
     // Flagruns and races are judged per life: the replay of a finished run starts at the
@@ -872,6 +879,22 @@ namespace game
         a.flagrun = server::flagrunactive() ? 1 : 0;
         a.race = server::racerulesactive() ? 1 : 0;
         recordsettings(a);
+    }
+
+    const char *internbind(const char *s, int len)
+    {
+        static vector<char *> pool;
+        loopv(pool) if(int(strlen(pool[i])) == len && !strncmp(pool[i], s, len)) return pool[i];
+        return pool.add(newstring(s, len));
+    }
+
+    void rawinput(const rawevent &e)
+    {
+        if(!simticking || replaying || recordingoff || recording.attempts.empty() || !connected) return;
+        rawevent &r = recording.last().raw.add(e);
+        r.tick = curtick + 1;
+        r.us = tellsrunus();
+        if(r.bind) r.bind = internbind(r.bind, strlen(r.bind));
     }
 
     void frametimed(int us, int ticks)

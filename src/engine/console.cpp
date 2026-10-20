@@ -376,6 +376,23 @@ void onrelease(const char *s)
 
 COMMAND(onrelease, "s");
 
+static int bindstate()
+{
+    if(mainmenu) return keym::ACTION_DEFAULT;
+    if(editmode) return keym::ACTION_EDITING;
+    if(player->state==CS_SPECTATOR) return keym::ACTION_SPECTATOR;
+    return keym::ACTION_DEFAULT;
+}
+
+const char *getbindaction(int code)
+{
+    keym *k = keyms.access(code);
+    if(!k) return NULL;
+    int state = bindstate();
+    const char *action = k->actions[state][0] ? k->actions[state] : k->actions[keym::ACTION_DEFAULT];
+    return action[0] ? action : NULL;
+}
+
 void execbind(keym &k, bool isdown)
 {
     inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);

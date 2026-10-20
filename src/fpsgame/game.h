@@ -989,7 +989,6 @@ namespace game
     extern void queueinput(int type, int arg = 0, const char *cmd = NULL);
     extern bool deferinput(int type, int arg = 0, const char *cmd = NULL);
     extern bool dethashactive();
-    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
     extern void inputmapstart(const char *name, int mode);
     extern int inputtick();
     extern void inputrunfinished(int runtime);

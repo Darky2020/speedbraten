@@ -40,6 +40,7 @@ namespace game
     // counters since the current run began
     static struct
     {
+        Uint64 startcounter;
         uint startms;
         int saves, loads, focuslosses, minimizes, fixedframe;
         long long focuslostus;
@@ -52,6 +53,7 @@ namespace game
         runssession++;
         memset(&run, 0, sizeof(run));
         run.startms = SDL_GetTicks();
+        run.startcounter = SDL_GetPerformanceCounter();
         lastfocus = hasfocus;
         lastminimized = minimized;
     }
@@ -61,6 +63,7 @@ namespace game
     void tellsreset() { resets++; }
     void tellsharness() { run.harness = true; }
     int tellsrunms() { return int(SDL_GetTicks() - run.startms); }
+    long long tellsrunus() { return (long long)((SDL_GetPerformanceCounter() - run.startcounter)*1000000/SDL_GetPerformanceFrequency()); }
 
     void tellsframe(int us)
     {
@@ -122,6 +125,63 @@ namespace game
         if(!id) return;
         if(id->type == ID_VAR) kv.svar(name, *id->storage.i);
         else if(id->type == ID_FVAR) kv.f32(name, *id->storage.f);
+    }
+
+    static int bucket(long long v, const int *limits, int n)
+    {
+        int b = 0;
+        while(b < n && v >= limits[b]) b++;
+        return b;
+    }
+
+    static void histogram(sbr2::kvwriter &kv, const char *key, const int *counts, int n)
+    {
+        string s = "";
+        loopi(n) concformatstring(s, "%s%d", i ? " " : "", counts[i]);
+        kv.str(key, s);
+    }
+
+    // key presses and holds, mouse motion sizes and gaps over the whole run
+    static void rawstatistics(const inputrun &r, sbr2::kvwriter &kv)
+    {
+        static const int holdlimits[7] = { 20000, 40000, 60000, 80000, 120000, 200000, 500000 }; // us
+        static const int sizelimits[7] = { 2, 4, 8, 16, 32, 64, 128 };                           // |dx|+|dy|
+        int holds[8] = { 0 }, sizes[8] = { 0 }, presses = 0, motions = 0;
+        long long minhold = -1, mingap = -1;
+        loopvk(r.attempts)
+        {
+            const vector<rawevent> &raw = r.attempts[k]->raw;
+            long long lastmotion = -1;
+            loopv(raw)
+            {
+                const rawevent &e = raw[i];
+                if(e.kind == rawevent::MOTION)
+                {
+                    motions++;
+                    sizes[bucket(abs(e.dx) + abs(e.dy), sizelimits, 7)]++;
+                    if(lastmotion >= 0 && e.us > lastmotion && (mingap < 0 || e.us - lastmotion < mingap)) mingap = e.us - lastmotion;
+                    lastmotion = e.us;
+                }
+                else if((e.kind == rawevent::KEYDOWN && !(e.flags & rawevent::REPEAT)) || e.kind == rawevent::BUTTONDOWN)
+                {
+                    presses++;
+                    int up = e.kind == rawevent::KEYDOWN ? int(rawevent::KEYUP) : int(rawevent::BUTTONUP);
+                    for(int j = i+1; j < raw.length(); j++) if(raw[j].kind == up && raw[j].code == e.code)
+                    {
+                        long long hold = raw[j].us - e.us;
+                        holds[bucket(hold, holdlimits, 7)]++;
+                        if(minhold < 0 || hold < minhold) minhold = hold;
+                        break;
+                    }
+                }
+            }
+        }
+        kv.var("presses", presses);
+        kv.svar("minholdus", minhold);
+        histogram(kv, "holdhist", holds, 8);
+        kv.var("motions", motions);
+        kv.svar("mingapus", mingap);
+        histogram(kv, "motionhist", sizes, 8);
     }
 
     static const char * const inputsettings[] = { "sensitivity", "sensitivityscale", "mouseaccel", "invmouse", "zoomsens", "zoomaccel", "zoomautosens", "fov" };
@@ -191,6 +251,11 @@ namespace game
         addsetting(window, "vsync");
         addsetting(window, "fullscreen");
         addchunk(out, "wIND", window);
+        out.last()->late = true;
+
+        sbr2::kvwriter rawstats;
+        rawstatistics(r, rawstats);
+        addchunk(out, "rSTA", rawstats);
         out.last()->late = true;
     }
 }

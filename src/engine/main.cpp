@@ -940,6 +940,53 @@ static void checkmousemotion(int &dx, int &dy)
     }
 }
 
+#ifndef HEADLESS
+// Harness: pushes an SDL event, which then goes through checkinput like a real one.
+// kind: 0 key down, 1 key up (code = SDL keycode), 2 button down, 3 button up (code = SDL
+// button), 4 motion (dx dy), 5 wheel (dx dy)
+ICOMMAND(harnessraw, "iiii", (int *kind, int *code, int *dx, int *dy),
+{
+    game::tellsharness();
+    SDL_Event e;
+    memset(&e, 0, sizeof(e));
+    switch(*kind)
+    {
+        case 0: case 1:
+            e.type = *kind == 0 ? SDL_KEYDOWN : SDL_KEYUP;
+            e.key.state = *kind == 0 ? SDL_PRESSED : SDL_RELEASED;
+            e.key.keysym.sym = *code;
+            e.key.keysym.scancode = SDL_GetScancodeFromKey(*code);
+            break;
+        case 2: case 3:
+            e.type = *kind == 2 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+            e.button.state = *kind == 2 ? SDL_PRESSED : SDL_RELEASED;
+            e.button.button = *code;
+            break;
+        case 4: e.type = SDL_MOUSEMOTION; e.motion.xrel = *dx; e.motion.yrel = *dy; break;
+        case 5: e.type = SDL_MOUSEWHEEL; e.wheel.x = *dx; e.wheel.y = *dy; break;
+        default: return;
+    }
+    SDL_PushEvent(&e);
+});
+#endif
+
+// the key code processkey gets for an SDL mouse button, 0 for none
+static int mousebuttoncode(int button)
+{
+    switch(button)
+    {
+        case SDL_BUTTON_LEFT: return -1;
+        case SDL_BUTTON_MIDDLE: return -2;
+        case SDL_BUTTON_RIGHT: return -3;
+        case SDL_BUTTON_X1: return -6;
+        case SDL_BUTTON_X2: return -7;
+        case SDL_BUTTON_X2 + 1: return -10;
+        case SDL_BUTTON_X2 + 2: return -11;
+        case SDL_BUTTON_X2 + 3: return -12;
+        default: return 0;
+    }
+}
+
 void checkinput()
 {
     if(interceptkeysym) clearinterceptkey();
@@ -969,6 +1016,14 @@ void checkinput()
 
             case SDL_KEYDOWN:
             case SDL_KEYUP:
+            {
+                rawevent raw(event.type == SDL_KEYDOWN ? rawevent::KEYDOWN : rawevent::KEYUP, event.key.timestamp);
+                raw.code = event.key.keysym.scancode;
+                raw.keycode = event.key.keysym.sym;
+                if(event.key.repeat) raw.flags |= rawevent::REPEAT;
+                raw.bind = getbindaction(event.key.keysym.sym);
+                game::rawinput(raw);
+            }
                 if(keyrepeatmask || !event.key.repeat)
                     processkey(event.key.keysym.sym, event.key.state==SDL_PRESSED, event.key.keysym.mod | SDL_GetModState());
                 break;
@@ -981,6 +1036,11 @@ void checkinput()
                         break;
 
                     case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    {
+                        rawevent raw(rawevent::FOCUS, event.window.timestamp);
+                        raw.flags = rawevent::GAINED;
+                        game::rawinput(raw);
+                    }
                         shouldgrab = true;
                         hasfocus = true;
                         break;
@@ -991,6 +1051,7 @@ void checkinput()
 
                     case SDL_WINDOWEVENT_LEAVE:
                     case SDL_WINDOWEVENT_FOCUS_LOST:
+                        if(event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) game::rawinput(rawevent(rawevent::FOCUS, event.window.timestamp));
                         shouldgrab = false;
                         focused = -1;
                         hasfocus = false;
@@ -1023,6 +1084,13 @@ void checkinput()
                 break;
 
             case SDL_MOUSEMOTION:
+            {
+                rawevent raw(rawevent::MOTION, event.motion.timestamp);
+                raw.dx = event.motion.xrel;
+                raw.dy = event.motion.yrel;
+                if(grabinput) raw.flags |= rawevent::GRABBED;
+                game::rawinput(raw);
+            }
                 if(grabinput)
                 {
                     int dx = event.motion.xrel, dy = event.motion.yrel;
@@ -1036,6 +1104,13 @@ void checkinput()
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:
                 //if(lasttype==event.type && lastbut==event.button.button) break; // why?? get event twice without it
+            {
+                rawevent raw(event.type == SDL_MOUSEBUTTONDOWN ? rawevent::BUTTONDOWN : rawevent::BUTTONUP, event.button.timestamp);
+                raw.code = event.button.button;
+                int code = mousebuttoncode(event.button.button);
+                if(code) raw.bind = getbindaction(code);
+                game::rawinput(raw);
+            }
                 switch(event.button.button)
                 {
                     case SDL_BUTTON_LEFT: processkey(-1, event.button.state==SDL_PRESSED); break;
@@ -1052,6 +1127,14 @@ void checkinput()
                 break;
 
             case SDL_MOUSEWHEEL:
+            {
+                rawevent raw(rawevent::WHEEL, event.wheel.timestamp);
+                raw.dx = event.wheel.x;
+                raw.dy = event.wheel.y;
+                int code = event.wheel.y > 0 ? -4 : event.wheel.y < 0 ? -5 : event.wheel.x > 0 ? -8 : event.wheel.x < 0 ? -9 : 0;
+                if(code) raw.bind = getbindaction(code);
+                game::rawinput(raw);
+            }
                 if(event.wheel.y > 0) { processkey(-4, true); processkey(-4, false); }
                 else if(event.wheel.y < 0) { processkey(-5, true); processkey(-5, false); }
                 else if(event.wheel.x > 0) { processkey(-8, true); processkey(-8, false); }
