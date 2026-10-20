@@ -19,7 +19,8 @@ Needs Python 3.14+ (compression.zstd) and the blake3 module (pip install blake3)
 Format (see the design doc for the chunk contents):
   file  = "SBR2" var(version) chunk* END-chunk sIGN-chunk*
   chunk = type[4] var(flags) var(stored length) payload u32le crc32(type..payload)
-  An uppercase first letter of the type marks a required chunk. flags bit 0: zstd payload.
+  An uppercase first letter of the type marks a required chunk. flags bit 0: the payload is
+  var(raw length) + the next bytes of the file's single zstd stream, flushed at the chunk's end.
   hashed(c) = type || var(raw length) || raw payload
   head = BLAKE3("SBR2-head" || var(version)); every chunk except sIGN and END is hashed into a
   running digest; at SEGE: head = BLAKE3("SBR2-seg" || head || digest), digest restarts;
@@ -114,7 +115,7 @@ class _PyBlake3:
 if blake3 is None:
     blake3 = _PyBlake3
 
-VERSION = 1
+VERSION = 2
 KNOWN_REQUIRED = {b"META", b"SETS", b"DATA", b"ATTM", b"INPS", b"HASH", b"SPLC", b"RSLT", b"SEGE", b"END "}
 
 
@@ -178,6 +179,7 @@ def parse(data):
     head = h(b"SBR2-head", var(VERSION))
     run = blake3()
     chunks, heads, content, ended, segment = [], [], None, False, 0
+    stream = zstd.ZstdDecompressor()
     while r.left():
         start = r.pos
         ctype = r.take(4)
@@ -189,7 +191,14 @@ def parse(data):
             raise FormatError("chunk %d (%s): CRC mismatch" % (len(chunks), name))
         if flags & ~1:
             raise FormatError("chunk %d (%s): unknown flags %d" % (len(chunks), name, flags))
-        raw = zstd.decompress(stored) if flags & 1 else stored
+        if flags & 1:
+            pr = Reader(stored)
+            size = pr.var()
+            raw = stream.decompress(stored[pr.pos:])
+            if len(raw) != size:
+                raise FormatError("chunk %d (%s): bad compressed payload" % (len(chunks), name))
+        else:
+            raw = stored
         sign, end = ctype == b"sIGN", ctype == b"END "
         if ended and not sign:
             raise FormatError("chunk %d (%s) after END" % (len(chunks), name))
@@ -422,7 +431,9 @@ def decode_events(raw):
         tick += r.var()
         etype, source = r.take(1)[0], r.take(1)[0]
         if etype == 0:
-            r.take(9)
+            r.var()
+            r.var()
+            r.take(1)
         elif etype in (1, 2, 5):
             r.var()
         elif etype == 3:

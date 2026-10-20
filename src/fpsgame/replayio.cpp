@@ -53,7 +53,7 @@ namespace sbr2
         blake3_hasher_init(&run);
     }
 
-    writer::writer() : segments(0), finished(false)
+    writer::writer() : segments(0), zstream(NULL), finished(false)
     {
         running = new blake3_hasher;
         blake3_hasher_init((blake3_hasher *)running);
@@ -64,7 +64,11 @@ namespace sbr2
         memset(content, 0, sizeof(content));
     }
 
-    writer::~writer() { delete (blake3_hasher *)running; }
+    writer::~writer()
+    {
+        delete (blake3_hasher *)running;
+        if(zstream) ZSTD_freeCCtx((ZSTD_CCtx *)zstream);
+    }
 
     void writer::add(const char *type, const vector<uchar> &payload, bool compress) { add(type, payload.getbuf(), payload.length(), compress); }
 
@@ -74,11 +78,34 @@ namespace sbr2
         if(!istype(type, "sIGN") && !istype(type, "END ")) hashchunk(*(blake3_hasher *)running, type, payload, len);
         vector<uchar> packed;
         int flags = 0;
-        if(compress && len > 0)
+        if(compress)
         {
-            packed.growbuf(int(ZSTD_compressBound(len)));
-            size_t n = ZSTD_compress(packed.getbuf(), packed.capacity(), payload, len, 19);
-            if(!ZSTD_isError(n) && int(n) < len) { packed.setsize(int(n)); flags |= FLAG_ZSTD; }
+            if(!zstream)
+            {
+                zstream = ZSTD_createCCtx();
+                ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_compressionLevel, 19);
+                ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_windowLog, 21);
+            }
+            byteswriter(packed).var(len);
+            int start = packed.length();
+            packed.growbuf(start + int(ZSTD_compressBound(len)) + 64);
+            ZSTD_inBuffer in = { payload, size_t(len), 0 };
+            ZSTD_outBuffer out = { packed.getbuf() + start, size_t(packed.capacity() - start), 0 };
+            bool ok = true;
+            for(;;)
+            {
+                size_t left = ZSTD_compressStream2((ZSTD_CCtx *)zstream, &out, &in, ZSTD_e_flush);
+                if(ZSTD_isError(left)) { ok = false; break; }
+                if(!left) break;
+                if(out.pos == out.size)
+                {
+                    packed.setsize(start + int(out.pos));
+                    packed.growbuf(packed.capacity() * 2);
+                    out.dst = packed.getbuf() + start;
+                    out.size = packed.capacity() - start;
+                }
+            }
+            if(ok) { packed.setsize(start + int(out.pos)); flags |= FLAG_ZSTD; }
         }
         const uchar *stored = flags & FLAG_ZSTD ? packed.getbuf() : payload;
         int storedlen = flags & FLAG_ZSTD ? packed.length() : len;
@@ -313,6 +340,7 @@ namespace sbr2
         blake3_hasher_init(&run);
         bool ended = false;
         int segment = 0;
+        struct dstream { ZSTD_DCtx *d; dstream() : d(NULL) {} ~dstream() { if(d) ZSTD_freeDCtx(d); } } stream;
         while(r.left() > 0)
         {
             const uchar *start = r.p;
@@ -331,12 +359,22 @@ namespace sbr2
             if(c.flags & ~FLAG_ZSTD) { formatstring(error, "chunk %d (%s): unknown flags %d", chunks.length(), c.type, c.flags); return false; }
             if(c.flags & FLAG_ZSTD)
             {
-                unsigned long long raw = ZSTD_getFrameContentSize(payload, size_t(stored));
-                if(raw == ZSTD_CONTENTSIZE_ERROR || raw == ZSTD_CONTENTSIZE_UNKNOWN || raw > (1ULL<<30)) { formatstring(error, "chunk %d (%s): bad compressed payload", chunks.length(), c.type); return false; }
-                c.data.growbuf(int(raw));
-                size_t n = ZSTD_decompress(c.data.getbuf(), size_t(raw), payload, size_t(stored));
-                if(ZSTD_isError(n) || n != raw) { formatstring(error, "chunk %d (%s): bad compressed payload", chunks.length(), c.type); return false; }
-                c.data.setsize(int(n));
+                bytesreader pr(payload, int(stored));
+                unsigned long long raw = pr.var();
+                if(!pr.ok || raw > (1ULL<<30)) { formatstring(error, "chunk %d (%s): bad compressed payload", chunks.length(), c.type); return false; }
+                if(!stream.d) stream.d = ZSTD_createDCtx();
+                // one byte of room past the raw length shows a chunk that decompresses to more
+                c.data.growbuf(int(raw) + 1);
+                ZSTD_inBuffer in = { pr.p, size_t(pr.left()), 0 };
+                ZSTD_outBuffer out = { c.data.getbuf(), size_t(raw) + 1, 0 };
+                bool ok = true;
+                while(ok && in.pos < in.size)
+                {
+                    size_t before = in.pos + out.pos;
+                    if(ZSTD_isError(ZSTD_decompressStream(stream.d, &out, &in)) || in.pos + out.pos == before) ok = false;
+                }
+                if(!ok || out.pos != raw) { formatstring(error, "chunk %d (%s): bad compressed payload", chunks.length(), c.type); return false; }
+                c.data.setsize(int(raw));
             }
             else c.data.put(payload, int(stored));
             bool sign = istype(c.type, "sIGN"), end = istype(c.type, "END ");

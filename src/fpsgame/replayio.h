@@ -5,7 +5,9 @@
 //   chunk = type[4] var(flags) var(stored length) payload crc32(type..payload)
 //
 // A chunk type with an uppercase first letter is required: a reader that does not know it must
-// refuse the file. flags bit 0: payload is zstd-compressed. hashed(c) = type || var(raw length)
+// refuse the file. flags bit 0: the payload is var(raw length) followed by the next bytes of the
+// file's single zstd stream, flushed at the chunk's end, so compressed chunks are decompressed
+// in file order. hashed(c) = type || var(raw length)
 // || raw payload. The chain starts as BLAKE3("SBR2-head" || var(version)); every chunk except
 // sIGN and END is hashed into a running digest; a SEGE chunk then sets
 // head = BLAKE3("SBR2-seg" || head || digest) and restarts the digest; END holds
@@ -16,7 +18,7 @@
 
 namespace sbr2
 {
-    enum { VERSION = 1, HASHSIZE = 32, FLAG_ZSTD = 1 };
+    enum { VERSION = 2, HASHSIZE = 32, FLAG_ZSTD = 1 };
 
     struct byteswriter
     {
@@ -109,7 +111,7 @@ namespace sbr2
         uchar head[HASHSIZE];
         writer();
         ~writer();
-        // compress: store zstd-compressed if that is smaller
+        // compress: store the payload in the file's zstd stream
         void add(const char *type, const vector<uchar> &payload, bool compress = false);
         void add(const char *type, const uchar *payload, int len, bool compress = false);
         // closes the current segment (a SEGE chunk) and returns the new chain head
@@ -118,7 +120,7 @@ namespace sbr2
         const uchar *finish();
         uchar content[HASHSIZE];
     private:
-        void *running;
+        void *running, *zstream;
         bool finished;
     };
 

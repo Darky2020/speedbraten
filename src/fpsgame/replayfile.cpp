@@ -11,7 +11,7 @@ namespace game
 {
     // SIMVERSION: the simulation's version, stored in every replay. REPLAYSIMVERSION: oldest
     // version the current simulation still plays back; bump both when the simulation changes.
-    enum { SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 10 };
+    enum { SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 50 };
 
     static int packcontrols(const inputcontrols &c)
     {
@@ -39,7 +39,8 @@ namespace game
     //          setting, var saved state length, saved state
     //     per segment of SEGMENTTICKS ticks [lo, hi), by absolute tick:
     //       INPS var lo, var hi-lo, var events, events (tick delta from the previous event or lo,
-    //            u8 type, u8 source (INPUTSRC_*), then by type: controls = u32 yaw, u32 pitch,
+    //            u8 type, u8 source (INPUTSRC_*), then by type: controls = svar yaw, svar pitch
+    //            (float bits minus those of the chunk's previous controls event, or of 0),
     //            u8 packed move/strafe/vertical/jumping/attacking; jump, attack, zoom = svar;
     //            command = var id in replaycommands, str arguments; GUI = u32 cursor x,
     //            u32 cursor y, str GUI names; setting = svar value, str name; map GUI action =
@@ -56,7 +57,8 @@ namespace game
     //            var frames with 2+ ticks, 8 x var frame-time histogram, var min gamespeed,
     //            var max gamespeed, var max fixedframe
     //       SEGE
-    //     gHST (optional) var samples, per sample: var run tick delta, f32 x, y, z, yaw, pitch,
+    //     gHST (optional) var samples, per sample: var run tick delta, svar x, y, z in 1/16
+    //          units and svar yaw, pitch in 1/100 degrees (each minus the previous sample's),
     //          var flags
     //   RSLT   u8 finished, u8 started (2 unknown), var ticks, var runtime ms, var splices
     //   wIND, rSTA  key-value window metadata, raw input statistics
@@ -80,8 +82,8 @@ namespace game
         dst[n] = '\0';
     }
 
-    static void writefloat(sbr2::byteswriter &w, float f) { uint v; memcpy(&v, &f, 4); w.u32(v); }
-    static float readfloat(sbr2::bytesreader &r) { uint v = r.u32(); float f; memcpy(&f, &v, 4); return f; }
+    // a ghost path coordinate in fixed point
+    static int quantize(float v, float scale) { return int(clamp(roundf(v*scale), -1e9f, 1e9f)); }
 
     static int datafileindex(const vector<const mapdatafile *> &files, const mapdatafile &f)
     {
@@ -123,13 +125,20 @@ namespace game
         w.str(cmd);
     }
 
-    static void writeevent(sbr2::byteswriter &w, const inputevent &e)
+    // yaw, pitch: the float bits of the previous controls event in the chunk
+    static void writeevent(sbr2::byteswriter &w, const inputevent &e, uint &yaw, uint &pitch)
     {
         w.u8(e.type);
         w.u8(e.source);
         switch(e.type)
         {
-            case INPUT_CONTROLS: w.u32(e.controls.yaw); w.u32(e.controls.pitch); w.u8(packcontrols(e.controls)); break;
+            case INPUT_CONTROLS:
+                w.svar(int(e.controls.yaw - yaw));
+                w.svar(int(e.controls.pitch - pitch));
+                w.u8(packcontrols(e.controls));
+                yaw = e.controls.yaw;
+                pitch = e.controls.pitch;
+                break;
             case INPUT_COMMAND: writecommand(w, e.cmd ? e.cmd : ""); break;
             case INPUT_MAPGUI: w.str(e.cmd ? e.cmd : ""); break;
             case INPUT_GUI: w.u32(e.cursorx); w.u32(e.cursory); w.str(e.cmd ? e.cmd : ""); break;
@@ -215,12 +224,13 @@ namespace game
             w.var(lo);
             w.var(hi - lo);
             w.var(n);
+            uint yaw = 0, pitch = 0;
             loopi(n)
             {
                 const inputevent &e = a.events[ev++];
                 w.var(e.tick - prev);
                 prev = e.tick;
-                writeevent(w, e);
+                writeevent(w, e, yaw, pitch);
             }
             out.add("INPS", p, true);
 
@@ -288,13 +298,14 @@ namespace game
         {
             p.setsize(0);
             w.var(a.trace.length());
-            int lasttick = 0;
+            int lasttick = 0, last[5] = { 0, 0, 0, 0, 0 };
             loopv(a.trace)
             {
                 const ghostsample &g = a.trace[i];
                 w.var(g.tick - lasttick);
                 lasttick = g.tick;
-                writefloat(w, g.o.x); writefloat(w, g.o.y); writefloat(w, g.o.z); writefloat(w, g.yaw); writefloat(w, g.pitch);
+                int q[5] = { quantize(g.o.x, 16), quantize(g.o.y, 16), quantize(g.o.z, 16), quantize(g.yaw, 100), quantize(g.pitch, 100) };
+                loopj(5) { w.svar(q[j] - last[j]); last[j] = q[j]; }
                 w.var(g.flags);
             }
             out.add("gHST", p, true);
@@ -459,6 +470,7 @@ namespace game
         lo = int(r.var());
         hi = lo + int(r.var());
         int n = int(r.var()), tick = lo;
+        uint yaw = 0, pitch = 0;
         loopi(n)
         {
             if(!r.ok) return false;
@@ -471,7 +483,13 @@ namespace game
             if(e.source > INPUTSRC_MAP) return false;
             switch(e.type)
             {
-                case INPUT_CONTROLS: e.controls.yaw = r.u32(); e.controls.pitch = r.u32(); unpackcontrols(r.u8(), e.controls); break;
+                case INPUT_CONTROLS:
+                    yaw += uint(int(r.svar()));
+                    pitch += uint(int(r.svar()));
+                    e.controls.yaw = yaw;
+                    e.controls.pitch = pitch;
+                    unpackcontrols(r.u8(), e.controls);
+                    break;
                 case INPUT_COMMAND:
                 {
                     unsigned long long id = r.var(), len = r.var();
@@ -586,14 +604,17 @@ namespace game
 
     static bool readtrace(sbr2::bytesreader &r, inputattempt &a)
     {
-        int n = int(r.var()), tick = 0;
+        int n = int(r.var()), tick = 0, q[5] = { 0, 0, 0, 0, 0 };
         loopi(n)
         {
             if(!r.ok) return false;
             ghostsample &g = a.trace.add();
             tick += int(r.var());
             g.tick = tick;
-            g.o.x = readfloat(r); g.o.y = readfloat(r); g.o.z = readfloat(r); g.yaw = readfloat(r); g.pitch = readfloat(r);
+            loopj(5) q[j] += int(r.svar());
+            g.o = vec(q[0]/16.0f, q[1]/16.0f, q[2]/16.0f);
+            g.yaw = q[3]/100.0f;
+            g.pitch = q[4]/100.0f;
             g.flags = int(r.var());
         }
         return r.ok;
