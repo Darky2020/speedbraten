@@ -178,6 +178,7 @@ namespace game
     MOD(VARP, replaylifeonly, 0, 1, 1);
     static statestart lifestart, savedstart;
     static bool lifepending = false, lifesaved = false;
+    static int lifesavedbranch = -1, lifesavedtick = 0; // where the saved replay of this life ends
 
     // Automatic states for segmented runs, taken every autostateinterval ms while recording;
     // loadautostate steps back through them.
@@ -217,6 +218,7 @@ namespace game
         if(!restorestate(st.state)) return false;
         if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
         if(lifestart.valid() && !onchain(lifestart.branch, lifestart.tick, st.branch, st.tick)) lifestart.clear();
+        if(lifesaved && !onchain(lifesavedbranch, lifesavedtick, st.branch, st.tick)) lifesaved = false;
         while(autostates.length() && autostates.last()->tick > st.tick) delete autostates.pop();
         d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
         d.move = move; d.strafe = strafe; d.vertical = vertical;
@@ -271,6 +273,8 @@ namespace game
         saverunreplay(run, finished, runtime, true);
         tellssavinglife(false);
         lifesaved = true;
+        lifesavedbranch = curbranch;
+        lifesavedtick = curtick;
         return true;
     }
 

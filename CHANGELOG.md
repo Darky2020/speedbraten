@@ -29,6 +29,8 @@
   ghost path; pickup, teleport and condition splits only compare with your own runs.
 - `ghostdiffwindow` (seconds, default 3) sets how far ahead or behind the ghost you can be
   and still see the live time difference.
+- A flagrun or race finished again after loading a state in the same life now saves just that
+  life, like the first finish, instead of the whole session.
 - Frag messages from the previous map or before a state load no longer stay on screen until
   the next frag.
 - When a replay ends, the player no longer keeps moving or shooting with the replay's last
