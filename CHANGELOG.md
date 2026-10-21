@@ -40,6 +40,9 @@
 - Races: every item, including quad damage and the health boost, is there from the start
   instead of appearing after up to 70 seconds, and there is no "will spawn in 10 seconds"
   announcement. Race replays recorded before this will desync.
+- Races: a picked-up item still comes back at once, but you can only pick it up again after
+  leaving it. Standing on quad damage used to pick it up hundreds of times a second and lag the
+  game.
 - New flagrun option: walking back onto the flag after taking it restarts the timer, so it only
   starts once you really leave the flag (no flag drop needed). Off by default; replays keep
   the setting they were recorded with.

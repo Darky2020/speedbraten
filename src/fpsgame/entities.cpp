@@ -175,6 +175,8 @@ namespace entities
         e->clearspawned();
         e->clearnopickup();
         if(!d) return;
+        // a race item comes back at once, but not for the player still standing on it
+        if(d == player1 && server::racerulesactive()) e->flags |= EF_HELD;
         itemstat &is = itemstats[type-I_SHELLS];
         fpsent *h = followingplayer(player1);
         if(d!=h || isthirdperson())
@@ -348,8 +350,13 @@ namespace entities
         {
             extentity &e = *ents[i];
             if(e.type==NOTUSED) continue;
-            if((!e.spawned() || e.nopickup()) && e.type!=TELEPORT && e.type!=JUMPPAD && e.type!=RESPAWNPOINT) continue;
             float dist = e.o.dist(o);
+            if(e.flags&EF_HELD && d==player1)
+            {
+                if(dist < 12) continue;
+                e.flags &= ~EF_HELD;
+            }
+            if((!e.spawned() || e.nopickup()) && e.type!=TELEPORT && e.type!=JUMPPAD && e.type!=RESPAWNPOINT) continue;
             if(dist<(e.type==TELEPORT ? 16 : 12)) trypickup(i, d);
         }
     }
@@ -376,7 +383,7 @@ namespace entities
         putint(p, -1);
     }
 
-    void resetspawns() { loopv(ents) { extentity *e = ents[i]; e->clearspawned(); e->clearnopickup(); } }
+    void resetspawns() { loopv(ents) { extentity *e = ents[i]; e->clearspawned(); e->clearnopickup(); e->flags &= ~EF_HELD; } }
 
     void spawnitems(bool force)
     {

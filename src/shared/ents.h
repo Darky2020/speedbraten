@@ -31,7 +31,8 @@ enum
     EF_RENDER    = 1<<5,
     EF_SOUND     = 1<<6,
     EF_SPAWNED   = 1<<7,
-    EF_NOPICKUP  = 1<<8
+    EF_NOPICKUP  = 1<<8,
+    EF_HELD      = 1<<9  // race rules: player1 took it and has not left it yet
 };
 
 struct extentity : entity                       // part of the entity that doesn't get saved to disk
