@@ -24,6 +24,9 @@
 - Races: all items are there from the start, without an announcement.
 - Races: an item can only be picked up again after you leave it.
 
+### Menus
+- The speedrun menu has tabs for general, singleplayer, flagruns, races and keys.
+
 ### Fixes
 - The first spawn after a CTF game could be in the middle of the map.
 - Frag messages from the previous map no longer stay on screen.
