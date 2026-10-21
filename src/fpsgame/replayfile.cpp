@@ -1000,6 +1000,19 @@ namespace game
         formatstring(d, "%d of %d key/mouse events without raw input", unbacked, sourced);
         v.check(!unbacked, "raw input", d);
 
+        if(const runchunk *devs = findtells(run, "dEVS"))
+        {
+            static const char * const kinds[] = { "other", "keyboard", "mouse" };
+            sbr2::bytesreader r(devs->data.getbuf(), devs->data.length());
+            int n = int(r.var());
+            loopi(n)
+            {
+                int kind = r.u8(), vendor = int(r.var()), product = int(r.var());
+                string transport, name;
+                if(!r.str(transport, sizeof(transport)) || !r.str(name, sizeof(name))) break;
+                conoutf("INFO device %s %04x:%04x %s %s", kinds[kind <= 2 ? kind : 0], vendor, product, transport, name);
+            }
+        }
         long long losses = tellvalue(run, "wIND", "focuslosses", 0), minimizes = tellvalue(run, "wIND", "minimizes", 0);
         formatstring(d, "%lld focus losses, %lld minimizes", losses, minimizes);
         if(losses || minimizes) v.warn("window", d);

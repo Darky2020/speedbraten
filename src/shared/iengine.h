@@ -647,6 +647,15 @@ struct rawevent
 };
 extern const char *getbindaction(int code);
 
+// an input device the system reports; kind: 0 other, 1 keyboard, 2 mouse
+struct inputdevice
+{
+    int kind, vendor, product;
+    string transport, name; // UTF-8
+    inputdevice() : kind(0), vendor(0), product(0) { transport[0] = name[0] = '\0'; }
+};
+extern void listinputdevices(vector<inputdevice> &out);
+
 struct inputsourcescope
 {
     int old;

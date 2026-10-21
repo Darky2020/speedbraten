@@ -137,6 +137,7 @@ CLIENT_OBJS= \
 	engine/water.o \
 	engine/world.o \
 	engine/worldio.o \
+	engine/inputdevices.o \
 	fpsgame/ai.o \
 	fpsgame/client.o \
 	fpsgame/entities.o \
@@ -519,6 +520,9 @@ engine/world.o: shared/ents.h shared/command.h shared/glexts.h shared/glemu.h
 engine/world.o: shared/iengine.h shared/igame.h engine/world.h engine/octa.h
 engine/world.o: engine/lightmap.h engine/bih.h engine/texture.h
 engine/world.o: engine/model.h
+engine/inputdevices.o: engine/engine.h shared/cube.h shared/tools.h shared/geom.h
+engine/inputdevices.o: shared/ents.h shared/command.h shared/glexts.h
+engine/inputdevices.o: shared/glemu.h shared/iengine.h shared/igame.h
 engine/worldio.o: engine/engine.h shared/cube.h shared/tools.h shared/geom.h
 engine/worldio.o: shared/ents.h shared/command.h shared/glexts.h
 engine/worldio.o: shared/glemu.h shared/iengine.h shared/igame.h

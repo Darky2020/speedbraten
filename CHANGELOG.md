@@ -14,6 +14,8 @@
   - `statsexporthistory <file>` exports the chain over all your recorded attempts, which
     `tools/sbr2.py history` can check replays against.
   - `tools/sbr2.py` reads and checks replay files outside the game.
+  - Replays list the connected keyboards, mice and other input devices (vendor and product ID,
+    connection, product name; no serial numbers) and the `maxfps` setting.
 - Choose which ghost to race per map and mode: your PB, your segmented PB, or any replay (for
   example a world record copied into `replays/`), with your own label. The choice is saved, and
   the label shows above the ghost and on the time difference line. Replays made before v0.1.0

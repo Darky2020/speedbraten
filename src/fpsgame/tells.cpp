@@ -250,9 +250,34 @@ namespace game
         defformatstring(resolution, "%dx%d", screenw, screenh);
         window.str("resolution", resolution);
         addsetting(window, "vsync");
+        addsetting(window, "maxfps");
         addsetting(window, "fullscreen");
         addchunk(out, "wIND", window);
         out.last()->late = true;
+
+        // input devices: var count, per device u8 kind, var vendor, var product, str transport, str name
+        vector<inputdevice> devices;
+        listinputdevices(devices);
+        runchunk *devs = out.add(new runchunk);
+        memcpy(devs->type, "dEVS", sizeof(devs->type));
+        sbr2::byteswriter dw(devs->data);
+        int unique = 0;
+        loopv(devices)
+        {
+            bool dup = false;
+            loopj(i) if(devices[j].kind == devices[i].kind && devices[j].vendor == devices[i].vendor && devices[j].product == devices[i].product && !strcmp(devices[j].name, devices[i].name)) { dup = true; break; }
+            if(dup) devices.remove(i--);
+            else unique++;
+        }
+        dw.var(unique);
+        loopv(devices)
+        {
+            dw.u8(devices[i].kind);
+            dw.var(devices[i].vendor);
+            dw.var(devices[i].product);
+            dw.str(devices[i].transport);
+            dw.str(devices[i].name);
+        }
 
         sbr2::kvwriter rawstats;
         rawstatistics(r, rawstats);

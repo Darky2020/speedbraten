@@ -556,6 +556,14 @@ def main():
             elif name == "SPLC":
                 for line in decode_splc(data):
                     print("    " + line)
+            elif name == "dEVS":
+                r = Reader(data)
+                for _ in range(r.var()):
+                    kind = ["other", "keyboard", "mouse"][min(r.take(1)[0], 2)]
+                    vendor, product = r.var(), r.var()
+                    transport = r.take(r.var()).decode("utf-8", "replace")
+                    devname = r.take(r.var()).decode("utf-8", "replace")
+                    print("    %s %04x:%04x %s %s" % (kind, vendor, product, transport, devname))
             elif name == "bIND":
                 for j, b in enumerate(decode_binds(data)):
                     print("    %d: %s" % (j + 1, b))
