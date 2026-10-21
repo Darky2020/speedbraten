@@ -225,6 +225,8 @@ namespace game
     extern void tellsload();
     extern void tellsreset();
     extern void tellsframe(int us);
+    extern void tellslifestart();
+    extern void tellssavinglife(bool on); // the replay being saved holds one life
     // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use
     extern bool spawnaidsactive(bool &custom, bool &race);
     extern int tellsrunms();

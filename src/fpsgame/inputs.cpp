@@ -258,6 +258,7 @@ namespace game
         lifestart.tick = curtick;
         lifestart.branch = curbranch;
         readsettings(lifestart.settings);
+        tellslifestart();
     }
 
     static bool saveliferun(bool finished, int runtime)
@@ -266,7 +267,9 @@ namespace game
         if(!finished && !runtimerliferan()) return true;
         inputrun run;
         cutattempt(run.add(), recording.last(), lifestart);
+        tellssavinglife(true);
         saverunreplay(run, finished, runtime, true);
+        tellssavinglife(false);
         lifesaved = true;
         return true;
     }

@@ -37,8 +37,7 @@ namespace game
     static const time_t sessionstart = time(NULL);
     static int runssession = 0, resets = 0;
 
-    // counters since the current run began
-    static struct
+    struct tellcounters
     {
         Uint64 startcounter;
         uint startms;
@@ -46,7 +45,18 @@ namespace game
         long long focuslostus;
         bool harness, dethash, edit, seedforced;
         int features; // bits of featurenames that were on at some point
-    } run;
+
+        void start()
+        {
+            memset(this, 0, sizeof(*this));
+            startms = SDL_GetTicks();
+            startcounter = SDL_GetPerformanceCounter();
+        }
+    };
+    // since the run began (whole-run replays), and since the current life began (replays of
+    // a flagrun or race life)
+    static tellcounters run, life;
+    static bool savinglife = false;
 
     // settings and aids recorded when they were on at any time during the run
     static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "customspawn", "racestart" };
@@ -57,41 +67,51 @@ namespace game
     void tellsrunstart()
     {
         runssession++;
-        memset(&run, 0, sizeof(run));
-        run.startms = SDL_GetTicks();
-        run.startcounter = SDL_GetPerformanceCounter();
+        run.start();
+        life.start();
         lastfocus = hasfocus;
         lastminimized = minimized;
     }
 
-    void tellssave() { run.saves++; }
-    void tellsload() { run.loads++; }
+    void tellslifestart() { life.start(); }
+    void tellssavinglife(bool on) { savinglife = on; }
+    void tellssave() { run.saves++; life.saves++; }
+    void tellsload() { run.loads++; life.loads++; }
     void tellsreset() { resets++; }
-    void tellsharness() { run.harness = true; }
+    void tellsharness() { run.harness = life.harness = true; }
     int tellsrunms() { return int(SDL_GetTicks() - run.startms); }
     long long tellsrunus() { return (long long)((SDL_GetPerformanceCounter() - run.startcounter)*1000000/SDL_GetPerformanceFrequency()); }
 
+    static void countframe(tellcounters &c, int us, bool focuslost, bool minimizedagain, int features)
+    {
+        if(focuslost) c.focuslosses++;
+        if(minimizedagain) c.minimizes++;
+        if(!hasfocus) c.focuslostus += us;
+        if(editmode) c.edit = true;
+        if(dethashactive()) c.dethash = true;
+        if(fixedgameseed) c.seedforced = true;
+        c.features |= features;
+        c.fixedframe = max(c.fixedframe, fixedframe);
+    }
+
     void tellsframe(int us)
     {
-        if(lastfocus && !hasfocus) run.focuslosses++;
-        if(!lastminimized && minimized) run.minimizes++;
-        if(!hasfocus) run.focuslostus += us;
+        bool focuslost = lastfocus && !hasfocus, minimizedagain = !lastminimized && minimized;
         lastfocus = hasfocus;
         lastminimized = minimized;
-        if(editmode) run.edit = true;
-        if(dethashactive()) run.dethash = true;
-        if(fixedgameseed) run.seedforced = true;
         static ident *vars[FEATUREVARS];
         static bool looked = false;
         if(!looked) { loopi(FEATUREVARS) vars[i] = getident(featurenames[i]); looked = true; }
-        loopi(FEATUREVARS) if(vars[i] && vars[i]->type == ID_VAR && *vars[i]->storage.i) run.features |= 1<<i;
+        int features = 0;
+        loopi(FEATUREVARS) if(vars[i] && vars[i]->type == ID_VAR && *vars[i]->storage.i) features |= 1<<i;
         bool custom = false, race = false;
         if(spawnaidsactive(custom, race))
         {
-            if(custom) run.features |= 1<<FEATUREVARS;
-            if(race) run.features |= 1<<(FEATUREVARS+1);
+            if(custom) features |= 1<<FEATUREVARS;
+            if(race) features |= 1<<(FEATUREVARS+1);
         }
-        run.fixedframe = max(run.fixedframe, fixedframe);
+        countframe(run, us, focuslost, minimizedagain, features);
+        countframe(life, us, focuslost, minimizedagain, features);
     }
 
     static bool hashpath(const char *file, uchar *out)
@@ -203,6 +223,7 @@ namespace game
 
     void tellsencode(const inputrun &r, const replayinfo &info, vector<runchunk *> &out)
     {
+        const tellcounters &run = savinglife ? life : game::run;
         uchar hash[32];
         sbr2::kvwriter client;
         ident *version = getident("p1xbratenversion");
@@ -228,7 +249,7 @@ namespace game
         session.var("resets", resets);
         session.var("saves", run.saves);
         session.var("loads", run.loads);
-        session.var("runms", tellsrunms());
+        session.var("runms", int(SDL_GetTicks() - run.startms));
         addchunk(out, "sESS", session);
 
         sbr2::kvwriter history;
