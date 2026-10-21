@@ -59,6 +59,9 @@ namespace game
     };
 
     // wall clock of the frames that ended in one segment of an attempt
+    // The aids on from tick on, until the next mark (bits of the tells feature list).
+    struct aidmark { int tick, mask; };
+
     struct segmenttiming
     {
         enum { BUCKETS = 8 };
@@ -116,6 +119,7 @@ namespace game
         vector<mapdatafile> files; // what the map load read
         vector<segmenttiming> timing; // by segment
         vector<rawevent> raw;         // binds point into internbind's pool
+        vector<aidmark> aids;         // live recordings only
         uint seed, mapcrc;
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false in the oldest replays, which have no cfg crc
@@ -139,6 +143,7 @@ namespace game
             files.setsize(0);
             timing.setsize(0);
             raw.setsize(0);
+            aids.setsize(0);
         }
 
         bool empty() const { return events.empty(); }
@@ -160,6 +165,7 @@ namespace game
             dst.files = files;
             dst.timing = timing;
             dst.raw = raw;
+            dst.aids = aids;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
             dst.cfgcrc = cfgcrc;
@@ -225,11 +231,12 @@ namespace game
     extern void tellssave();
     extern void tellsload();
     extern void tellsreset();
-    extern void tellsframe(int us);
+    extern int tellsframe(int us);
     extern void tellslifestart();
     // the run (or life) being saved was slowed, sped up, paused, played with fixedframe or with
     // single-player slow motion (which also keeps the player alive)
-    extern bool tellsassisted();
+    extern bool tellsassisted(const inputrun &r);
+    extern int inputrunaids(const inputrun &r);
     extern void tellssavinglife(bool on); // the replay being saved holds one life
     // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use
     extern bool spawnaidsactive(bool &custom, bool &race);

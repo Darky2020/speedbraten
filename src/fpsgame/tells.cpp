@@ -44,7 +44,6 @@ namespace game
         int saves, loads, focuslosses, minimizes, fixedframe;
         long long focuslostus;
         bool harness, dethash, edit, seedforced;
-        int features; // bits of featurenames that were on at some point
 
         void start()
         {
@@ -58,7 +57,7 @@ namespace game
     static tellcounters run, life;
     static bool savinglife = false;
 
-    // settings and aids recorded when they were on at any time during the run
+    // settings and aids recorded when they were on at any tick the saved run kept
     static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
     enum { NUMFEATURES = sizeof(featurenames)/sizeof(featurenames[0]), FEATUREVARS = NUMFEATURES - 4 };
     enum { F_SLOWMOSP = 1<<(FEATUREVARS-1), F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
@@ -76,10 +75,10 @@ namespace game
 
     void tellslifestart() { life.start(); }
 
-    bool tellsassisted()
+    bool tellsassisted(const inputrun &r)
     {
         const tellcounters &c = savinglife ? life : run;
-        return c.features & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP) || c.fixedframe;
+        return inputrunaids(r) & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP) || c.fixedframe;
     }
     void tellssavinglife(bool on) { savinglife = on; }
     void tellssave() { run.saves++; life.saves++; }
@@ -89,7 +88,7 @@ namespace game
     int tellsrunms() { return int(SDL_GetTicks() - run.startms); }
     long long tellsrunus() { return (long long)((SDL_GetPerformanceCounter() - run.startcounter)*1000000/SDL_GetPerformanceFrequency()); }
 
-    static void countframe(tellcounters &c, int us, bool focuslost, bool minimizedagain, int features)
+    static void countframe(tellcounters &c, int us, bool focuslost, bool minimizedagain)
     {
         if(focuslost) c.focuslosses++;
         if(minimizedagain) c.minimizes++;
@@ -97,11 +96,10 @@ namespace game
         if(editmode) c.edit = true;
         if(dethashactive()) c.dethash = true;
         if(fixedgameseed) c.seedforced = true;
-        c.features |= features;
         c.fixedframe = max(c.fixedframe, fixedframe);
     }
 
-    void tellsframe(int us)
+    int tellsframe(int us)
     {
         bool focuslost = lastfocus && !hasfocus, minimizedagain = !lastminimized && minimized;
         lastfocus = hasfocus;
@@ -119,8 +117,9 @@ namespace game
         }
         if(scaletime(1) != 100) features |= F_GAMESPEED;
         if(ispaused()) features |= F_PAUSED;
-        countframe(run, us, focuslost, minimizedagain, features);
-        countframe(life, us, focuslost, minimizedagain, features);
+        countframe(run, us, focuslost, minimizedagain);
+        countframe(life, us, focuslost, minimizedagain);
+        return features;
     }
 
     static bool hashpath(const char *file, uchar *out)
@@ -292,7 +291,8 @@ namespace game
 
         // features in use, and the category the run falls in
         sbr2::kvwriter features;
-        loopi(NUMFEATURES) features.boolean(featurenames[i], (run.features & (1<<i)) != 0);
+        int aids = inputrunaids(r);
+        loopi(NUMFEATURES) features.boolean(featurenames[i], (aids & (1<<i)) != 0);
         string category;
         copystring(category, info.race ? "race" : info.flagrun ? "flagrun" : m_check(info.mode, M_CLASSICSP) ? "sp" : m_check(info.mode, M_DMSP) ? "dmsp" : "other");
         if(info.splices > 0) concatstring(category, "-segmented");

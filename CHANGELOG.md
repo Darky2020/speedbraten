@@ -18,6 +18,8 @@
     connection, product name; no serial numbers) and the `maxfps` setting.
 - Runs played with a changed game speed, single-player slow motion (`slowmosp`), a pause or
   `fixedframe` are recorded but never count as PB, best segment or PB ghost. Replays flag them.
+  Only the run's own timeline counts: slowing down to practice and then loading a state from
+  before it leaves the run unassisted.
   - Replays record which aids were on during the run (ghost, speedometer, splits, third person,
     fullbright, custom or forced spawns, …), the run's category, and the OS and CPU model.
 - Choose which ghost to race per map and mode: your PB, your segmented PB, or any replay (for

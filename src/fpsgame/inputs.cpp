@@ -65,6 +65,7 @@ namespace game
         vector<inputevent> events;
         vector<tickhash> hashes;
         vector<rawevent> raw;
+        vector<aidmark> aids;
 
         inputbranch(int parent, int forktick, int discarded, int kind, int wallms) : parent(parent), forktick(forktick), discarded(discarded), kind(kind), wallms(wallms) {}
         ~inputbranch() { loopv(events) DELETEA(events[i].cmd); }
@@ -108,6 +109,7 @@ namespace game
         }
         loopv(br.hashes) if(br.hashes[i].tick <= limit) a.hashes.add(br.hashes[i]);
         loopv(br.raw) if(br.raw[i].tick <= limit) a.raw.add(br.raw[i]);
+        loopv(br.aids) if(br.aids[i].tick <= limit) a.aids.add(br.aids[i]);
         if(br.parent >= 0)
         {
             inputsplice &sp = a.splices.add();
@@ -135,6 +137,7 @@ namespace game
         loopv(rec.events) if(rec.events[i].tick > cur.forktick) { cur.events.add(rec.events[i]); rec.events[i].cmd = NULL; }
         loopv(rec.hashes) if(rec.hashes[i].tick > cur.forktick) cur.hashes.add(rec.hashes[i]);
         loopv(rec.raw) if(rec.raw[i].tick > cur.forktick) cur.raw.add(rec.raw[i]);
+        loopv(rec.aids) if(rec.aids[i].tick > cur.forktick) cur.aids.add(rec.aids[i]);
         int discarded = rec.ticks - commontick(curbranch, rec.ticks, from, tick);
         curbranch = branches.length();
         branches.add(new inputbranch(from, tick, max(discarded, 0), kind, tellsrunms()));
@@ -142,6 +145,7 @@ namespace game
         rec.events.setsize(0);
         rec.hashes.setsize(0);
         rec.raw.setsize(0);
+        rec.aids.setsize(0);
         rec.splices.setsize(0);
         addchain(rec, curbranch, tick);
         rec.ticks = tick;
@@ -170,6 +174,10 @@ namespace game
         n = 0;
         loopv(a.raw) if(a.raw[i].tick <= from.tick) n++; else break;
         a.raw.remove(0, n);
+        // the last mark at or before the start still covers it
+        n = 0;
+        loopv(a.aids) if(a.aids[i].tick <= from.tick) n++; else break;
+        if(n > 1) a.aids.remove(0, n-1);
     }
 
     // Flagruns and races are judged per life: the replay of a finished run starts at the
@@ -922,13 +930,31 @@ namespace game
         if(r.bind) r.bind = internbind(r.bind, strlen(r.bind));
     }
 
+    // the aids on during a frame count for the tick the frame leads up to
+    static void markaids(inputattempt &a, int tick, int mask)
+    {
+        if(a.aids.length() && a.aids.last().tick == tick) { a.aids.last().mask |= mask; return; }
+        if(a.aids.length() ? a.aids.last().mask == mask : !mask) return;
+        aidmark &m = a.aids.add();
+        m.tick = tick;
+        m.mask = mask;
+    }
+
+    int inputrunaids(const inputrun &r)
+    {
+        int mask = 0;
+        loopv(r.attempts) loopvj(r.attempts[i]->aids) mask |= r.attempts[i]->aids[j].mask;
+        return mask;
+    }
+
     void frametimed(int us, int ticks, bool drawn)
     {
-        tellsframe(us);
+        int aids = tellsframe(us);
         if(frameticks) readsettings(framesettings);
         frameticks = 0;
         if(replaying || recordingoff || recording.attempts.empty() || !connected) return;
         inputattempt &a = recording.last();
+        markaids(a, max(curtick, 0) + 1, aids);
         int seg = max(curtick, 0) / REPLAYSEGMENTTICKS;
         cuttiming(a, curtick);
         if(a.timing.empty() || a.timing.last().segment != seg) a.timing.add(segmenttiming(seg));
