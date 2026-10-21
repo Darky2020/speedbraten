@@ -91,8 +91,13 @@ namespace game
         }
         // databases from before the content column: their history chain used another summary
         // layout, so it starts over
-        else if(sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN content BLOB", NULL, NULL, NULL) == SQLITE_OK)
-            dbexec("DELETE FROM meta WHERE key IN ('historyhead', 'historycount')");
+        else
+        {
+            if(sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN content BLOB", NULL, NULL, NULL) == SQLITE_OK)
+                dbexec("DELETE FROM meta WHERE key IN ('historyhead', 'historycount')");
+            // a run with gamespeed, pause or fixedframe never counts as a PB or best segment
+            sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN assisted INTEGER NOT NULL DEFAULT 0", NULL, NULL, NULL);
+        }
         return db;
     }
 
@@ -152,8 +157,8 @@ namespace game
 
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content)
     {
-        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content) "
-                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content, assisted) "
+                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if(!st) return;
         const inputattempt &first = *run.attempts[0];
         sqlite3_bind_int64(st, 1, info.date);
@@ -173,6 +178,7 @@ namespace game
         bindtext(st, 13, replay);
         if(content) sqlite3_bind_blob(st, 14, content, sbr2::HASHSIZE, SQLITE_TRANSIENT);
         else sqlite3_bind_null(st, 14);
+        sqlite3_bind_int(st, 15, tellsassisted() ? 1 : 0);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
@@ -247,7 +253,7 @@ namespace game
     // the replay file of the fastest finished run with an existing replay; file is a string
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file)
     {
-        sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND (splices > 0) = ? "
+        sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ? "
                                    "AND replay IS NOT NULL ORDER BY runtime, id LIMIT 1");
         if(!st) return false;
         bindtext(st, 1, map);
@@ -267,7 +273,7 @@ namespace game
         pb.setsize(0);
         best.setsize(0);
         pbms = -1;
-        sqlite3_stmt *pt = prepare("SELECT MIN(runtime) FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND (splices > 0) = ?");
+        sqlite3_stmt *pt = prepare("SELECT MIN(runtime) FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ?");
         if(!pt) return false;
         bindtext(pt, 1, map);
         bindtext(pt, 2, kind);
@@ -276,7 +282,7 @@ namespace game
         if(sqlite3_step(pt) == SQLITE_ROW && sqlite3_column_type(pt, 0) != SQLITE_NULL) pbms = sqlite3_column_int(pt, 0);
         sqlite3_finalize(pt);
         sqlite3_stmt *st = prepare("SELECT s.name, s.tick FROM splits s WHERE s.attempt = (SELECT id FROM attempts WHERE map = ? AND kind = ? AND mode = ? "
-                                   "AND finished AND (splices > 0) = ? ORDER BY runtime, id LIMIT 1) ORDER BY s.idx");
+                                   "AND finished AND NOT assisted AND (splices > 0) = ? ORDER BY runtime, id LIMIT 1) ORDER BY s.idx");
         if(!st) return false;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
@@ -290,7 +296,7 @@ namespace game
         }
         sqlite3_finalize(st);
         st = prepare("SELECT s.prev, s.name, MIN(s.segment) FROM splits s JOIN attempts a ON a.id = s.attempt "
-                     "WHERE a.map = ? AND a.kind = ? AND a.mode = ? AND (a.splices > 0) = ? GROUP BY s.prev, s.name");
+                     "WHERE a.map = ? AND a.kind = ? AND a.mode = ? AND NOT a.assisted AND (a.splices > 0) = ? GROUP BY s.prev, s.name");
         if(!st) return false;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
@@ -468,8 +474,8 @@ namespace game
         maplist.setsize(0);
         sqlite3_stmt *st = prepare(
             "SELECT map, kind, mode, SUM(splices = 0), SUM(finished AND splices = 0),"
-            "  MIN(CASE WHEN finished AND splices = 0 THEN runtime END),"
-            "  SUM(splices > 0), MIN(CASE WHEN finished AND splices > 0 THEN runtime END),"
+            "  MIN(CASE WHEN finished AND NOT assisted AND splices = 0 THEN runtime END),"
+            "  SUM(splices > 0), MIN(CASE WHEN finished AND NOT assisted AND splices > 0 THEN runtime END),"
             "  SUM(ticks), MAX(date) "
             "FROM attempts WHERE instr(lower(map), lower(?)) GROUP BY map, kind, mode ORDER BY MAX(date) DESC");
         if(!st) { intret(0); return; }
@@ -490,7 +496,7 @@ namespace game
         }
         sqlite3_finalize(st);
         loopv(maplist)
-            maplist[i].avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND splices = 0 "
+            maplist[i].avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
                                         "ORDER BY date DESC, id DESC LIMIT 10)", maplist[i].map, maplist[i].kind, maplist[i].mode, -1);
         intret(maplist.length());
     });

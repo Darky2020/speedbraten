@@ -943,7 +943,12 @@ namespace game
         bool cleanstart = true;
         loopv(run.attempts) if(run.attempts[i]->snapshot.length() || run.attempts[i]->starttick) cleanstart = false;
         if(segmented) { defformatstring(d, "%d state loads", info.splices); v.warn("segmented", d); }
-        else v.check(cleanstart, "start", cleanstart ? "map start" : "starts from a saved state");
+        else
+        {
+            // flagrun and race replays hold one life and start from its first tick
+            bool life = info.flagrun || info.race;
+            v.check(cleanstart || life, "start", cleanstart ? "map start" : life ? "life start" : "starts from a saved state");
+        }
 
         int settings = 0, free = 0, sourced = 0, unbacked = 0, slowmo = 0;
         long long pausedus = 0;

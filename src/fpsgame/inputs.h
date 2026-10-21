@@ -227,6 +227,8 @@ namespace game
     extern void tellsreset();
     extern void tellsframe(int us);
     extern void tellslifestart();
+    // the run (or life) being saved was slowed, sped up, paused or played with fixedframe
+    extern bool tellsassisted();
     extern void tellssavinglife(bool on); // the replay being saved holds one life
     // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use
     extern bool spawnaidsactive(bool &custom, bool &race);
