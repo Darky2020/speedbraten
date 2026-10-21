@@ -281,6 +281,7 @@ namespace game
     // the current run's category, for the commands below
     static bool currentcategory(const char *&map, const char *&kind, int &mode)
     {
+        if(!connected) return false;
         const inputattempt *first = inputrunfirst();
         kind = runtimerkindname();
         if(!first || !kind) return false;
