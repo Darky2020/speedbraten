@@ -59,10 +59,10 @@ namespace game
     static bool savinglife = false;
 
     // settings and aids recorded when they were on at any time during the run
-    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "customspawn", "racestart", "gamespeed", "paused" };
+    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
     enum { NUMFEATURES = sizeof(featurenames)/sizeof(featurenames[0]), FEATUREVARS = NUMFEATURES - 4 };
-    enum { F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
-    extern int fixedgameseed, slowmosp;
+    enum { F_SLOWMOSP = 1<<(FEATUREVARS-1), F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
+    extern int fixedgameseed;
     static bool lastfocus = true, lastminimized = false;
 
     void tellsrunstart()
@@ -79,7 +79,7 @@ namespace game
     bool tellsassisted()
     {
         const tellcounters &c = savinglife ? life : run;
-        return c.features & (F_GAMESPEED | F_PAUSED) || c.fixedframe;
+        return c.features & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP) || c.fixedframe;
     }
     void tellssavinglife(bool on) { savinglife = on; }
     void tellssave() { run.saves++; life.saves++; }
@@ -117,8 +117,7 @@ namespace game
             if(custom) features |= F_CUSTOMSPAWN;
             if(race) features |= F_RACESTART;
         }
-        // single-player slow motion changes the game speed as part of the game
-        if(scaletime(1) != 100 && !(m_sp && slowmosp)) features |= F_GAMESPEED;
+        if(scaletime(1) != 100) features |= F_GAMESPEED;
         if(ispaused()) features |= F_PAUSED;
         countframe(run, us, focuslost, minimizedagain, features);
         countframe(life, us, focuslost, minimizedagain, features);

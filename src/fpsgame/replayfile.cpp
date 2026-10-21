@@ -990,9 +990,11 @@ namespace game
             formatstring(d, "%.3f s paused", pausedus / 1e6);
             if(segmented) v.warn("pause", d);
             else v.check(!pausedus, "pause", d);
-            formatstring(d, "%d-%d%s", speedmin, speedmax, slowmo ? " (slowmosp)" : "");
-            v.check(speedmax <= 100 && (speedmin >= 100 || slowmo), "gamespeed", d);
+            formatstring(d, "%d-%d", speedmin, speedmax);
+            v.check(speedmin == 100 && speedmax == 100, "gamespeed", d);
         }
+        slowmo = slowmo || tellvalue(run, "fEAT", "slowmosp", 0);
+        v.check(!slowmo, "slow motion", slowmo ? "slowmosp on" : "off");
         fixed = max(fixed, int(tellvalue(run, "pROV", "fixedframe", 0)));
         formatstring(d, "%d", fixed);
         v.check(!fixed, "fixedframe", d);
