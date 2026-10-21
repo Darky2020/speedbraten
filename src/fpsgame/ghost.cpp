@@ -9,6 +9,7 @@ namespace game
 {
     VARP(ghost, 0, 1, 1);     // draw the ghost
     VARP(ghostdiff, 0, 1, 1); // show the live time difference to it
+    VARP(ghostdiffwindow, 1, 3, 600); // seconds of the ghost's path searched either side of the run time
     VARP(ghostsegpb, 0, 0, 1);
     FVARP(ghostalpha, 0.1f, 0.4f, 1);
 
@@ -168,7 +169,6 @@ namespace game
         return ghostat(running || t > 0 ? t : 0, g);
     }
 
-    enum { DELTAWINDOW = 600 };      // ticks searched either side of the run time
     static const float DELTARANGE = 64; // farther from the ghost's path than this: no delta
 
     // How far behind the ghost the player is, in ticks (negative: ahead): the run time minus
@@ -180,14 +180,14 @@ namespace game
         bool running;
         int t = runtimerticks(running);
         if(!running) return false;
-        int map = inputattemptindex();
+        int map = inputattemptindex(), window = ghostdiffwindow*1000/SIMTICK;
         vec p = player1->o;
         float bestdist = DELTARANGE;
         int bestt = -1;
         loopv(samples)
         {
-            if(samplemaps[i] != map || samples[i].tick < t - DELTAWINDOW) continue;
-            if(samples[i].tick > t + DELTAWINDOW) break;
+            if(samplemaps[i] != map || samples[i].tick < t - window) continue;
+            if(samples[i].tick > t + window) break;
             const ghostsample &a = samples[i];
             if(i + 1 < samples.length() && samplemaps[i+1] == map)
             {
