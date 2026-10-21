@@ -1000,6 +1000,23 @@ namespace game
         formatstring(d, "%d of %d key/mouse events without raw input", unbacked, sourced);
         v.check(!unbacked, "raw input", d);
 
+        if(const runchunk *feat = findtells(run, "fEAT"))
+        {
+            string category = "", on = "";
+            sbr2::kvfind(feat->data, "category", NULL, category, sizeof(category));
+            sbr2::bytesreader r(feat->data.getbuf(), feat->data.length());
+            int n = int(r.var());
+            loopi(n)
+            {
+                string key;
+                if(!r.str(key, sizeof(key))) break;
+                int type = r.u8();
+                if(type == sbr2::VALUE_BOOL) { if(r.u8()) { if(on[0]) concatstring(on, " "); concatstring(on, key); } }
+                else if(type == sbr2::VALUE_STR) { unsigned long long len = r.var(); if(len > (unsigned long long)r.left()) break; r.p += len; }
+                else break;
+            }
+            conoutf("INFO category %s; features on: %s", category, on[0] ? on : "none");
+        }
         if(const runchunk *devs = findtells(run, "dEVS"))
         {
             static const char * const kinds[] = { "other", "keyboard", "mouse" };

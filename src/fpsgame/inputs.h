@@ -225,6 +225,8 @@ namespace game
     extern void tellsload();
     extern void tellsreset();
     extern void tellsframe(int us);
+    // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use
+    extern bool spawnaidsactive(bool &custom, bool &race);
     extern int tellsrunms();
     extern long long tellsrunus();
     // a lasting copy of a bind action for raw events; the same text gives the same pointer

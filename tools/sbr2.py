@@ -380,7 +380,7 @@ def check_history(export, replays):
     return problems
 
 
-KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "SETS", "wIND", "rSTA"}
+KV_CHUNKS = {"META", "cLNT", "sESS", "hIST", "pROV", "fEAT", "SETS", "wIND", "rSTA"}
 RAW_TIME_UNIT = 100  # raw event times are stored in units of 100 us
 RAW_KINDS = ["keydown", "keyup", "buttondown", "buttonup", "motion", "wheel", "focus"]
 SOURCES = ["other", "key", "mouse", "console", "menu", "harness", "recorder", "map"]

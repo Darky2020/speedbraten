@@ -655,6 +655,8 @@ struct inputdevice
     inputdevice() : kind(0), vendor(0), product(0) { transport[0] = name[0] = '\0'; }
 };
 extern void listinputdevices(vector<inputdevice> &out);
+// a coarse description of the OS and the CPU model, MAXSTRLEN each
+extern void systeminfo(char *os, char *cpu);
 
 struct inputsourcescope
 {

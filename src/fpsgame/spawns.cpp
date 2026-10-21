@@ -178,6 +178,12 @@ namespace game
     });
 
     ICOMMAND(havespawn, "", (), intret(customspawnactive() ? 1 : 0));
+    bool spawnaidsactive(bool &custom, bool &race)
+    {
+        custom = customspawnactive();
+        race = racestart >= 0 && server::racerulesactive();
+        return custom || race;
+    }
     ICOMMAND(racestartcount, "", (), intret(countplayerstarts()));
     ICOMMAND(inrace, "", (), intret(!multiplayer(false) && server::racerulesactive() ? 1 : 0));
 

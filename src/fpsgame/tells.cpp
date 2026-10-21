@@ -45,7 +45,12 @@ namespace game
         int saves, loads, focuslosses, minimizes, fixedframe;
         long long focuslostus;
         bool harness, dethash, edit, seedforced;
+        int features; // bits of featurenames that were on at some point
     } run;
+
+    // settings and aids recorded when they were on at any time during the run
+    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "customspawn", "racestart" };
+    enum { NUMFEATURES = sizeof(featurenames)/sizeof(featurenames[0]), FEATUREVARS = NUMFEATURES - 2 };
     extern int fixedgameseed;
     static bool lastfocus = true, lastminimized = false;
 
@@ -76,6 +81,16 @@ namespace game
         if(editmode) run.edit = true;
         if(dethashactive()) run.dethash = true;
         if(fixedgameseed) run.seedforced = true;
+        static ident *vars[FEATUREVARS];
+        static bool looked = false;
+        if(!looked) { loopi(FEATUREVARS) vars[i] = getident(featurenames[i]); looked = true; }
+        loopi(FEATUREVARS) if(vars[i] && vars[i]->type == ID_VAR && *vars[i]->storage.i) run.features |= 1<<i;
+        bool custom = false, race = false;
+        if(spawnaidsactive(custom, race))
+        {
+            if(custom) run.features |= 1<<FEATUREVARS;
+            if(race) run.features |= 1<<(FEATUREVARS+1);
+        }
         run.fixedframe = max(run.fixedframe, fixedframe);
     }
 
@@ -197,6 +212,10 @@ namespace game
         client.str("compiler", __VERSION__);
         client.str("platform", TELLS_OS "-" TELLS_ARCH);
         client.var("simversion", info.simversion);
+        string os, cpu;
+        systeminfo(os, cpu);
+        client.str("os", os);
+        client.str("cpu", cpu);
         if(exehash(hash)) client.bytes("exehash", hash, 32);
         const char *autoexec = findfile("autoexec.cfg", "rb");
         if(fileexists(autoexec, "r") && hashpath(autoexec, hash)) client.bytes("autoexec", hash, 32);
@@ -238,6 +257,15 @@ namespace game
         prov.boolean("edit", run.edit);
         prov.boolean("seedforced", run.seedforced);
         addchunk(out, "pROV", prov);
+
+        // features in use, and the category the run falls in
+        sbr2::kvwriter features;
+        loopi(NUMFEATURES) features.boolean(featurenames[i], (run.features & (1<<i)) != 0);
+        string category;
+        copystring(category, info.race ? "race" : info.flagrun ? "flagrun" : m_check(info.mode, M_CLASSICSP) ? "sp" : m_check(info.mode, M_DMSP) ? "dmsp" : "other");
+        if(info.splices > 0) concatstring(category, "-segmented");
+        features.str("category", category);
+        addchunk(out, "fEAT", features);
 
         sbr2::kvwriter settings;
         loopi(sizeof(inputsettings)/sizeof(inputsettings[0])) addsetting(settings, inputsettings[i]);

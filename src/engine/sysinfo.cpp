@@ -1,12 +1,14 @@
-// The keyboards, mice and other generic desktop input devices the system reports, for replay
-// files: kind, USB vendor and product ID, transport and product name, never serial numbers.
-// System libraries are loaded at run time, so the client links nothing extra.
+// System information for replay files: the OS, the CPU model, and the keyboards, mice and other
+// generic desktop input devices (kind, USB vendor and product ID, transport and product name,
+// never serial numbers). System libraries are loaded at run time, so the client links nothing
+// extra.
 
 #include "engine.h"
 
 #if defined(HEADLESS)
 
 void listinputdevices(vector<inputdevice> &out) {}
+void systeminfo(char *os, char *cpu) { os[0] = cpu[0] = '\0'; }
 
 #elif defined(WIN32)
 
@@ -62,9 +64,40 @@ void listinputdevices(vector<inputdevice> &out)
     }
 }
 
+void systeminfo(char *os, char *cpu)
+{
+    copystring(os, "windows", MAXSTRLEN);
+    cpu[0] = '\0';
+    struct osversion { ULONG size, major, minor, build, platform; WCHAR csd[128]; } v;
+    memset(&v, 0, sizeof(v));
+    v.size = sizeof(v);
+    typedef LONG (WINAPI *rtlversionfn)(osversion *);
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    rtlversionfn rtlversion = ntdll ? (rtlversionfn)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
+    if(rtlversion && !rtlversion(&v)) nformatstring(os, MAXSTRLEN, "windows %lu.%lu.%lu", v.major, v.minor, v.build);
+    typedef LONG (WINAPI *reggetfn)(HKEY, LPCSTR, LPCSTR, DWORD, LPDWORD, PVOID, LPDWORD);
+    HMODULE advapi = LoadLibraryA("advapi32.dll");
+    reggetfn regget = advapi ? (reggetfn)GetProcAddress(advapi, "RegGetValueA") : NULL;
+    DWORD len = MAXSTRLEN;
+    if(regget && regget(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", "ProcessorNameString", 0x0000ffff, NULL, cpu, &len) != 0) cpu[0] = '\0';
+    cpu[MAXSTRLEN-1] = '\0';
+}
+
 #elif defined(__APPLE__)
 
 #include <dlfcn.h>
+#include <sys/sysctl.h>
+
+void systeminfo(char *os, char *cpu)
+{
+    char buf[256];
+    size_t len = sizeof(buf);
+    if(!sysctlbyname("kern.osproductversion", buf, &len, NULL, 0)) nformatstring(os, MAXSTRLEN, "macos %s", buf);
+    else copystring(os, "macos", MAXSTRLEN);
+    len = sizeof(buf);
+    if(!sysctlbyname("machdep.cpu.brand_string", buf, &len, NULL, 0)) copystring(cpu, buf, MAXSTRLEN);
+    else copystring(cpu, "", MAXSTRLEN);
+}
 
 void listinputdevices(vector<inputdevice> &out)
 {
@@ -132,6 +165,37 @@ void listinputdevices(vector<inputdevice> &out)
 }
 
 #else
+
+// value of the first "key... : value" or "key=value" line in a file, quotes removed
+static bool filefield(const char *file, const char *key, char sep, char *out)
+{
+    FILE *f = fopen(file, "r");
+    if(!f) return false;
+    char line[512];
+    bool found = false;
+    while(!found && fgets(line, sizeof(line), f))
+    {
+        if(strncmp(line, key, strlen(key))) continue;
+        char *v = strchr(line, sep);
+        if(!v) continue;
+        v++;
+        while(*v == ' ' || *v == '\t' || *v == '"') v++;
+        char *e = v + strlen(v);
+        while(e > v && (e[-1] == '\n' || e[-1] == '"' || e[-1] == ' ')) *--e = '\0';
+        copystring(out, v, MAXSTRLEN);
+        found = true;
+    }
+    fclose(f);
+    return found;
+}
+
+void systeminfo(char *os, char *cpu)
+{
+    string name;
+    if(filefield("/etc/os-release", "PRETTY_NAME", '=', name)) nformatstring(os, MAXSTRLEN, "linux %s", name);
+    else copystring(os, "linux", MAXSTRLEN);
+    if(!filefield("/proc/cpuinfo", "model name", ':', cpu) && !filefield("/proc/cpuinfo", "Model", ':', cpu)) copystring(cpu, "", MAXSTRLEN);
+}
 
 void listinputdevices(vector<inputdevice> &out)
 {

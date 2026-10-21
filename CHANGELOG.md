@@ -16,6 +16,8 @@
   - `tools/sbr2.py` reads and checks replay files outside the game.
   - Replays list the connected keyboards, mice and other input devices (vendor and product ID,
     connection, product name; no serial numbers) and the `maxfps` setting.
+  - Replays record which aids were on during the run (ghost, speedometer, splits, third person,
+    fullbright, custom or forced spawns, …), the run's category, and the OS and CPU model.
 - Choose which ghost to race per map and mode: your PB, your segmented PB, or any replay (for
   example a world record copied into `replays/`), with your own label. The choice is saved, and
   the label shows above the ghost and on the time difference line. Replays made before v0.1.0
