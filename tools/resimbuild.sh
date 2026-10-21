@@ -19,8 +19,15 @@ t0=$(date +%s)
 echo "phase zlib: start" >&2
 if [ ! -f "$deps/lib/libz.a" ]; then
     tarball=$out/zlib-$ZLIB_VERSION.tar.gz
-    [ -f "$tarball" ] || curl -fsSL -o "$tarball" "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz"
-    echo "$ZLIB_SHA256  $tarball" | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -) >&2
+    zlibok() { echo "$ZLIB_SHA256  $tarball" | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -) >&2; }
+    # zlib.net has served truncated files; the GitHub release holds the same tarball
+    for url in "https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz" \
+               "https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz"; do
+        [ -f "$tarball" ] && zlibok && break
+        rm -f "$tarball"
+        curl -fsSL --retry 3 -o "$tarball" "$url" || true
+    done
+    zlibok
     tar xzf "$tarball" -C "$deps/build"
     zsrc=$deps/build/zlib-$ZLIB_VERSION
     case $target in *windows*) zdefs="" ;; *) zdefs="-DZ_HAVE_UNISTD_H" ;; esac
