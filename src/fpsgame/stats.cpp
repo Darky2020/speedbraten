@@ -452,23 +452,45 @@ namespace game
     {
         string map, kind;
         int mode, runs, finished, pb, segruns, segpb, avg10;
-        int64_t ticks, last;
+        int64_t ticks, last, pbdate;
     };
     static vector<mapstats> maplist;
 
-    static int queryint(const char *sql, const char *map, const char *kind, int mode, int def)
+    MOD(VARP, statskind, 0, 0, 4); // numbered like replayfilterkind
+    MOD(VARP, statssort, 0, 0, 3); // 0 recently played, 1 map, 2 runs, 3 time played
+    MOD(VARP, statspbonly, 0, 0, 1);
+
+    static int64_t queryint64(const char *sql, const char *map, const char *kind, int mode, int64_t def)
     {
         sqlite3_stmt *st = prepare(sql);
         if(!st) return def;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
         sqlite3_bind_int(st, 3, mode);
-        int val = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL ? sqlite3_column_int(st, 0) : def;
+        int64_t val = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL ? sqlite3_column_int64(st, 0) : def;
         sqlite3_finalize(st);
         return val;
     }
+    static int queryint(const char *sql, const char *map, const char *kind, int mode, int def) { return int(queryint64(sql, map, kind, mode, def)); }
 
-    // statsscan [map filter]: caches the per-map summary, most recently played first
+    static int statskindof(const mapstats &m)
+    {
+        if(!strcmp(m.kind, "race")) return 4;
+        if(!strcmp(m.kind, "flagrun")) return 3;
+        if(!strcmp(m.kind, "sp")) return m_check(m.mode, M_DMSP) ? 2 : 1;
+        return 0;
+    }
+
+    static bool statsbymap(const mapstats &a, const mapstats &b)
+    {
+        int c = strcasecmp(a.map, b.map);
+        return c ? c < 0 : a.last > b.last;
+    }
+    static bool statsbyruns(const mapstats &a, const mapstats &b) { return a.runs + a.segruns != b.runs + b.segruns ? a.runs + a.segruns > b.runs + b.segruns : a.last > b.last; }
+    static bool statsbyplayed(const mapstats &a, const mapstats &b) { return a.ticks != b.ticks ? a.ticks > b.ticks : a.last > b.last; }
+
+    // statsscan [map filter]: caches the per-map summary, most recently played first unless
+    // statssort says otherwise; statskind and statspbonly narrow it down
     ICOMMAND(statsscan, "s", (char *filter),
     {
         maplist.setsize(0);
@@ -493,11 +515,20 @@ namespace game
             m.segpb = sqlite3_column_type(st, 7) != SQLITE_NULL ? sqlite3_column_int(st, 7) : -1;
             m.ticks = sqlite3_column_int64(st, 8);
             m.last = sqlite3_column_int64(st, 9);
+            if((statskind && statskindof(m) != statskind) || (statspbonly && m.pb < 0 && m.segpb < 0)) maplist.pop();
         }
         sqlite3_finalize(st);
         loopv(maplist)
-            maplist[i].avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
-                                        "ORDER BY date DESC, id DESC LIMIT 10)", maplist[i].map, maplist[i].kind, maplist[i].mode, -1);
+        {
+            mapstats &m = maplist[i];
+            m.avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
+                               "ORDER BY date DESC, id DESC LIMIT 10)", m.map, m.kind, m.mode, -1);
+            m.pbdate = queryint64("SELECT date FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
+                                  "ORDER BY runtime, date, id LIMIT 1", m.map, m.kind, m.mode, -1);
+        }
+        if(statssort == 1) maplist.sort(statsbymap);
+        else if(statssort == 2) maplist.sort(statsbyruns);
+        else if(statssort == 3) maplist.sort(statsbyplayed);
         intret(maplist.length());
     });
 
@@ -512,6 +543,17 @@ namespace game
         else if(!strcmp(field, "runs")) intret(m.runs);
         else if(!strcmp(field, "finished")) intret(m.finished);
         else if(!strcmp(field, "pb")) result(m.pb >= 0 ? formatms(m.pb) : "-");
+        else if(!strcmp(field, "pbdate"))
+        {
+            if(m.pbdate < 0) { result(""); return; }
+            time_t t = time_t(m.pbdate);
+            time_t now = time(NULL);
+            tm when = *localtime(&t);
+            int year = localtime(&now)->tm_year;
+            string buf;
+            strftime(buf, sizeof(buf), when.tm_year == year ? "%d %b" : "%d %b %y", &when);
+            result(buf);
+        }
         else if(!strcmp(field, "avg")) result(m.avg10 >= 0 ? formatms(m.avg10) : "-");
         else if(!strcmp(field, "segruns")) intret(m.segruns);
         else if(!strcmp(field, "segpb")) result(m.segpb >= 0 ? formatms(m.segpb) : "-");

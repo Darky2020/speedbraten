@@ -26,6 +26,8 @@
 
 ### Menus
 - The speedrun menu has tabs for general, singleplayer, flagruns, races and keys.
+- Replay browser: filter by kind, result, segmented and kept.
+- Stats: filter by kind or PB, sort by map, runs or time played, and a PB date column.
 
 ### Fixes
 - The first spawn after a CTF game could be in the middle of the map.

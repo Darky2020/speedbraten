@@ -1222,6 +1222,29 @@ namespace game
 
     MOD(SVARP, replayfilter, "");
     MOD(VARP, replaysort, 0, 0, 1);
+    MOD(VARP, replayfilterkind, 0, 0, 4);   // 0 all, 1 sp, 2 dmsp, 3 flagrun, 4 race
+    MOD(VARP, replayfilterresult, 0, 0, 2); // 0 all, 1 finished, 2 unfinished
+    MOD(VARP, replayfilterseg, 0, 0, 1);
+    MOD(VARP, replayfilterkept, 0, 0, 1);
+
+    // the kind numbering of replayfilterkind and statskind; 0 for runs of no listed kind
+    static int replaykindof(const replayinfo &r)
+    {
+        if(r.race) return 4;
+        if(r.flagrun) return 3;
+        if(m_check(r.mode, M_DMSP)) return 2;
+        if(m_check(r.mode, M_CLASSICSP)) return 1;
+        return 0;
+    }
+
+    static bool replaylisted(const replayinfo &r, bool kept)
+    {
+        if(replayfilterkind && replaykindof(r) != replayfilterkind) return false;
+        if(replayfilterresult && (r.finished != 0) != (replayfilterresult == 1)) return false;
+        if(replayfilterseg && r.splices <= 0) return false;
+        if(replayfilterkept && !kept) return false;
+        return true;
+    }
 
     static bool newerreplay(const replayentry &a, const replayentry &b) { return a.info.date > b.info.date; }
 
@@ -1253,7 +1276,7 @@ namespace game
         {
             replayentry e;
             formatstring(e.file, "%s/%s.sbr", dir, files[i]);
-            if(!readreplay(e.file, NULL, e.info) || !containsnocase(e.info.map, replayfilter)) continue;
+            if(!readreplay(e.file, NULL, e.info) || !containsnocase(e.info.map, replayfilter) || !replaylisted(e.info, kept)) continue;
             e.kept = kept;
             stream *f = openrawfile(path(e.file, true), "rb");
             e.size = f ? int(f->size()) : 0;
