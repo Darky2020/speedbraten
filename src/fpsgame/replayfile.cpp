@@ -59,9 +59,10 @@ namespace game
     //            combinedhash(); then the groups of the last hash, u32 each
     //       SPLC (only with state loads) var loads, (var tick, var discarded ticks, u8 kind,
     //            svar wall ms since the run began) per load
-    //       tIME (optional) var wall us, var paused us, var frames, var frames without a tick,
-    //            var frames with 2+ ticks, 8 x var frame-time histogram, var min gamespeed,
-    //            var max gamespeed, var max fixedframe
+    //       tIME (optional) var wall us, var paused us, var main loop passes ("frames"), var
+    //            passes without a tick, var passes with 2+ ticks, 8 x var pass-time histogram,
+    //            var min gamespeed, var max gamespeed, var max fixedframe, then (may be absent)
+    //            var passes that drew the screen
     //       SEGE
     //     gHST (optional) var samples; columns: var run tick delta; svar x, y, z in
     //          1/GHOSTPOSSCALE units and svar yaw, pitch in 1/GHOSTANGLESCALE degrees (each minus
@@ -316,6 +317,7 @@ namespace game
                 t.pausedus += s.pausedus;
                 t.frames0 += s.frames0;
                 t.frames2 += s.frames2;
+                t.drawn = t.drawn < 0 || s.drawn < 0 ? -1 : t.drawn + s.drawn;
                 loopi(segmenttiming::BUCKETS) t.hist[i] += s.hist[i];
                 t.speedmin = seconds++ ? min(t.speedmin, s.speedmin) : s.speedmin;
                 t.speedmax = max(t.speedmax, s.speedmax);
@@ -334,6 +336,7 @@ namespace game
                 w.var(t.speedmin);
                 w.var(t.speedmax);
                 w.var(t.fixedframe);
+                if(t.drawn >= 0) w.var(t.drawn);
                 out.add("tIME", p, true);
             }
             out.endsegment(hi);
@@ -670,6 +673,7 @@ namespace game
         t.speedmin = int(r.var());
         t.speedmax = int(r.var());
         t.fixedframe = int(r.var());
+        t.drawn = r.left() ? int(r.var()) : -1;
         return r.ok;
     }
 

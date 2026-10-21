@@ -1614,7 +1614,7 @@ int main(int argc, char **argv)
 #ifndef HEADLESS
             static Uint64 lastframe = 0;
             Uint64 now = SDL_GetPerformanceCounter();
-            if(lastframe) game::frametimed(int(min((now - lastframe)*1000000/SDL_GetPerformanceFrequency(), Uint64(1)<<30)), simulated/SIMTICK);
+            if(lastframe) game::frametimed(int(min((now - lastframe)*1000000/SDL_GetPerformanceFrequency(), Uint64(1)<<30)), simulated/SIMTICK, draw);
             lastframe = now;
 #endif
         }

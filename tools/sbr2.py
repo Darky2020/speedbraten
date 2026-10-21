@@ -520,7 +520,10 @@ def decode_kv(raw):
 def decode_time(raw):
     r = Reader(raw)
     names = ["wallus", "pausedus", "frames", "frames0", "frames2"] + ["h%d" % i for i in range(8)] + ["speedmin", "speedmax", "fixedframe"]
-    return [(n, r.var()) for n in names]
+    out = [(n, r.var()) for n in names]
+    if r.left():
+        out.append(("drawn", r.var()))
+    return out
 
 
 def decode_splc(raw):

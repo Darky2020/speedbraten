@@ -918,7 +918,7 @@ namespace game
         if(r.bind) r.bind = internbind(r.bind, strlen(r.bind));
     }
 
-    void frametimed(int us, int ticks)
+    void frametimed(int us, int ticks, bool drawn)
     {
         tellsframe(us);
         if(frameticks) readsettings(framesettings);
@@ -937,6 +937,7 @@ namespace game
         if(ispaused() || holdsim()) t.pausedus += us;
         if(!ticks) t.frames0++;
         else if(ticks >= 2) t.frames2++;
+        if(drawn) t.drawn++;
         int speed = scaletime(1);
         if(!t.frames++) t.speedmin = t.speedmax = speed;
         else { t.speedmin = min(t.speedmin, speed); t.speedmax = max(t.speedmax, speed); }

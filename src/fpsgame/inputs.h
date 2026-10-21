@@ -64,12 +64,13 @@ namespace game
         enum { BUCKETS = 8 };
         int segment;
         long long wallus, pausedus;
-        int frames, frames0, frames2; // all frames, frames with no tick, with 2 or more ticks
+        int frames, frames0, frames2; // main loop passes: all, with no tick, with 2 or more ticks
+        int drawn;                    // passes that drew the screen, -1 unknown
         int hist[BUCKETS];            // frame times: <2, <4, <8, <16, <33, <66, <250, >=250 ms
         int speedmin, speedmax;       // gamespeed
         int fixedframe;               // highest fixedframe
 
-        segmenttiming(int segment = 0) : segment(segment), wallus(0), pausedus(0), frames(0), frames0(0), frames2(0), speedmin(0), speedmax(0), fixedframe(0)
+        segmenttiming(int segment = 0) : segment(segment), wallus(0), pausedus(0), frames(0), frames0(0), frames2(0), drawn(0), speedmin(0), speedmax(0), fixedframe(0)
         {
             memset(hist, 0, sizeof(hist));
         }

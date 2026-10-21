@@ -181,7 +181,7 @@ namespace game
     // key presses, auto-repeats and holds, and mouse motion sizes over the whole run
     static void rawstatistics(const inputrun &r, sbr2::kvwriter &kv)
     {
-        static const int holdlimits[7] = { 20000, 40000, 60000, 80000, 120000, 200000, 500000 }; // us
+        static const int holdlimits[7] = { 20, 40, 60, 80, 120, 200, 500 }; // ms
         static const int sizelimits[7] = { 2, 4, 8, 16, 32, 64, 128 };                           // |dx|+|dy|
         int holds[8] = { 0 }, sizes[8] = { 0 }, presses = 0, repeats = 0, motions = 0;
         long long minhold = -1;
@@ -203,7 +203,9 @@ namespace game
                     int up = e.kind == rawevent::KEYDOWN ? int(rawevent::KEYUP) : int(rawevent::BUTTONUP);
                     for(int j = i+1; j < raw.length(); j++) if(raw[j].kind == up && raw[j].code == e.code)
                     {
-                        long long hold = raw[j].us - e.us;
+                        // SDL's timestamps: the game can read a press and its release in the
+                        // same poll after a stall
+                        long long hold = int(raw[j].sdlms - e.sdlms);
                         holds[bucket(hold, holdlimits, 7)]++;
                         if(minhold < 0 || hold < minhold) minhold = hold;
                         break;
@@ -213,7 +215,7 @@ namespace game
         }
         kv.var("presses", presses);
         kv.var("repeats", repeats);
-        kv.svar("minholdus", minhold);
+        kv.svar("minholdms", minhold);
         histogram(kv, "holdhist", holds, 8);
         kv.var("motions", motions);
         histogram(kv, "motionhist", sizes, 8);

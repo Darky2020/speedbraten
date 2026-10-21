@@ -88,8 +88,9 @@ namespace game
     extern int numdynents();
     extern void rendergame(bool mainpass);
     extern void begindisplay(float alpha);
-    // a frame of offline play took us microseconds of wall time and ran ticks sim ticks
-    extern void frametimed(int us, int ticks);
+    // a pass of the main loop in offline play took us microseconds of wall time, ran ticks sim
+    // ticks and drew the screen or not
+    extern void frametimed(int us, int ticks, bool drawn);
     extern void rawinput(const rawevent &e);
     extern void tellsharness(); // a harness command changed the game: marks the run's provenance
     extern void begintick();
