@@ -34,9 +34,9 @@ namespace game {
         }
     };
 
-    struct embeddedfile<4556> speedbraten_cfg = {
+    struct embeddedfile<4723> speedbraten_cfg = {
         "data/p1xbraten/speedbraten.cfg.gz",
-        0xe8f59bc3,
+        0x53fde75c,
         {
             #include "../../data/p1xbraten/speedbraten.cfg.gz.xxd"
         }

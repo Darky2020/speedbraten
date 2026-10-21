@@ -1226,6 +1226,7 @@ namespace game
     MOD(VARP, replayfilterresult, 0, 0, 2); // 0 all, 1 finished, 2 unfinished
     MOD(VARP, replayfilterseg, 0, 0, 1);
     MOD(VARP, replayfilterkept, 0, 0, 1);
+    MOD(VARP, replayfilterflagmode, 0, 0, 3); // with replayfilterkind 3: 0 all, 1 effic, 2 insta, 3 weaponless
 
     // the kind numbering of replayfilterkind and statskind; 0 for runs of no listed kind
     static int replaykindof(const replayinfo &r)
@@ -1237,9 +1238,13 @@ namespace game
         return 0;
     }
 
+    // the numbering of replayfilterflagmode and statsflagmode
+    int flagrunmodeof(int mode) { return m_check(mode, M_EFFICIENCY) ? 1 : m_check(mode, M_INSTA) ? 2 : 3; }
+
     static bool replaylisted(const replayinfo &r, bool kept)
     {
         if(replayfilterkind && replaykindof(r) != replayfilterkind) return false;
+        if(replayfilterkind == 3 && replayfilterflagmode && flagrunmodeof(r.mode) != replayfilterflagmode) return false;
         if(replayfilterresult && (r.finished != 0) != (replayfilterresult == 1)) return false;
         if(replayfilterseg && r.splices <= 0) return false;
         if(replayfilterkept && !kept) return false;

@@ -459,6 +459,8 @@ namespace game
     MOD(VARP, statskind, 0, 0, 4); // numbered like replayfilterkind
     MOD(VARP, statssort, 0, 0, 3); // 0 recently played, 1 map, 2 runs, 3 time played
     MOD(VARP, statspbonly, 0, 0, 1);
+    MOD(VARP, statsflagmode, 0, 0, 3); // numbered like replayfilterflagmode
+    extern int flagrunmodeof(int mode);
 
     static int64_t queryint64(const char *sql, const char *map, const char *kind, int mode, int64_t def)
     {
@@ -515,7 +517,9 @@ namespace game
             m.segpb = sqlite3_column_type(st, 7) != SQLITE_NULL ? sqlite3_column_int(st, 7) : -1;
             m.ticks = sqlite3_column_int64(st, 8);
             m.last = sqlite3_column_int64(st, 9);
-            if((statskind && statskindof(m) != statskind) || (statspbonly && m.pb < 0 && m.segpb < 0)) maplist.pop();
+            if((statskind && statskindof(m) != statskind) || (statspbonly && m.pb < 0 && m.segpb < 0) ||
+               (statskind == 3 && statsflagmode && flagrunmodeof(m.mode) != statsflagmode))
+                maplist.pop();
         }
         sqlite3_finalize(st);
         loopv(maplist)
