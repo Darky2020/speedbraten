@@ -1,5 +1,12 @@
 #include "engine.h"
 
+#ifndef SPEEDBRATEN_COMMIT
+#define SPEEDBRATEN_COMMIT "unknown"
+#endif
+#ifndef SPEEDBRATEN_DIRTY
+#define SPEEDBRATEN_DIRTY 0
+#endif
+
 MOD(SVARP, p1xbratenversion, "");
 
 void lockversion()
@@ -24,5 +31,7 @@ void migratep1xbraten()
     }
     setsvar("p1xbratenversion", version);
     lockversion();
-    conoutf("p1xbraten version: %s", version);
+    // release builds get their tag in place of the placeholder
+    if(version[0] == '<') conoutf("speedbraten development build (%s%s)", SPEEDBRATEN_COMMIT, SPEEDBRATEN_DIRTY ? ", modified" : "");
+    else conoutf("speedbraten %s", version);
 }

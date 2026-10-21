@@ -216,8 +216,8 @@ $(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite $(VENDOR_INC
 # the commit a build comes from, for replay files; rebuilt when the git index changes
 GITCOMMIT:= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 GITDIRTY:= $(shell git status --porcelain --untracked-files=no 2>/dev/null | grep -q . && echo 1 || echo 0)
-fpsgame/tells.o headless/fpsgame/tells.o: CXXFLAGS += -DSPEEDBRATEN_COMMIT=\"$(GITCOMMIT)\" -DSPEEDBRATEN_DIRTY=$(GITDIRTY)
-fpsgame/tells.o headless/fpsgame/tells.o: $(wildcard ../.git/index)
+fpsgame/tells.o headless/fpsgame/tells.o p1xbraten/version.o headless/p1xbraten/version.o: CXXFLAGS += -DSPEEDBRATEN_COMMIT=\"$(GITCOMMIT)\" -DSPEEDBRATEN_DIRTY=$(GITDIRTY)
+fpsgame/tells.o headless/fpsgame/tells.o p1xbraten/version.o headless/p1xbraten/version.o: $(wildcard ../.git/index)
 
 # run statistics database; no threads or loadable extensions, so it links the same everywhere
 SQLITE_OBJS= sqlite/sqlite3.o
