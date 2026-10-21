@@ -14,7 +14,7 @@ namespace game {
             copystring(attackername, aname ? aname : "");
             copystring(victimname, vname);
             weapon = fragweapon;
-            fragtime = lastmillis;
+            fragtime = totalmillis;
         }
     };
 

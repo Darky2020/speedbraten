@@ -44,14 +44,14 @@ namespace game {
         {
             fragmessage &m = fragmessages[i];
 
-            if(lastmillis-m.fragtime > showmillis + (hudfragmessagefade ? 255 : 0))
+            if(totalmillis-m.fragtime > showmillis + (hudfragmessagefade ? 255 : 0))
             {
                 // all messages before i are older, so remove all of them
                 fragmessages.remove(0, i+1);
                 break;
             }
 
-            int alpha = 255 - max(0, lastmillis-m.fragtime-showmillis);
+            int alpha = 255 - max(0, totalmillis-m.fragtime-showmillis);
 
             vec2 drawposcenter = vec2(0, (fragmessages.length()-1-i)*stackdir*stepsize).add(origin);
 
