@@ -15,6 +15,7 @@
 - Choose the ghost per map and mode: your PB, your segmented PB or any replay.
 - Splits and the finish also show the difference to a chosen ghost replay.
 - `ghostdiffwindow` sets how far from the ghost the live difference still shows.
+- The live ghost difference is smoothed (`ghostdiffsmooth`).
 - The ghost is hidden while you watch its own replay.
 
 ### Flagruns and races

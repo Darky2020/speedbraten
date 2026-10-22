@@ -10,6 +10,7 @@ namespace game
     VARP(ghost, 0, 1, 1);     // draw the ghost
     VARP(ghostdiff, 0, 1, 1); // show the live time difference to it
     VARP(ghostdiffwindow, 1, 3, 600); // seconds of the ghost's path searched either side of the run time
+    VARP(ghostdiffsmooth, 0, 300, 2000); // ms of real time the shown difference is averaged over
     VARP(ghostsegpb, 0, 0, 1);
     FVARP(ghostalpha, 0.1f, 0.4f, 1);
 
@@ -207,10 +208,20 @@ namespace game
     static int lastdelta = 0;
     static bool havedelta = false;
 
+    // The difference can swing by a few ticks from one tick to the next; it is shown as an
+    // exponential average over ghostdiffsmooth ms that snaps to big changes such as a state load.
     bool ghostdelta(int &delta)
     {
-        if(!havedelta || !ghostdiff) return false;
-        delta = lastdelta;
+        static float shown = 0;
+        static int lastmillis = 0;
+        static bool valid = false;
+        if(!havedelta || !ghostdiff) { valid = false; return false; }
+        int dt = totalmillis - lastmillis;
+        lastmillis = totalmillis;
+        if(!valid || ghostdiffsmooth <= 0 || dt < 0 || dt > 1000 || fabs(lastdelta - shown) > 50) shown = lastdelta;
+        else shown += (lastdelta - shown) * (1 - expf(-dt / float(ghostdiffsmooth)));
+        valid = true;
+        delta = int(floorf(shown + 0.5f));
         return true;
     }
 
