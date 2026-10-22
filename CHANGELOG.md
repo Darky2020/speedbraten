@@ -31,6 +31,7 @@
 - Replay browser: filter by kind, flagrun mode, result, segmented and kept.
 - Replay browser: total size next to the count.
 - Replay browser: PB replays are marked, with a PBs-only filter.
+- Replay browser: assisted runs are marked, with a filter for them.
 - Stats: filter by kind, flagrun mode or PB, sort by map, runs or time played, and a PB date column.
 
 ### HUD

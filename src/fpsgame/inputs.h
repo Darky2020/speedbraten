@@ -256,6 +256,7 @@ namespace game
     extern void statsreplaymoved(const char *from, const char *to);
     extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file);
     extern void statspbreplays(vector<char *> &files);
+    extern void statsassistedreplays(vector<char *> &files);
     extern int statsversion();
     // head of the chain over all recorded attempts (32 bytes), its length, and the attempt count
     extern bool statshistory(uchar *head, int &count, int &attempts);

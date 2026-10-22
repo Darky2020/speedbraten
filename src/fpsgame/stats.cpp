@@ -17,6 +17,7 @@ namespace game
     void statsreplaymoved(const char *from, const char *to) {}
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
     void statspbreplays(vector<char *> &files) {}
+    void statsassistedreplays(vector<char *> &files) {}
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
     int statsversion() { return 0; }
     bool statshistory(uchar *head, int &count, int &attempts) { return false; }
@@ -274,6 +275,15 @@ namespace game
             "SELECT a.replay FROM attempts a WHERE a.replay IS NOT NULL AND a.id = ("
             "  SELECT b.id FROM attempts b WHERE b.map = a.map AND b.kind = a.kind AND b.mode = a.mode"
             "  AND (b.splices > 0) = (a.splices > 0) AND b.finished AND NOT b.assisted ORDER BY b.runtime, b.id LIMIT 1)");
+        if(!st) return;
+        while(sqlite3_step(st) == SQLITE_ROW) files.add(newstring((const char *)sqlite3_column_text(st, 0)));
+        sqlite3_finalize(st);
+    }
+
+    // the replay files of runs played with an aid that keeps them from counting as PBs
+    void statsassistedreplays(vector<char *> &files)
+    {
+        sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE assisted AND replay IS NOT NULL");
         if(!st) return;
         while(sqlite3_step(st) == SQLITE_ROW) files.add(newstring((const char *)sqlite3_column_text(st, 0)));
         sqlite3_finalize(st);
