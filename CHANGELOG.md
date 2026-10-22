@@ -34,6 +34,7 @@
 ### HUD
 - Speedometer colour bands by speed.
 - Run timer colours: running, before the start, and on finish for a new PB, faster than the ghost or slower.
+- Colour picker with RGB sliders and presets for the HUD colours.
 
 ### Fixes
 - The first spawn after a CTF game could be in the middle of the map.
