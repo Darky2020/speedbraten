@@ -179,6 +179,12 @@ namespace game
     MOD(FVARP, runtimerscale, 0.5, 1.0, 2.0);
     MOD(FVARP, runtimerx, 0.0, 0.50, 1.0);
     MOD(FVARP, runtimery, 0.0, 0.08, 1.0);
+    MOD(HVARP, runtimercolour, 0, 0xFFFFFF, 0xFFFFFF);
+    MOD(HVARP, runtimeridlecolour, 0, 0x808080, 0xFFFFFF);
+    MOD(HVARP, runtimerpbcolour, 0, 0x40FF80, 0xFFFFFF);
+    MOD(HVARP, runtimerfastercolour, 0, 0xFFFF40, 0xFFFFFF);
+    MOD(HVARP, runtimerslowercolour, 0, 0xFF8040, 0xFFFFFF);
+    ICOMMAND(hexcolour, "i", (int *colour), { defformatstring(hex, "%06X", *colour & 0xFFFFFF); result(hex); });
 
     void drawruntimer(int w, int h)
     {
@@ -193,7 +199,14 @@ namespace game
         pushhudmatrix();
         hudmatrix.scale(runtimerscale, runtimerscale, 1);
         flushhudmatrix();
-        int color = runstate == RUN_FINISHED ? 0x40FF80 : (runstate == RUN_RUNNING ? 0xFFFFFF : 0x808080);
+        int color = runtimeridlecolour;
+        if(runstate == RUN_RUNNING) color = runtimercolour;
+        else if(runstate == RUN_FINISHED) switch(splitsfinishresult())
+        {
+            case FINISH_FASTER: color = runtimerfastercolour; break;
+            case FINISH_SLOWER: color = runtimerslowercolour; break;
+            default: color = runtimerpbcolour; break;
+        }
         draw_text(buf, int(offset.x), int(offset.y), (color>>16)&0xFF, (color>>8)&0xFF, color&0xFF, 255);
         pophudmatrix();
     }

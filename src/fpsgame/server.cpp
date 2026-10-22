@@ -544,7 +544,7 @@ namespace server
     // Race rules for ffa and coop edit: picked-up items are back at once, your own shots do
     // no damage to you (they still push you) and there is no time limit. Latched at each map
     // change.
-    VAR(racerules, 0, 0, 1);
+    VARP(racerules, 0, 1, 1);
     static bool raceruleson = false;
     static int nextracerules = -1;
     bool racerulesactive() { return raceruleson; }
@@ -659,7 +659,7 @@ namespace server
     // Flagrun practice rules for CTF: a dropped flag returns at once, respawn is immediate,
     // either flag can be taken and scored at the other one, and there is no capture limit.
     // Latched at each map change, so a game keeps the rules it started with.
-    VAR(flagrun, 0, 0, 1);
+    VARP(flagrun, 0, 1, 1);
     static bool flagrunon = false;
     static int nextflagrun = -1;
     bool flagrunactive() { return flagrunon; }

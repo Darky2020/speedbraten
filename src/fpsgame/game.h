@@ -1010,6 +1010,8 @@ namespace game
     extern int inputsplicecount();
     extern void ghosttick();
     extern void splittick();
+    enum { FINISH_NONE = 0, FINISH_PB, FINISH_FASTER, FINISH_SLOWER };
+    extern int splitsfinishresult();
     extern void splitentityused(int n, fpsent *d, bool teleport);
     extern void rendersplitzones();
     extern void drawsplits(int w, int h);

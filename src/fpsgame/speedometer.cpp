@@ -13,6 +13,86 @@ namespace game
     MOD(VARP, speedometersmooth, 0, 1, 1);
     MOD(VARP, speedometersmoothms, 10, 150, 2000);
 
+    // Colour bands by horizontal speed, saved as "speed RRGGBB" pairs: a band's colour is used from
+    // its speed up to the next band's.
+    struct speedband { int speed, colour; };
+    static vector<speedband> bands;
+    static bool bandsparsed = false;
+    static void parsebands();
+    MOD(SVARFP, speedometerbands, "0 FFFFFF", parsebands());
+
+    static bool slowerband(const speedband &a, const speedband &b) { return a.speed < b.speed; }
+
+    static void parsebands()
+    {
+        bandsparsed = true;
+        bands.setsize(0);
+        vector<char *> w;
+        explodelist(speedometerbands, w);
+        for(int i = 0; i + 1 < w.length(); i += 2)
+        {
+            speedband &b = bands.add();
+            b.speed = max(parseint(w[i]), 0);
+            b.colour = int(strtoul(w[i+1], NULL, 16)) & 0xFFFFFF;
+        }
+        w.deletearrays();
+        bands.sort(slowerband);
+    }
+
+    // the setting's change hook doesn't run for its default value
+    static vector<speedband> &getbands()
+    {
+        if(!bandsparsed) parsebands();
+        return bands;
+    }
+
+    static void savebands()
+    {
+        bands.sort(slowerband);
+        vector<char> buf;
+        loopv(bands)
+        {
+            defformatstring(pair, "%s%d %06X", i ? " " : "", bands[i].speed, bands[i].colour);
+            buf.put(pair, strlen(pair));
+        }
+        buf.add('\0');
+        setsvar("speedometerbands", buf.getbuf());
+    }
+
+    static int bandcolour(float speed)
+    {
+        int colour = 0xFFFFFF;
+        getbands();
+        loopv(bands) if(speed + 0.5f >= bands[i].speed) colour = bands[i].colour;
+        return colour;
+    }
+
+    ICOMMAND(speedometerbandcount, "", (), intret(getbands().length()));
+    // speedometerband i speed|colour
+    ICOMMAND(speedometerband, "is", (int *i, char *field),
+    {
+        if(!getbands().inrange(*i)) { result(""); return; }
+        if(!strcmp(field, "speed")) intret(bands[*i].speed);
+        else { defformatstring(hex, "%06X", bands[*i].colour); result(hex); }
+    });
+    // speedometerbandset i speed RRGGBB
+    ICOMMAND(speedometerbandset, "iis", (int *i, int *speed, char *colour),
+    {
+        if(!getbands().inrange(*i)) return;
+        bands[*i].speed = max(*speed, 0);
+        bands[*i].colour = int(strtoul(colour, NULL, 16)) & 0xFFFFFF;
+        savebands();
+    });
+    ICOMMAND(speedometerbandadd, "", (),
+    {
+        speedband &b = getbands().add();
+        b.speed = bands.length() > 1 ? bands[bands.length()-2].speed + 100 : 0;
+        b.colour = 0xFFFFFF;
+        savebands();
+    });
+    ICOMMAND(speedometerbandremove, "i", (int *i), { if(getbands().inrange(*i)) { bands.remove(*i); savebands(); } });
+    ICOMMAND(speedometerbandcolour, "f", (float *speed), { defformatstring(hex, "%06X", bandcolour(*speed)); result(hex); });
+
     // Speed changes a little on almost every tick while strafing; optionally show an
     // exponential average over speedometersmoothms of real time instead.
     static float smoothspeed2 = 0, smoothspeed3 = 0;
@@ -52,7 +132,8 @@ namespace game
         pushhudmatrix();
         hudmatrix.scale(speedometerscale, speedometerscale, 1);
         flushhudmatrix();
-        draw_text(buf, int(offset.x), int(offset.y));
+        int colour = bandcolour(speed2);
+        draw_text(buf, int(offset.x), int(offset.y), (colour>>16)&0xFF, (colour>>8)&0xFF, colour&0xFF, 255);
         pophudmatrix();
     }
 

@@ -18,6 +18,7 @@
 - The ghost is hidden while you watch its own replay.
 
 ### Flagruns and races
+- Flagrun and race rules are on by default and remembered.
 - New flagrun option: stepping back onto the flag restarts the timer.
 - Setting a flagrun spawn starts a one-second countdown.
 - Weaponless flagruns keep the pistol selected.
@@ -28,6 +29,10 @@
 - The speedrun menu has tabs for general, singleplayer, flagruns, races and keys.
 - Replay browser: filter by kind, flagrun mode, result, segmented and kept.
 - Stats: filter by kind, flagrun mode or PB, sort by map, runs or time played, and a PB date column.
+
+### HUD
+- Speedometer colour bands by speed.
+- Run timer colours: running, before the start, and on finish for a new PB, faster than the ghost or slower.
 
 ### Fixes
 - The first spawn after a CTF game could be in the middle of the map.

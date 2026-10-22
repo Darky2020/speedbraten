@@ -358,6 +358,23 @@ namespace game
         return -1;
     }
 
+    // How the finished run compares: a new PB (or the first finish), faster than the chosen ghost
+    // replay without being a PB, or slower than both
+    int splitsfinishresult()
+    {
+        if(!runtimerfinished()) return FINISH_NONE;
+        bool running;
+        int t = runtimerticks(running);
+        if(pbms < 0 || t < pbms/SIMTICK) return FINISH_PB;
+        const char *file;
+        const vector<ghostsample> *s;
+        const vector<int> *maps;
+        int ghostms;
+        if(ghostchosenreplay(file, s, maps, ghostms) && ghostms >= 0 && t < ghostms/SIMTICK) return FINISH_FASTER;
+        return FINISH_SLOWER;
+    }
+    ICOMMAND(runfinishresult, "", (), intret(splitsfinishresult()));
+
     void splittick()
     {
         const inputattempt *first = inputrunfirst();
