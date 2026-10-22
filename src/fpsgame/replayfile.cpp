@@ -1300,6 +1300,17 @@ namespace game
         intret(replaylist.length());
     });
 
+    // total size of the scanned replays, e.g. "4.6 MB"
+    ICOMMAND(replaytotalsize, "", (),
+    {
+        double total = 0;
+        loopv(replaylist) total += replaylist[i].size;
+        string buf;
+        if(total >= 1024*1024) formatstring(buf, "%.1f MB", total/(1024*1024));
+        else formatstring(buf, "%.1f KB", total/1024);
+        result(buf);
+    });
+
     ICOMMAND(replayfield, "is", (int *i, char *field),
     {
         if(!replaylist.inrange(*i)) { result(""); return; }
