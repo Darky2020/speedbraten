@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Races finish the way racing servers detect it. Older race replays no longer verify.
+
 ## v0.2.0
 
 ### Replays and statistics

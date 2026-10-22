@@ -92,6 +92,22 @@ namespace game
         }
         conoutf(CON_ERROR, "harnessgotoent: no entity #%d of type %d", *n, *type);
     });
+    // puts player1's eye at an offset from the first race goal (a flag or player start with a
+    // negative team), at rest
+    ICOMMAND(harnessgoal, "fff", (float *dx, float *dy, float *dz),
+    {
+        tellsharness();
+        const vector<extentity *> &ents = entities::getents();
+        loopv(ents) if((ents[i]->type == FLAG || ents[i]->type == PLAYERSTART) && ents[i]->attr2 < 0)
+        {
+            player1->o = player1->newpos = vec(ents[i]->o).add(vec(*dx, *dy, *dz));
+            player1->vel = vec(0, 0, 0);
+            player1->falling = vec(0, 0, 0);
+            player1->resetinterp();
+            return;
+        }
+        conoutf(CON_ERROR, "harnessgoal: no race goal");
+    });
     ICOMMAND(harnessguiclick, "s", (char *action), { tellsharness(); schedulemenuaction(action, true); });
     ICOMMAND(harnessstall, "i", (int *ms), { tellsharness(); if(*ms > 0) SDL_Delay(*ms); });
 

@@ -87,7 +87,23 @@ namespace game
         if(d == player1 && runkind == RUNTIMER_FLAG && runstate == RUN_RUNNING) finishrun();
     }
 
-    static const float RACEFLAGRADIUS = 24;
+    // Race goals as racing servers detect them: a flag or player start with a negative team
+    // (attr2) is the centre of a cube of half-size attr3 (24 if not positive), and the player's eye
+    // has to be strictly inside it at least 3 s after spawning.
+    enum { RACEGOALSIZE = 24, RACEGOALMINTICKS = 3000/SIMTICK };
+
+    static bool inracegoal(const vec &eye)
+    {
+        const vector<extentity *> &ents = entities::getents();
+        loopv(ents)
+        {
+            const extentity &e = *ents[i];
+            if((e.type != FLAG && e.type != PLAYERSTART) || e.attr2 >= 0) continue;
+            float r = e.attr3 > 0 ? e.attr3 : RACEGOALSIZE;
+            if(fabs(eye.x - e.o.x) < r && fabs(eye.y - e.o.y) < r && fabs(eye.z - e.o.z) < r) return true;
+        }
+        return false;
+    }
 
     void runtimerspawned(fpsent *d)
     {
@@ -111,13 +127,7 @@ namespace game
     {
         if(runstate != RUN_RUNNING || player1->state != CS_ALIVE) return;
         if(runticks() >= RACESTARTEDTICKS) liferan = true;
-        vec feet = player1->feetpos();
-        const vector<extentity *> &ents = entities::getents();
-        loopv(ents) if(ents[i]->type == FLAG && feet.dist(ents[i]->o) < RACEFLAGRADIUS)
-        {
-            finishrun();
-            return;
-        }
+        if(runticks() > RACEGOALMINTICKS && inracegoal(player1->o)) finishrun();
     }
 
     int runtimerticks(bool &running) { running = runstate == RUN_RUNNING; return runticks(); }
