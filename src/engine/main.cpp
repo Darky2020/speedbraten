@@ -193,6 +193,7 @@ SVARP(menubackgroundfile, "");
 VARP(menubackgroundinterval, 1, 30, 3600);
 VARP(menubackgroundfade, 0, 1000, 10000);
 VARP(menubackgroundlogo, 0, 1, 1);
+VARP(menubackgrounddim, 0, 0, 90); // percent of black over the image
 
 static vector<char *> menubgfiles;
 static Texture *menubgcur = NULL, *menubgprev = NULL;
@@ -355,6 +356,19 @@ void renderbackground(const char *caption, Texture *mapshot, const char *mapname
         {
             if(imagealpha < 1 && menubgprev) covermenubackground(menubgprev, w, h, 1);
             covermenubackground(menubgcur, w, h, imagealpha);
+            if(menubackgrounddim > 0)
+            {
+                hudnotextureshader->set();
+                gle::colorf(0, 0, 0, menubackgrounddim/100.0f);
+                gle::defvertex(2);
+                gle::begin(GL_TRIANGLE_STRIP);
+                gle::attribf(0, 0); gle::attribf(w, 0); gle::attribf(0, h); gle::attribf(w, h);
+                gle::end();
+                hudshader->set();
+                gle::colorf(1, 1, 1);
+                gle::defvertex(2);
+                gle::deftexcoord0();
+            }
         }
         float lh = 0.5f*min(w, h), lw = lh*2,
               lx = 0.5f*(w - lw), ly = 0.5f*(h*0.5f - lh);
