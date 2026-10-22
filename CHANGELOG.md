@@ -8,7 +8,7 @@
 - `statsexporthistory <file>` exports your attempt history.
 - `tools/sbr2.py` reads and checks replays outside the game.
 - Runs with a changed game speed, `slowmosp`, a pause or `fixedframe` don't count as PBs.
-- Finishing again after a load in the same life saves just that life.
+- Finishing after a load, even into an earlier life, saves just that life.
 - When a replay ends, the player no longer keeps its last inputs.
 
 ### Ghosts and splits

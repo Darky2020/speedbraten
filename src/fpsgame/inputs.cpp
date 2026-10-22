@@ -49,10 +49,11 @@ namespace game
         vector<uchar> state;
         int tick, branch;
         int settings[NUMSIMSETTINGS];
+        statestart *life; // start of the life the state was taken in, if known
 
-        statestart() : tick(-1), branch(-1) {}
+        statestart() : tick(-1), branch(-1), life(NULL) {}
         bool valid() const { return tick >= 0; }
-        void clear() { state.setsize(0); tick = branch = -1; }
+        void clear() { state.setsize(0); tick = branch = -1; life = NULL; }
     };
 
     // Segmented recordings form a tree: every live load starts a new branch at the loaded
@@ -184,7 +185,12 @@ namespace game
     // spawn of the life it was run in, and an unfinished life whose run started is saved
     // on its own when it ends.
     MOD(VARP, replaylifeonly, 0, 1, 1);
-    static statestart lifestart, savedstart;
+    // lifestart: start of the current life, one of lives, which also keeps the life starts that
+    // saved states still refer to
+    static statestart savedstart;
+    static statestart *lifestart = NULL;
+    static vector<statestart *> lives;
+    static const statestart nolife;
     static bool lifepending = false, lifesaved = false;
     static int lifesavedbranch = -1, lifesavedtick = 0; // where the saved replay of this life ends
 
@@ -225,7 +231,9 @@ namespace game
         bool jumping = d.jumping, attacking = d.attacking;
         if(!restorestate(st.state)) return false;
         if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
-        if(lifestart.valid() && !onchain(lifestart.branch, lifestart.tick, st.branch, st.tick)) lifestart.clear();
+        // back to the life the state was taken in, which may have ended since
+        if(st.life && onchain(st.life->branch, st.life->tick, st.branch, st.tick)) lifestart = st.life;
+        else if(lifestart && !onchain(lifestart->branch, lifestart->tick, st.branch, st.tick)) lifestart = NULL;
         if(lifesaved && !onchain(lifesavedbranch, lifesavedtick, st.branch, st.tick)) lifesaved = false;
         while(autostates.length() && autostates.last()->tick > st.tick) delete autostates.pop();
         d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
@@ -248,6 +256,7 @@ namespace game
             savedstart.state = savedstatedata(tick);
             savedstart.tick = tick;
             savedstart.branch = curbranch;
+            savedstart.life = lifestart;
             readsettings(savedstart.settings);
             if(!replaying && !recordingoff) tellssave();
         }
@@ -260,23 +269,34 @@ namespace game
         return false;
     }
 
+    static bool liferefered(const statestart *l)
+    {
+        if(l == lifestart || l == savedstart.life) return true;
+        loopv(autostates) if(autostates[i]->life == l) return true;
+        return false;
+    }
+
     static void takelifestate()
     {
         lifepending = false;
-        lifestart.clear();
-        if(!replaylifeonly || havebots() || !takesnapshot(lifestart.state)) { lifestart.clear(); return; }
-        lifestart.tick = curtick;
-        lifestart.branch = curbranch;
-        readsettings(lifestart.settings);
+        lifestart = NULL;
+        loopvrev(lives) if(!liferefered(lives[i])) delete lives.remove(i);
+        statestart *l = new statestart;
+        if(!replaylifeonly || havebots() || !takesnapshot(l->state)) { delete l; return; }
+        l->tick = curtick;
+        l->branch = curbranch;
+        readsettings(l->settings);
+        lives.add(l);
+        lifestart = l;
         tellslifestart();
     }
 
     static bool saveliferun(bool finished, int runtime)
     {
-        if(!replaylifeonly || !lifestart.valid() || lifesaved || recording.attempts.length() != 1) return false;
+        if(!replaylifeonly || !lifestart || lifesaved || recording.attempts.length() != 1) return false;
         if(!finished && !runtimerliferan()) return true;
         inputrun run;
-        cutattempt(run.add(), recording.last(), lifestart);
+        cutattempt(run.add(), recording.last(), *lifestart);
         tellssavinglife(true);
         saverunreplay(run, finished, runtime, true);
         tellssavinglife(false);
@@ -290,7 +310,7 @@ namespace game
     {
         if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
-        lifestart.clear();
+        lifestart = NULL;
         lifesaved = false;
         lifepending = true;
     }
@@ -303,6 +323,7 @@ namespace game
         if(!takesnapshot(st->state)) { delete st; return; }
         st->tick = curtick;
         st->branch = curbranch;
+        st->life = lifestart;
         readsettings(st->settings);
         autostates.add(st);
         while(autostates.length() > autostatecount) delete autostates.remove(0);
@@ -859,7 +880,8 @@ namespace game
     {
         bool chained = mapchained(mode) && !recordingoff;
         if(!chained || replaypending) saveunfinishedrun();
-        lifestart.clear();
+        lifestart = NULL;
+        lives.deletecontents();
         lifepending = lifesaved = false;
         autostates.deletecontents();
         autoloadpending = false;
@@ -1007,9 +1029,9 @@ namespace game
     {
         const inputrun &run = replaying ? replaydata : recording;
         int n = 0;
-        if(!replaying && replaylifeonly && lifestart.valid() && run.attempts.length() == 1)
+        if(!replaying && replaylifeonly && lifestart && run.attempts.length() == 1)
         {
-            loopv(run.attempts[0]->splices) if(run.attempts[0]->splices[i].tick > lifestart.tick) n++;
+            loopv(run.attempts[0]->splices) if(run.attempts[0]->splices[i].tick > lifestart->tick) n++;
             return n;
         }
         loopv(run.attempts) n += run.attempts[i]->splices.length();
@@ -1108,7 +1130,7 @@ namespace game
     // has just ended) from the state saved with savestate, or from the start of player1's
     // current life.
     ICOMMAND(inputsavefromstate, "s", (char *file), writefromstate("inputsavefromstate", file, savedstart));
-    ICOMMAND(inputsavelife, "s", (char *file), writefromstate("inputsavelife", file, lifestart));
+    ICOMMAND(inputsavelife, "s", (char *file), writefromstate("inputsavelife", file, lifestart ? *lifestart : nolife));
 
     // Debug text dump of a run (0 = current, 1 = previous), readable by inputload.
     ICOMMAND(inputdump, "si", (char *file, int *which),
