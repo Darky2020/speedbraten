@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0
 
 ### Replays and statistics
 - New replay format with integrity checks. Replays from v0.1.0 can't be read any more.
