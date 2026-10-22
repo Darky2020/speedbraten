@@ -1308,6 +1308,40 @@ namespace game
         intret(replaylist.length());
     });
 
+    static void formatsize(char *buf, double bytes)
+    {
+        if(bytes >= 1024*1024) nformatstring(buf, MAXSTRLEN, "%.1f MB", bytes/(1024*1024));
+        else nformatstring(buf, MAXSTRLEN, "%.1f KB", bytes/1024);
+    }
+
+    // every saved replay, whatever the browser's filters: "count, size"
+    static void replaysaved()
+    {
+        int count = 0;
+        double total = 0;
+        loopi(2)
+        {
+            const char *dir = i ? "replays/kept" : "replays";
+            vector<char *> files;
+            listfiles(dir, "sbr", files);
+            loopvj(files)
+            {
+                defformatstring(file, "%s/%s.sbr", dir, files[j]);
+                stream *f = openrawfile(path(file, true), "rb");
+                if(!f) continue;
+                count++;
+                total += f->size();
+                delete f;
+            }
+            files.deletearrays();
+        }
+        string size, buf;
+        formatsize(size, total);
+        formatstring(buf, "%d, %s", count, size);
+        result(buf);
+    }
+    COMMAND(replaysaved, "");
+
     // total size of the scanned replays, e.g. "4.6 MB"
     ICOMMAND(replaytotalsize, "", (),
     {
