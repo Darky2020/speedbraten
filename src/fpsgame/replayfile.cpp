@@ -1214,7 +1214,7 @@ namespace game
     struct replayentry
     {
         string file;
-        bool kept;
+        bool kept, pb;
         int size;
         replayinfo info;
     };
@@ -1226,6 +1226,7 @@ namespace game
     MOD(VARP, replayfilterresult, 0, 0, 2); // 0 all, 1 finished, 2 unfinished
     MOD(VARP, replayfilterseg, 0, 0, 1);
     MOD(VARP, replayfilterkept, 0, 0, 1);
+    MOD(VARP, replayfilterpb, 0, 0, 1);
     MOD(VARP, replayfilterflagmode, 0, 0, 3); // with replayfilterkind 3: 0 all, 1 effic, 2 insta, 3 weaponless
 
     // the kind numbering of replayfilterkind and statskind; 0 for runs of no listed kind
@@ -1273,6 +1274,8 @@ namespace game
         return false;
     }
 
+    static vector<char *> pbfiles;
+
     static void scanreplaydir(const char *dir, bool kept)
     {
         vector<char *> files;
@@ -1282,6 +1285,9 @@ namespace game
             replayentry e;
             formatstring(e.file, "%s/%s.sbr", dir, files[i]);
             if(!readreplay(e.file, NULL, e.info) || !containsnocase(e.info.map, replayfilter) || !replaylisted(e.info, kept)) continue;
+            e.pb = false;
+            loopvj(pbfiles) if(!strcmp(pbfiles[j], e.file)) { e.pb = true; break; }
+            if(replayfilterpb && !e.pb) continue;
             e.kept = kept;
             stream *f = openrawfile(path(e.file, true), "rb");
             e.size = f ? int(f->size()) : 0;
@@ -1294,6 +1300,8 @@ namespace game
     ICOMMAND(replayscan, "", (),
     {
         replaylist.setsize(0);
+        pbfiles.deletearrays();
+        statspbreplays(pbfiles);
         scanreplaydir("replays", false);
         scanreplaydir("replays/kept", true);
         replaylist.sort(replaysort ? fasterreplay : newerreplay);
@@ -1362,6 +1370,7 @@ namespace game
             result(buf);
         }
         else if(!strcmp(field, "kept")) intret(e.kept ? 1 : 0);
+        else if(!strcmp(field, "pb")) intret(e.pb ? 1 : 0);
         else if(!strcmp(field, "outdated")) intret(r.simversion < REPLAYSIMVERSION ? 1 : 0);
         else result("");
     });

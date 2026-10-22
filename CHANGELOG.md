@@ -29,6 +29,7 @@
 - The speedrun menu has tabs for general, singleplayer, flagruns, races and keys.
 - Replay browser: filter by kind, flagrun mode, result, segmented and kept.
 - Replay browser: total size next to the count.
+- Replay browser: PB replays are marked, with a PBs-only filter.
 - Stats: filter by kind, flagrun mode or PB, sort by map, runs or time played, and a PB date column.
 
 ### HUD
