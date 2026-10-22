@@ -255,7 +255,7 @@ namespace game
     bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file)
     {
         sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ? "
-                                   "AND replay IS NOT NULL ORDER BY runtime, id LIMIT 1");
+                                   "AND replay IS NOT NULL ORDER BY runtime, id DESC LIMIT 1");
         if(!st) return false;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
@@ -273,13 +273,13 @@ namespace game
         sqlite3_stmt *st = prepare(
             "SELECT a.replay FROM attempts a WHERE a.replay IS NOT NULL AND a.id = ("
             "  SELECT b.id FROM attempts b WHERE b.map = a.map AND b.kind = a.kind AND b.mode = a.mode"
-            "  AND (b.splices > 0) = (a.splices > 0) AND b.finished AND NOT b.assisted ORDER BY b.runtime, b.id LIMIT 1)");
+            "  AND (b.splices > 0) = (a.splices > 0) AND b.finished AND NOT b.assisted ORDER BY b.runtime, b.id DESC LIMIT 1)");
         if(!st) return;
         while(sqlite3_step(st) == SQLITE_ROW) files.add(newstring((const char *)sqlite3_column_text(st, 0)));
         sqlite3_finalize(st);
     }
 
-    // The PB (fastest finished run of the category): its run time (-1 without one) and splits,
+    // The PB (fastest finished run of the category, the newest of equal times): its run time (-1 without one) and splits,
     // and the best time of every segment (previous split, split) over all runs of the category.
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms)
     {
@@ -295,7 +295,7 @@ namespace game
         if(sqlite3_step(pt) == SQLITE_ROW && sqlite3_column_type(pt, 0) != SQLITE_NULL) pbms = sqlite3_column_int(pt, 0);
         sqlite3_finalize(pt);
         sqlite3_stmt *st = prepare("SELECT s.name, s.tick FROM splits s WHERE s.attempt = (SELECT id FROM attempts WHERE map = ? AND kind = ? AND mode = ? "
-                                   "AND finished AND NOT assisted AND (splices > 0) = ? ORDER BY runtime, id LIMIT 1) ORDER BY s.idx");
+                                   "AND finished AND NOT assisted AND (splices > 0) = ? ORDER BY runtime, id DESC LIMIT 1) ORDER BY s.idx");
         if(!st) return false;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
@@ -541,7 +541,7 @@ namespace game
             m.avg10 = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
                                "ORDER BY date DESC, id DESC LIMIT 10)", m.map, m.kind, m.mode, -1);
             m.pbdate = queryint64("SELECT date FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
-                                  "ORDER BY runtime, date, id LIMIT 1", m.map, m.kind, m.mode, -1);
+                                  "ORDER BY runtime, date DESC, id DESC LIMIT 1", m.map, m.kind, m.mode, -1);
         }
         if(statssort == 1) maplist.sort(statsbymap);
         else if(statssort == 2) maplist.sort(statsbyruns);

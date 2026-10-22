@@ -359,18 +359,18 @@ namespace game
     }
 
     // How the finished run compares: a new PB (or the first finish), faster than the chosen ghost
-    // replay without being a PB, or slower than both
+    // replay without being a PB, or slower than both. Matching a time counts as beating it.
     int splitsfinishresult()
     {
         if(!runtimerfinished()) return FINISH_NONE;
         bool running;
         int t = runtimerticks(running);
-        if(pbms < 0 || t < pbms/SIMTICK) return FINISH_PB;
+        if(pbms < 0 || t <= pbms/SIMTICK) return FINISH_PB;
         const char *file;
         const vector<ghostsample> *s;
         const vector<int> *maps;
         int ghostms;
-        if(ghostchosenreplay(file, s, maps, ghostms) && ghostms >= 0 && t < ghostms/SIMTICK) return FINISH_FASTER;
+        if(ghostchosenreplay(file, s, maps, ghostms) && ghostms >= 0 && t <= ghostms/SIMTICK) return FINISH_FASTER;
         return FINISH_SLOWER;
     }
     ICOMMAND(runfinishresult, "", (), intret(splitsfinishresult()));
@@ -522,7 +522,7 @@ namespace game
         {
             string ft, l;
             formattime(ft, t);
-            formatstring(l, "\f7finish %s%s", pbms >= 0 && t < pbms/SIMTICK ? "\f2" : "", ft);
+            formatstring(l, "\f7finish %s%s", pbms >= 0 && t <= pbms/SIMTICK ? "\f2" : "", ft);
             if(pbms >= 0) { string d; formatdelta(d, t - pbms/SIMTICK); concformatstring(l, "  \f7pb %s", d); }
             if(gt >= 0) { string g; formatdelta(g, t - gt); concformatstring(l, "  \f7%s %s", ghostname(), g); }
             lines.insert(0, newstring(l));
