@@ -36,7 +36,7 @@
 - Speedometer colour bands by speed.
 - Run timer colours: running, before the start, and on finish for a new PB, faster than the ghost or slower.
 - Colour picker with RGB sliders and presets for the HUD colours.
-- Menu background images from `backgrounds/`: a chosen one or a random rotation with a fade.
+- Menu background images from `backgrounds/`, picked from thumbnails: a chosen one or a random rotation with a fade.
 - Matching your PB or the ghost's time counts as beating it.
 
 ### Fixes
