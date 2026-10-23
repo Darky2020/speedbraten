@@ -385,6 +385,9 @@ namespace entities
 
     void resetspawns() { loopv(ents) { extentity *e = ents[i]; e->clearspawned(); e->clearnopickup(); e->flags &= ~EF_HELD; } }
 
+    // a respawn puts the items back as a map start has them
+    void clearheld() { loopv(ents) ents[i]->flags &= ~EF_HELD; }
+
     void spawnitems(bool force)
     {
         if(m_noitems) return;

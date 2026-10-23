@@ -1718,6 +1718,7 @@ namespace game
                 {
                     showscores(false);
                     lasthit = 0;
+                    entities::clearheld();
                 }
                 runtimerspawned(s);
                 if(cmode) cmode->respawned(s);

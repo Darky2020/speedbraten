@@ -4,6 +4,7 @@
 
 - Replays are written in a new format while you play. Older replays still play.
 - Keys typed into the console or chat are no longer stored in replays.
+- In races, an item you just took can be taken again after a respawn.
 
 ## v0.2.1
 
