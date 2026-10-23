@@ -1707,6 +1707,12 @@ namespace game
         else if(state == WITNESS_CLOSED) { defformatstring(why, "not connected: %s", witnesserror()); result(why); }
         else result("not connected");
     });
+    // the colour code for witnessstatus: green connected, yellow on the way, red a problem, grey off
+    ICOMMAND(witnessstatuscolour, "", (),
+    {
+        int state = witnessstate();
+        result(!witnesshost[0] ? "\f4" : witnesskeychanged || state == WITNESS_CLOSED ? "\f3" : state == WITNESS_OPEN ? "\f0" : state == WITNESS_CONNECTING ? "\f2" : "\f4");
+    });
     ICOMMAND(witnesskeychanged, "", (), intret(witnesskeychanged ? 1 : 0));
     ICOMMAND(witnessnewkey, "", (), { string hex = ""; if(witnesskeychanged) sbr2::tohex(witnessnewkeys, 32, hex); result(hex); });
     ICOMMAND(witnesstrustnewkey, "", (),
