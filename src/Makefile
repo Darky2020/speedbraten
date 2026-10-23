@@ -257,10 +257,20 @@ server: $(SERVER_OBJS)
 # Witness server: receives replays while they are played and signs them (Linux and macOS).
 WITNESS_OBJS= shared/tools-standalone.o shared/stream-standalone.o shared/noise-standalone.o \
 	fpsgame/replayio-standalone.o witness/witness-standalone.o
+ifdef RESIM_DEPS
+# with the zlib and enet tools/resimbuild.sh builds for TARGET, and none of the host's headers
+$(WITNESS_OBJS): CXXFLAGS += -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include -DSTANDALONE -Isqlite $(VENDOR_INCLUDES)
+WITNESS_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
+ifneq (,$(findstring linux,$(TARGET)))
+WITNESS_LINK+= -lpthread -ldl -lm
+endif
+else
 $(WITNESS_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE -Isqlite $(VENDOR_INCLUDES)
+WITNESS_LINK= $(LIBS)
 witness: libenet
+endif
 witness: $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_witness $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(LIBS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_witness $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(WITNESS_LINK)
 .PHONY: witness
 witness/witness-standalone.o: shared/noise.h shared/witnessproto.h fpsgame/replayio.h
 engine/witnessnet.o: shared/noise.h

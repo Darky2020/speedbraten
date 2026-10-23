@@ -1,0 +1,80 @@
+name: witness release
+
+# Builds the witness server for Linux x86_64 (sauer_witness, sauer_resim, witnessdash) against
+# glibc 2.31, so it runs on older distributions too, and publishes it as a pre-release asset.
+on:
+  push:
+    tags: ['witness-*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag to create or update (pushing a witness-* tag does the same)
+        default: witness-alpha
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TARGET: x86_64-linux-gnu.2.31
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: sauer_resim
+        run: bash tools/resimbuild.sh $TARGET out
+      - name: sauer_witness
+        run: |
+          make -C src -j4 witness USEZIG=1 TARGET=$TARGET RESIM_DEPS=$PWD/out/deps-$TARGET > out/build-witness.log 2>&1 || { grep -E "error|undefined" out/build-witness.log | head -40; exit 1; }
+      - name: witnessdash
+        working-directory: server
+        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/witnessdash ./cmd/witnessdash
+      - name: package
+        run: |
+          mkdir -p pkg/speedbraten-witness
+          cp src/sauer_witness pkg/speedbraten-witness/
+          cp out/sauer_resim-$TARGET pkg/speedbraten-witness/sauer_resim
+          cp out/witnessdash pkg/speedbraten-witness/
+          cp -R data/overrides pkg/speedbraten-witness/overrides
+          git rev-parse HEAD > pkg/speedbraten-witness/COMMIT
+          for f in sauer_witness sauer_resim witnessdash; do
+            need=$(objdump -T pkg/speedbraten-witness/$f | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+            echo "$f needs $need"
+            printf '%s\n%s\n' "$need" GLIBC_2.31 | sort -CV || { echo "$f needs a newer glibc than 2.31"; exit 1; }
+          done
+          tar czf speedbraten-witness-linux-x86_64.tar.gz -C pkg speedbraten-witness
+          sha256sum speedbraten-witness-linux-x86_64.tar.gz | tee speedbraten-witness-linux-x86_64.tar.gz.sha256
+      - name: smoke test
+        run: |
+          d=pkg/speedbraten-witness
+          printf '%064d\n' 1 > seed
+          $d/sauer_witness -dwdata -sseed -p28799 > witness.log 2>&1 &
+          sleep 2
+          cat witness.log
+          grep -q "witness listening on port 28799" witness.log
+          kill %1
+          mkdir -p nhome
+          $d/sauer_resim -qnhome -x"noiseselftest; quit" none.sbr 2>&1 | grep -q "noise selftest: ok"
+          echo "a long enough password" | $d/witnessdash setpass pass
+          grep -q '^\$2' pass
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: witness-buildlogs
+          path: out/build-*.log
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "witness server ($TAG)" --notes "Linux x86_64 build of the witness server (sauer_witness, sauer_resim, witnessdash), glibc 2.31 or newer."
+          gh release upload "$TAG" --clobber speedbraten-witness-linux-x86_64.tar.gz speedbraten-witness-linux-x86_64.tar.gz.sha256
