@@ -258,8 +258,10 @@ server: $(SERVER_OBJS)
 WITNESS_OBJS= shared/tools-standalone.o shared/stream-standalone.o shared/noise-standalone.o \
 	fpsgame/replayio-standalone.o witness/witness-standalone.o
 ifdef RESIM_DEPS
-# with the zlib and enet tools/resimbuild.sh builds for TARGET, and none of the host's headers
-$(WITNESS_OBJS): CXXFLAGS += -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include -DSTANDALONE -Isqlite $(VENDOR_INCLUDES)
+# with the zlib and enet tools/resimbuild.sh builds for TARGET, and none of the host's headers;
+# zig's mm_malloc.h (from xmmintrin.h) clashes with its glibc's posix_memalign in C++, and the
+# witness doesn't use _mm_malloc
+$(WITNESS_OBJS): CXXFLAGS += -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include -DSTANDALONE -Isqlite $(VENDOR_INCLUDES) -D__MM_MALLOC_H
 WITNESS_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
 ifneq (,$(findstring linux,$(TARGET)))
 WITNESS_LINK+= -lpthread -ldl -lm

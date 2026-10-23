@@ -34,7 +34,7 @@ jobs:
         run: bash tools/resimbuild.sh $TARGET out
       - name: sauer_witness
         run: |
-          make -C src -j4 witness USEZIG=1 TARGET=$TARGET RESIM_DEPS=$PWD/out/deps-$TARGET > out/build-witness.log 2>&1 || { grep -E "error|undefined" out/build-witness.log | head -40; exit 1; }
+          make -C src -j4 witness USEZIG=1 TARGET=$TARGET RESIM_DEPS=$PWD/out/deps-$TARGET > out/build-witness.log 2>&1 || { grep -B3 -E "error|undefined" out/build-witness.log | cut -c1-400 | head -60; exit 1; }
       - name: witnessdash
         working-directory: server
         run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/witnessdash ./cmd/witnessdash
