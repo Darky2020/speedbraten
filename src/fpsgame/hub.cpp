@@ -31,6 +31,7 @@ namespace game
     static vector<hubplayer> hubplayers;
     static vector<hublobby> hublobbies;
     static uint hubmyid = 0;
+    static string hubrefusal = "";
     static string hubmyname = "", hubaskedname = "", hubtarget = "", hubchangedat = "";
     static int hubretry = 0, hublaststate = WITNESS_IDLE, hubsentstate = -1, hubsentmode = 0;
     static string hubsentmap = "";
@@ -48,16 +49,36 @@ namespace game
         hubplayers.setsize(0);
         hublobbies.setsize(0);
         hubmyid = 0;
-        hubmyname[0] = hubaskedname[0] = hubsentmap[0] = '\0';
+        hubmyname[0] = hubaskedname[0] = hubsentmap[0] = hubrefusal[0] = '\0';
         hubsentstate = -1;
         hubwelcomed = false;
     }
 
-    static void hubsendstr(int type, const char *s)
+    // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
+    static void puttext(sbr2::byteswriter &w, const char *s)
+    {
+        int len = strlen(s);
+        uchar *buf = new uchar[4*len + 1];
+        size_t n = encodeutf8(buf, 4*len, (const uchar *)s, len);
+        buf[n] = '\0';
+        w.str((const char *)buf);
+        delete[] buf;
+    }
+
+    static bool gettext(sbr2::bytesreader &r, char *dst, int size)
+    {
+        char buf[4096];
+        if(!r.str(buf, sizeof(buf))) { dst[0] = '\0'; return false; }
+        size_t n = decodeutf8((uchar *)dst, size - 1, (const uchar *)buf, strlen(buf));
+        dst[n] = '\0';
+        return true;
+    }
+
+    static void hubsendtext(int type, const char *s)
     {
         vector<uchar> p;
         sbr2::byteswriter w(p);
-        w.str(s);
+        puttext(w, s);
         hubsend(type, p.getbuf(), p.length());
     }
 
@@ -68,7 +89,7 @@ namespace game
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(state);
-        w.str(clientmap);
+        puttext(w, clientmap);
         w.svar(mode);
         if(!hubsend(HM_STATUS, p.getbuf(), p.length())) return;
         hubsentstate = state;
@@ -80,7 +101,7 @@ namespace game
     {
         vector<uchar> p;
         sbr2::byteswriter w(p);
-        w.str(map);
+        puttext(w, map);
         w.svar(mode);
         hubsend(type, p.getbuf(), p.length());
     }
@@ -106,16 +127,17 @@ namespace game
                 case -1:
                     hubreset();
                     copystring(hubaskedname, player1->name);
-                    hubsendstr(HM_HELLO, player1->name);
+                    hubsendtext(HM_HELLO, player1->name);
                     break;
                 case HM_WELCOME:
                 {
                     uint id = uint(r.var());
                     string name = "", why = "";
-                    r.str(name, sizeof(name));
-                    r.str(why, sizeof(why));
+                    gettext(r, name, sizeof(name));
+                    gettext(r, why, sizeof(why));
                     if(!r.ok) break;
                     hubmyid = id;
+                    copystring(hubrefusal, why);
                     if(strcmp(name, hubmyname) && name[0]) conoutf("\f0hub: you are %s", name);
                     copystring(hubmyname, name);
                     if(why[0]) conoutf(CON_ERROR, "hub: %s", why);
@@ -137,9 +159,9 @@ namespace game
                 {
                     hubplayer q;
                     q.id = uint(r.var());
-                    r.str(q.name, sizeof(q.name));
+                    gettext(r, q.name, sizeof(q.name));
                     q.state = int(r.var());
-                    r.str(q.map, sizeof(q.map));
+                    gettext(r, q.map, sizeof(q.map));
                     q.mode = int(r.svar());
                     q.lobby = uint(r.var());
                     if(!r.ok) break;
@@ -159,7 +181,7 @@ namespace game
                     hublobby l;
                     l.id = uint(r.var());
                     l.host = uint(r.var());
-                    r.str(l.map, sizeof(l.map));
+                    gettext(r, l.map, sizeof(l.map));
                     l.mode = int(r.svar());
                     int n = int(r.var());
                     for(int i = 0; i < n && r.ok && i < 256; i++) l.members.add(uint(r.var()));
@@ -187,9 +209,9 @@ namespace game
                     int scope = int(r.var());
                     r.var();
                     string name = "";
-                    r.str(name, sizeof(name));
+                    gettext(r, name, sizeof(name));
                     char text[1024] = "";
-                    r.str(text, sizeof(text));
+                    gettext(r, text, sizeof(text));
                     if(!r.ok) break;
                     conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : "hub", name, text);
                     break;
@@ -197,7 +219,7 @@ namespace game
                 case HM_NOTICE:
                 {
                     char text[1024] = "";
-                    r.str(text, sizeof(text));
+                    gettext(r, text, sizeof(text));
                     if(r.ok) conoutf("\f2hub: %s", text);
                     break;
                 }
@@ -277,7 +299,7 @@ namespace game
             if(strcmp(player1->name, hubaskedname))
             {
                 copystring(hubaskedname, player1->name);
-                hubsendstr(HM_SETNAME, player1->name);
+                hubsendtext(HM_SETNAME, player1->name);
             }
             sendstatus();
         }
@@ -290,7 +312,7 @@ namespace game
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(scope);
-        w.str(text);
+        puttext(w, text);
         hubsend(HM_CHAT, p.getbuf(), p.length());
     }
 
@@ -340,6 +362,7 @@ namespace game
     });
 
     ICOMMAND(hubname, "", (), result(hubmyname));
+    ICOMMAND(hubnamerefusal, "", (), result(hubrefusal));
     ICOMMAND(hubmyid, "", (), intret(int(hubmyid)));
     ICOMMAND(hubplayers, "", (),
     {
@@ -432,7 +455,7 @@ namespace game
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(uint(*id));
-        w.str(reason);
+        puttext(w, reason);
         hubsend(HM_REPORT, p.getbuf(), p.length());
     });
 }

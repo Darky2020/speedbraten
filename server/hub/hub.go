@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/flynn/noise"
 
@@ -347,16 +349,19 @@ func (h *Hub) leave(p *player) {
 	}
 }
 
+// validName: 1 to 15 printable characters (UTF-8, as the game's names allow), no spaces.
 func validName(n string) bool {
-	if len(n) < 1 || len(n) > 15 {
+	if !utf8.ValidString(n) {
 		return false
 	}
-	for i := 0; i < len(n); i++ {
-		if n[i] < 0x21 || n[i] > 0x7e {
+	count := 0
+	for _, r := range n {
+		if !unicode.IsPrint(r) || unicode.IsSpace(r) {
 			return false
 		}
+		count++
 	}
-	return true
+	return count >= 1 && count <= 15
 }
 
 // rename gives p the name want if it can and returns why not otherwise.
@@ -365,7 +370,7 @@ func (h *Hub) rename(p *player, want string) string {
 		return ""
 	}
 	if !validName(want) {
-		return "a name is 1 to 15 letters, digits or symbols, without spaces"
+		return "a name is 1 to 15 characters, without spaces"
 	}
 	switch err := h.st.setName(p.key, want); {
 	case errors.Is(err, errNameTaken):
@@ -542,19 +547,22 @@ func (h *Hub) leaveLobby(p *player) {
 	h.broadcast(MsgLobby, lobbyMsg(l))
 }
 
-// cleanText drops control characters (colour codes included), trims spaces and caps the length.
+// cleanText keeps valid UTF-8 without control characters (colour codes included), trims
+// spaces and caps the length at MaxChat characters.
 func cleanText(s string) string {
-	b := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x20 && s[i] != 0x7f {
-			b = append(b, s[i])
+	var b strings.Builder
+	n := 0
+	for _, r := range strings.ToValidUTF8(s, "") {
+		if unicode.IsControl(r) {
+			continue
 		}
+		if n == MaxChat {
+			break
+		}
+		b.WriteRune(r)
+		n++
 	}
-	t := strings.TrimSpace(string(b))
-	if len(t) > MaxChat {
-		t = t[:MaxChat]
-	}
-	return t
+	return strings.TrimSpace(b.String())
 }
 
 func (h *Hub) chat(p *player, scope int, text string) {

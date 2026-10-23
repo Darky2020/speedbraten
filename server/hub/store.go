@@ -13,12 +13,13 @@ const schema = `
 CREATE TABLE IF NOT EXISTS installs (
 	key TEXT PRIMARY KEY,
 	name TEXT,
+	namekey TEXT,
 	firstaddr TEXT NOT NULL,
 	firstseen INTEGER NOT NULL,
 	lastseen INTEGER NOT NULL,
 	muteduntil INTEGER NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX IF NOT EXISTS installs_name ON installs(name COLLATE NOCASE);
+CREATE UNIQUE INDEX IF NOT EXISTS installs_namekey ON installs(namekey);
 CREATE INDEX IF NOT EXISTS installs_firstaddr ON installs(firstaddr, firstseen);
 CREATE TABLE IF NOT EXISTS chat (
 	time INTEGER NOT NULL,
@@ -94,21 +95,24 @@ func (s *store) seen(key string, now int64) error {
 
 var errNameTaken = errors.New("taken")
 
+// nameKey is what makes two names the same name: case is ignored, in any script.
+func nameKey(name string) string { return strings.ToLower(name) }
+
 // setName gives key the name, freeing its old one; errNameTaken if another install has it.
 func (s *store) setName(key, name string) error {
-	rows, err := s.db.Query("SELECT key FROM installs WHERE name = ? COLLATE NOCASE", name)
+	rows, err := s.db.Query("SELECT key FROM installs WHERE namekey = ?", nameKey(name))
 	if err != nil {
 		return err
 	}
 	if len(rows) > 0 && rows[0][0] != key {
 		return errNameTaken
 	}
-	_, err = s.db.Exec("UPDATE installs SET name = ? WHERE key = ?", name, key)
+	_, err = s.db.Exec("UPDATE installs SET name = ?, namekey = ? WHERE key = ?", name, nameKey(name), key)
 	return err
 }
 
 func (s *store) keyForName(name string) (string, error) {
-	rows, err := s.db.Query("SELECT key FROM installs WHERE name = ? COLLATE NOCASE", name)
+	rows, err := s.db.Query("SELECT key FROM installs WHERE namekey = ?", nameKey(name))
 	if err != nil || len(rows) == 0 {
 		return "", err
 	}

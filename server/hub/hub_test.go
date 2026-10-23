@@ -272,12 +272,32 @@ func TestNamesAndPresence(t *testing.T) {
 
 func TestBadNames(t *testing.T) {
 	f := newFixture(t)
-	for _, n := range []string{"has space", "sixteen_letters_", "\fcolour"} {
+	for _, n := range []string{"has space", "sixteen_letters_", "\fcolour", "bad\xc5utf8", ""} {
 		c := f.connect(newKey(), "1.1.1.1", n)
 		if c.name != "" {
 			t.Errorf("%q accepted", n)
 		}
 		c.conn.Close()
+	}
+}
+
+func TestUnicodeNames(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "*Ur|Ňєkø")
+	if a.name != "*Ur|Ňєkø" {
+		t.Fatalf("got %q", a.name)
+	}
+	b := f.connect(newKey(), "2.2.2.2", "*UR|ŇЄKØ")
+	if b.name != "" {
+		t.Fatalf("a name differing only in case was taken: %q", b.name)
+	}
+	c := f.connect(newKey(), "3.3.3.3", "ПятнадцатьБукв!")
+	if c.name != "ПятнадцатьБукв!" {
+		t.Fatalf("15 Cyrillic characters refused: %q", c.name)
+	}
+	a.chat(ChatGlobal, "привіт \x01")
+	if got := a.expectChat(); got.text != "привіт" {
+		t.Fatalf("chat %q", got.text)
 	}
 }
 
