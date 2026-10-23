@@ -7,25 +7,28 @@
 // build, as plain bytes.
 //
 // Players are named by a var id that lasts for their connection. Lobby id 0 means none.
-// svar is a zigzag varint (game modes go below zero).
+// svar is a zigzag varint (game modes go below zero). kind is the run kind of the map being
+// played: "flagrun", "race", "campaign", "dmsp", or "" for anything else.
 //
 // client -> hub
 //   HELLO        str name the player wants (sent once, first)
 //   SETNAME      str name
-//   STATUS       var state (HUBSTATE_*), str map, svar mode
-//   LOBBYCREATE  str map, svar mode (the creator is the host)
+//   STATUS       var state (HUBSTATE_*), str map, svar mode, str kind
+//   LOBBYCREATE  str map, svar mode, str kind (the creator is the host)
 //   LOBBYJOIN    var lobby id
 //   LOBBYLEAVE
-//   LOBBYMAP     str map, svar mode (host only)
+//   LOBBYMAP     str map, svar mode, str kind (host only)
 //   CHAT         var scope (HUBCHAT_*), str text
 //   REPORT       var player id, str reason
 // hub -> client
 //   WELCOME      var your id, str your name ("" while you have none), str why the name you
 //                asked for was refused ("" if it wasn't)
 //   WITNESS      str host, var port, 32 channel key, 32 signing key
-//   PLAYER       var id, str name, var state, str map, svar mode, var lobby id (new or changed)
+//   PLAYER       var id, str name, var state, str map, svar mode, var lobby id, str kind
+//                (new or changed)
 //   GONE         var id
-//   LOBBY        var id, var host id, str map, svar mode, var count, count x var member id
+//   LOBBY        var id, var host id, str map, svar mode, var count, count x var member id,
+//                str kind
 //   LOBBYGONE    var id
 //   CHATFROM     var scope, var from id, str name, str text
 //   NOTICE       str text

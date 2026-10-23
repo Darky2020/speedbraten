@@ -171,6 +171,7 @@ func (c *client) mapmsg(typ byte, mapname string, mode int64) {
 	var w writer
 	w.str(mapname)
 	w.s(mode)
+	w.str("flagrun")
 	c.send(typ, w.b)
 }
 
@@ -192,6 +193,7 @@ type lobbyinfo struct {
 	mapname  string
 	mode     int64
 	members  []uint64
+	kind     string
 }
 
 func (c *client) expectLobby() lobbyinfo {
@@ -201,6 +203,7 @@ func (c *client) expectLobby() lobbyinfo {
 	for n := m.r.u(); n > 0; n-- {
 		l.members = append(l.members, m.r.u())
 	}
+	l.kind = m.r.str(16)
 	if err := m.r.done(); err != nil {
 		c.t.Fatal(err)
 	}
@@ -236,10 +239,11 @@ func TestNamesAndPresence(t *testing.T) {
 	w.u(StatePlaying)
 	w.str("forge")
 	w.s(17)
+	w.str("flagrun")
 	b.send(MsgStatus, w.b)
 	m = a.expectPlayer(b.id)
-	if id, name, state, mapname, mode := b.id, m.r.str(64), m.r.u(), m.r.str(64), m.r.s(); id != b.id || name != "bob" || state != StatePlaying || mapname != "forge" || mode != 17 {
-		t.Fatalf("status: %d %q %d %q %d", id, name, state, mapname, mode)
+	if name, state, mapname, mode, lobby, kind := m.r.str(64), m.r.u(), m.r.str(64), m.r.s(), m.r.u(), m.r.str(16); name != "bob" || state != StatePlaying || mapname != "forge" || mode != 17 || lobby != 0 || kind != "flagrun" {
+		t.Fatalf("status: %q %d %q %d %d %q", name, state, mapname, mode, lobby, kind)
 	}
 
 	b.conn.Close()
@@ -312,7 +316,7 @@ func TestLobbies(t *testing.T) {
 
 	a.mapmsg(MsgLobbyCreate, "forge", 17)
 	l := b.expectLobby()
-	if l.host != a.id || l.mapname != "forge" || l.mode != 17 || len(l.members) != 1 {
+	if l.host != a.id || l.mapname != "forge" || l.mode != 17 || len(l.members) != 1 || l.kind != "flagrun" {
 		t.Fatalf("created %+v", l)
 	}
 	var w writer

@@ -64,6 +64,7 @@ type player struct {
 	state      int
 	mapname    string
 	mode       int64
+	kind       string
 	lobby      *lobby
 	admin      bool
 	mutedUntil int64
@@ -77,6 +78,7 @@ type lobby struct {
 	host    *player
 	mapname string
 	mode    int64
+	kind    string
 	members []*player
 }
 
@@ -282,6 +284,7 @@ func (h *Hub) playerMsg(p *player) []byte {
 		lid = p.lobby.id
 	}
 	w.u(lid)
+	w.str(p.kind)
 	return w.b
 }
 
@@ -295,6 +298,7 @@ func lobbyMsg(l *lobby) []byte {
 	for _, m := range l.members {
 		w.u(m.id)
 	}
+	w.str(l.kind)
 	return w.b
 }
 
@@ -402,22 +406,22 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			h.broadcast(MsgPlayer, h.playerMsg(p))
 		}
 	case MsgStatus:
-		state, mapname, mode := r.u(), r.str(64), r.s()
+		state, mapname, mode, kind := r.u(), r.str(64), r.s(), r.str(16)
 		if err := r.done(); err != nil {
 			return err
 		}
 		if state > StateRun {
 			return errShort
 		}
-		if int(state) == p.state && mapname == p.mapname && mode == p.mode {
+		if int(state) == p.state && mapname == p.mapname && mode == p.mode && kind == p.kind {
 			return nil
 		}
-		p.state, p.mapname, p.mode = int(state), mapname, mode
+		p.state, p.mapname, p.mode, p.kind = int(state), mapname, mode, kind
 		if p.name != "" {
 			h.broadcast(MsgPlayer, h.playerMsg(p))
 		}
 	case MsgLobbyCreate:
-		mapname, mode := r.str(64), r.s()
+		mapname, mode, kind := r.str(64), r.s(), r.str(16)
 		if err := r.done(); err != nil {
 			return err
 		}
@@ -434,7 +438,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		}
 		h.leaveLobby(p)
 		h.nextLobby++
-		l := &lobby{id: h.nextLobby, host: p, mapname: mapname, mode: mode, members: []*player{p}}
+		l := &lobby{id: h.nextLobby, host: p, mapname: mapname, mode: mode, kind: kind, members: []*player{p}}
 		h.lobbies[l.id] = l
 		p.lobby = l
 		h.broadcast(MsgLobby, lobbyMsg(l))
@@ -470,7 +474,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			h.broadcast(MsgPlayer, h.playerMsg(p))
 		}
 	case MsgLobbyMap:
-		mapname, mode := r.str(64), r.s()
+		mapname, mode, kind := r.str(64), r.s(), r.str(16)
 		if err := r.done(); err != nil {
 			return err
 		}
@@ -479,7 +483,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			h.notice(p, "only the lobby's host picks the map")
 			return nil
 		}
-		l.mapname, l.mode = mapname, mode
+		l.mapname, l.mode, l.kind = mapname, mode, kind
 		h.broadcast(MsgLobby, lobbyMsg(l))
 	case MsgChat:
 		scope, text := r.u(), r.str(4*MaxChat)

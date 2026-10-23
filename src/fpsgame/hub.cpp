@@ -19,13 +19,13 @@ namespace game
     {
         uint id, lobby;
         int state, mode;
-        string name, map;
+        string name, map, kind;
     };
     struct hublobby
     {
         uint id, host;
         int mode;
-        string map;
+        string map, kind;
         vector<uint> members;
     };
     static vector<hubplayer> hubplayers;
@@ -34,7 +34,7 @@ namespace game
     static string hubrefusal = "";
     static string hubmyname = "", hubaskedname = "", hubtarget = "", hubchangedat = "";
     static int hubretry = 0, hublaststate = WITNESS_IDLE, hubsentstate = -1, hubsentmode = 0;
-    static string hubsentmap = "";
+    static string hubsentmap = "", hubsentkind = "";
     static bool hubasking = false, hubchecking = false, hubkeychanged = false, hubwelcomed = false, hubreported = false;
     static uchar hubnewkey[32];
 
@@ -91,19 +91,42 @@ namespace game
         hubsend(type, p.getbuf(), p.length());
     }
 
+    // the kind of run the loaded map is played as
+    static const char *runkind()
+    {
+        if(!clientmap[0]) return "";
+        if(m_sp) return m_dmsp ? "dmsp" : "campaign";
+        if(flagrunrules()) return "flagrun";
+        if(racerules()) return "race";
+        return "";
+    }
+
+    static const char *kindormode(const char *kind, int mode) { return kind[0] ? kind : server::modename(mode, "?"); }
+
+    // loads a lobby's map with the rules its host plays it under
+    static void loadlobbymap(const hublobby &l)
+    {
+        server::forcenextflagrun(!strcmp(l.kind, "flagrun") ? 1 : 0);
+        server::forcenextracerules(!strcmp(l.kind, "race") ? 1 : 0);
+        changemap(l.map, l.mode);
+    }
+
     static void sendstatus()
     {
         int state = clientmap[0] ? HUBSTATE_PLAYING : HUBSTATE_MENU, mode = clientmap[0] ? gamemode : 0;
-        if(state == hubsentstate && mode == hubsentmode && !strcmp(clientmap, hubsentmap)) return;
+        const char *kind = runkind();
+        if(state == hubsentstate && mode == hubsentmode && !strcmp(clientmap, hubsentmap) && !strcmp(kind, hubsentkind)) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(state);
         puttext(w, clientmap);
         w.svar(mode);
+        w.str(kind);
         if(!hubsend(HM_STATUS, p.getbuf(), p.length())) return;
         hubsentstate = state;
         hubsentmode = mode;
         copystring(hubsentmap, clientmap);
+        copystring(hubsentkind, kind);
         autolobbydue = true;
     }
 
@@ -113,6 +136,7 @@ namespace game
         sbr2::byteswriter w(p);
         puttext(w, map);
         w.svar(mode);
+        w.str(runkind());
         hubsend(type, p.getbuf(), p.length());
     }
 
@@ -124,9 +148,9 @@ namespace game
         if(!autolobbydue || !hubmyname[0]) return;
         autolobbydue = false;
         hublobby *l = mylobby();
-        bool runmap = clientmap[0] && (m_sp || flagrunrules() || racerules());
-        if(!runmap) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
-        bool same = l && !strcmp(l->map, clientmap) && l->mode == gamemode;
+        const char *kind = runkind();
+        if(!kind[0]) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
+        bool same = l && !strcmp(l->map, clientmap) && l->mode == gamemode && !strcmp(l->kind, kind);
         if(same) return;
         if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, clientmap, gamemode);
         else mapmessage(HM_LOBBYCREATE, clientmap, gamemode);
@@ -136,11 +160,11 @@ namespace game
     {
         bool mine = hasmember(now, hubmyid);
         if(!mine || now.host == hubmyid) return;
-        if(wasmine && !strcmp(before.map, now.map) && before.mode == now.mode) return;
+        if(wasmine && !strcmp(before.map, now.map) && before.mode == now.mode && !strcmp(before.kind, now.kind)) return;
         if(!now.map[0]) return;
         bool running = false;
         runtimerticks(running);
-        if(running) conoutf("\f2%s picked %s (%s): you follow when this run ends", playername(now.host), now.map, server::modename(now.mode, "?"));
+        if(running) conoutf("\f2%s picked %s (%s): you follow when this run ends", playername(now.host), now.map, kindormode(now.kind, now.mode));
         followpending = true;
     }
 
@@ -152,11 +176,11 @@ namespace game
         if(running) lastrunning = totalmillis;
         if(!followpending) return;
         hublobby *l = mylobby();
-        if(!l || l->host == hubmyid || !l->map[0] || remote || (!strcmp(l->map, clientmap) && l->mode == gamemode)) { followpending = false; return; }
+        if(!l || l->host == hubmyid || !l->map[0] || remote || (!strcmp(l->map, clientmap) && l->mode == gamemode && !strcmp(l->kind, runkind()))) { followpending = false; return; }
         if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
         followpending = false;
-        conoutf("\f2following %s to %s (%s)", playername(l->host), l->map, server::modename(l->mode, "?"));
-        changemap(l->map, l->mode);
+        conoutf("\f2following %s to %s (%s)", playername(l->host), l->map, kindormode(l->kind, l->mode));
+        loadlobbymap(*l);
     }
 
     static void hubmessages()
@@ -208,6 +232,7 @@ namespace game
                     gettext(r, q.map, sizeof(q.map));
                     q.mode = int(r.svar());
                     q.lobby = uint(r.var());
+                    gettext(r, q.kind, sizeof(q.kind));
                     if(!r.ok) break;
                     hubplayer *old = findplayer(q.id);
                     if(old) *old = q;
@@ -229,6 +254,7 @@ namespace game
                     l.mode = int(r.svar());
                     int n = int(r.var());
                     for(int i = 0; i < n && r.ok && i < 256; i++) l.members.add(uint(r.var()));
+                    gettext(r, l.kind, sizeof(l.kind));
                     if(!r.ok) break;
                     hublobby *old = findlobby(l.id);
                     bool wasmine = old && hasmember(*old, hubmyid);
@@ -236,13 +262,13 @@ namespace game
                     if(playalonglobby == l.id && hasmember(l, hubmyid))
                     {
                         playalonglobby = 0;
-                        if(l.map[0] && !remote) changemap(l.map, l.mode);
+                        if(l.map[0] && !remote) loadlobbymap(l);
                     }
-                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); }
+                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); }
                     else
                     {
                         hublobby &added = hublobbies.add();
-                        added.id = l.id; added.host = l.host; added.mode = l.mode; copystring(added.map, l.map);
+                        added.id = l.id; added.host = l.host; added.mode = l.mode; copystring(added.map, l.map); copystring(added.kind, l.kind);
                         added.members.put(l.members.getbuf(), l.members.length());
                     }
                     break;
@@ -434,6 +460,7 @@ namespace game
         if(!strcmp(field, "name")) result(p->name);
         else if(!strcmp(field, "map")) result(p->map);
         else if(!strcmp(field, "mode")) result(server::modename(p->mode, ""));
+        else if(!strcmp(field, "kind")) result(p->kind);
         else if(!strcmp(field, "lobby")) intret(int(p->lobby));
         else if(!strcmp(field, "playing")) intret(p->state != HUBSTATE_MENU ? 1 : 0);
         else if(!strcmp(field, "lobbysize")) { hublobby *l = findlobby(p->lobby); intret(l ? l->members.length() : 0); }
@@ -458,6 +485,7 @@ namespace game
         if(!strcmp(field, "host")) result(playername(l->host));
         else if(!strcmp(field, "map")) result(l->map);
         else if(!strcmp(field, "mode")) result(server::modename(l->mode, ""));
+        else if(!strcmp(field, "kind")) result(l->kind);
         else if(!strcmp(field, "count")) intret(l->members.length());
         else if(!strcmp(field, "members"))
         {
@@ -514,7 +542,7 @@ namespace game
         hublobby *l = mylobby();
         if(!l || !l->map[0]) { conoutf(CON_ERROR, "you aren't in a lobby with a map"); return; }
         if(remote) { conoutf(CON_ERROR, "leave the game server first"); return; }
-        changemap(l->map, l->mode);
+        loadlobbymap(*l);
     });
     ICOMMAND(hubreport, "is", (int *id, char *reason),
     {
