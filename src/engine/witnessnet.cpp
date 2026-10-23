@@ -4,7 +4,8 @@
 // socket is non-blocking and witnessslice() moves the connection along once per frame.
 //
 // Framing matches server/noisechan: a big-endian u16 length, then a Noise message; a transport
-// message's plaintext is a u8 type followed by the payload.
+// message's plaintext is a u8 type followed by the payload. Opened without a server key, a
+// connection asks for the server's public keys instead (an empty first frame) and closes.
 
 #include "engine.h"
 #include "noise.h"
@@ -51,6 +52,8 @@ namespace witnessnet
         string host, error;
         int port;
         uchar serverkey[noise::KEYLEN];
+        bool askkeys, learned;
+        uchar keys[2*noise::KEYLEN]; // what a key request got: the channel key, then the signing key
         vector<uchar> prologue, hello;
         lookup *pending;
         ENetSocket sock;
@@ -59,7 +62,7 @@ namespace witnessnet
         vector<uchar> in, out;
         vector<received *> inbox;
 
-        connection() : state(IDLE), started(0), port(0), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
+        connection() : state(IDLE), started(0), port(0), askkeys(false), learned(false), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
         ~connection() { close(""); }
 
         void close(const char *why)
@@ -119,6 +122,13 @@ namespace witnessnet
 
         void begin()
         {
+            if(askkeys)
+            {
+                vector<uchar> none;
+                if(!frame(none)) { fail("key request"); return; }
+                state = HANDSHAKE;
+                return;
+            }
             uchar installkey[noise::KEYLEN];
             if(!loadinstallkey(installkey)) { fail("no install key"); return; }
             hs = new noise::handshake(true, prologue.getbuf(), prologue.length(), installkey, serverkey);
@@ -130,6 +140,14 @@ namespace witnessnet
 
         void handle(const uchar *msg, int len)
         {
+            if(state == HANDSHAKE && askkeys)
+            {
+                if(len != 5 + 2*noise::KEYLEN || memcmp(msg, "SBRW", 4) || msg[4] != 1) { fail("the server didn't send its keys"); return; }
+                memcpy(keys, msg + 5, sizeof(keys));
+                learned = true;
+                close("");
+                return;
+            }
             if(state == HANDSHAKE)
             {
                 vector<uchar> payload;
@@ -204,7 +222,7 @@ namespace witnessnet
                 buf.data = chunk;
                 buf.dataLength = sizeof(chunk);
                 int n = enet_socket_receive(sock, NULL, &buf, 1);
-                if(n <= 0) { fail(state == HANDSHAKE ? "the server closed the connection during the handshake" : "the server closed the connection"); return; }
+                if(n <= 0) { fail(askkeys ? "the server didn't send its keys" : state == HANDSHAKE ? "the server closed the connection during the handshake" : "the server closed the connection"); return; }
                 in.put(chunk, n);
                 int pos = 0;
                 while(in.length() - pos >= 2)
@@ -225,7 +243,9 @@ namespace witnessnet
             close("");
             copystring(host, h);
             port = p;
-            memcpy(serverkey, key, noise::KEYLEN);
+            askkeys = !key;
+            learned = false;
+            if(key) memcpy(serverkey, key, noise::KEYLEN);
             prologue.setsize(0);
             prologue.put((const uchar *)"speedbraten/1 ", 14);
             prologue.put((const uchar *)service, strlen(service));
@@ -267,6 +287,7 @@ namespace witnessnet
     static connection conn, witness;
 }
 
+// serverkey NULL: ask the server for its keys (witnesslearnedkeys) instead of connecting
 void witnessconnect(const char *host, int port, const uchar *serverkey, const char *build)
 {
     if(!host || !host[0]) { witnessnet::witness.close(""); return; }
@@ -285,6 +306,16 @@ int witnessstate()
 }
 
 const char *witnesserror() { return witnessnet::witness.error; }
+
+bool witnesslearnedkeys(uchar *channelkey, uchar *signingkey)
+{
+    witnessnet::connection &c = witnessnet::witness;
+    if(!c.learned) return false;
+    memcpy(channelkey, c.keys, noise::KEYLEN);
+    memcpy(signingkey, c.keys + noise::KEYLEN, noise::KEYLEN);
+    c.learned = false;
+    return true;
+}
 
 bool witnesssend(int type, const uchar *data, int len) { return witnessnet::witness.sendmessage(type, data, len); }
 

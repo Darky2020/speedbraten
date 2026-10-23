@@ -298,7 +298,7 @@ namespace witness
         int connected;
         noise::handshake *hs;
         noise::cipherstate send, recv;
-        bool open, closing;
+        bool open, closing, answered; // answered: closes once the key reply is sent
         vector<uchar> in, out;
         uchar session[16], nonce[16], installid[sbr2::signature::INSTALLKEYID];
         string installhex;
@@ -307,7 +307,7 @@ namespace witness
         vector<bool> seedsused;
         vector<witnessrun *> runs;
 
-        client() : sock(ENET_SOCKET_NULL), connected(0), hs(NULL), open(false), closing(false), sessionrow(-1) { addressname[0] = build[0] = installhex[0] = '\0'; }
+        client() : sock(ENET_SOCKET_NULL), connected(0), hs(NULL), open(false), closing(false), answered(false), sessionrow(-1) { addressname[0] = build[0] = installhex[0] = '\0'; }
         ~client() { DELETEP(hs); runs.deletecontents(); if(sock != ENET_SOCKET_NULL) enet_socket_destroy(sock); }
     };
     static vector<client *> clients;
@@ -668,6 +668,22 @@ namespace witness
         conoutf("%s: session %s, player %s, %s", c.addressname, sessionhex, c.installhex, c.build);
     }
 
+    // An empty first frame asks for the witness's public keys, which a client saves the first
+    // time it uses an address: "SBRW", u8 version, the channel key, the signing key.
+    static void answerkeys(client &c)
+    {
+        vector<uchar> reply;
+        reply.put((const uchar *)"SBRW", 4);
+        reply.add(1);
+        uchar pub[32];
+        noise::publickey(channelkey, pub);
+        reply.put(pub, 32);
+        sbr2::publickey(signingseed, pub);
+        reply.put(pub, 32);
+        frame(c, reply);
+        c.answered = c.closing = true;
+    }
+
     static void handleinput(client &c)
     {
         int pos = 0;
@@ -676,6 +692,7 @@ namespace witness
             int len = (c.in[pos] << 8) | c.in[pos+1];
             if(c.in.length() - pos - 2 < len) break;
             const uchar *msg = c.in.getbuf() + pos + 2;
+            if(!c.open && !len && c.hs && c.hs->step == 0) { answerkeys(c); pos += 2; break; }
             if(!c.open) handshakemessage(c, msg, len);
             else
             {
@@ -1303,7 +1320,7 @@ namespace witness
                     else c.out.remove(0, n);
                 }
                 if(!c.open && now - c.connected > HANDSHAKETIMEOUT) c.closing = true;
-                if(c.closing && (!c.out.length() || !c.open)) dropclient(i--);
+                if(c.closing && (!c.out.length() || (!c.open && !c.answered))) dropclient(i--);
             }
         }
         return 0;

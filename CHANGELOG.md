@@ -5,6 +5,7 @@
 - Replays are written in a new format while you play. Older replays still play.
 - Keys typed into the console or chat are no longer stored in replays.
 - In races, an item you just took can be taken again after a respawn.
+- The speedrun menu has a witness tab: enter the server's address and its keys are fetched and saved.
 
 ## v0.2.1
 

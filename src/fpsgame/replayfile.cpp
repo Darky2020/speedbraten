@@ -1043,11 +1043,14 @@ namespace game
     // The public keys of the witness, built in. A key list in a file (witnesskeys.txt, or the
     // keys argument of replayverify) adds to them.
     static const char * const witnesspinnedkeys[] = { NULL };
+    // the signing key of the witness at witnesshost, saved with its channel key
+    SVARP(witnesssignkey, "");
 
     static void loadwitnesskeys(const char *file, vector<uchar> &keys)
     {
         uchar key[32];
         for(int i = 0; witnesspinnedkeys[i]; i++) if(sbr2::fromhex(witnesspinnedkeys[i], key, 32)) keys.put(key, 32);
+        if(sbr2::fromhex(witnesssignkey, key, 32)) keys.put(key, 32);
         if(file && sbr2::fromhex(file, key, 32)) { keys.put(key, 32); return; }
         stream *f = openutf8file(path(file && file[0] ? file : "witnesskeys.txt", true), "r");
         if(!f) return;
@@ -1533,6 +1536,10 @@ namespace game
     SVARP(witnesshost, "");
     VARP(witnessport, 1, WITNESSPORT, 65535);
     SVARP(witnesskey, ""); // the witness's channel public key, 64 hex digits
+    // The keys are learned from the witness the first time an address is used ("host:port" in
+    // witnesskeyfor). If that witness later shows a different key, the client stays away from
+    // it until the player trusts the new key (witnesstrustnewkey).
+    SVARP(witnesskeyfor, "");
     enum { WITNESSRETRY = 10000, WITNESSSEEDWAIT = 3000, WITNESSPIECE = 60000 };
 
     struct livestream
@@ -1616,39 +1623,118 @@ namespace game
         }
     }
 
+    static bool witnessasking = false, witnesschecking = false, witnesskeychanged = false;
+    static uchar witnessnewkeys[64];
+    static string witnesschangedat = ""; // the address whose key changed
+
+    static void savewitnesskeys(const char *addr, const uchar *channel, const uchar *signing)
+    {
+        string hex;
+        sbr2::tohex(channel, 32, hex);
+        setsvar("witnesskey", hex);
+        sbr2::tohex(signing, 32, hex);
+        setsvar("witnesssignkey", hex);
+        setsvar("witnesskeyfor", addr);
+    }
+
     // keeps the channel open while witnesshost is set, and reads what the witness sent
     void witnessupdate()
     {
-        uchar key[32];
-        bool valid = witnesshost[0] && sbr2::fromhex(witnesskey, key, 32);
-        defformatstring(target, "%s:%d:%s", valid ? witnesshost : "", witnessport, witnesskey);
+        defformatstring(addr, "%s:%d", witnesshost, witnessport);
+        // a key set by hand, before keys were learned, belongs to the address set with it
+        if(!witnesskeyfor[0] && witnesskey[0] && witnesshost[0]) setsvar("witnesskeyfor", addr);
+        uchar key[32], channel[32], signing[32];
+        bool known = !strcmp(witnesskeyfor, addr) && sbr2::fromhex(witnesskey, key, 32);
+        if(witnesslearnedkeys(channel, signing))
+        {
+            if(witnessasking || !known)
+            {
+                savewitnesskeys(addr, channel, signing);
+                conoutf("\f0witness keys saved for %s", addr);
+                known = sbr2::fromhex(witnesskey, key, 32);
+                witnessretry = totalmillis;
+            }
+            else if(memcmp(channel, key, 32))
+            {
+                witnesskeychanged = true;
+                copystring(witnesschangedat, addr);
+                memcpy(witnessnewkeys, channel, 32);
+                memcpy(witnessnewkeys + 32, signing, 32);
+                conoutf(CON_ERROR, "the witness at %s shows a different key than the one saved: check it in the speedrun menu (witness tab)", addr);
+            }
+            witnessasking = witnesschecking = false;
+        }
+        if(witnesskeychanged && strcmp(witnesschangedat, addr)) witnesskeychanged = false;
+        const char *target = witnesshost[0] && !witnesskeychanged ? addr : "";
         int state = witnessstate();
         if(strcmp(target, witnesstarget))
         {
             copystring(witnesstarget, target);
             witnessseeds.setsize(0);
             DELETEP(live);
-            witnessconnect(valid ? witnesshost : "", witnessport, key, "speedbraten");
-            witnessretry = totalmillis + WITNESSRETRY;
+            witnessconnect("", witnessport, NULL, "speedbraten");
+            witnessasking = witnesschecking = false;
+            witnessretry = totalmillis;
+            state = witnessstate();
         }
-        else if(valid && (state == WITNESS_IDLE || state == WITNESS_CLOSED) && totalmillis - witnessretry >= 0)
+        // with the wrong key the witness can't read message 1 and hangs up
+        const char *why = witnesserror();
+        bool refused = state == WITNESS_CLOSED && known && !witnesschecking && (!strncmp(why, "handshake refused", 17) || strstr(why, "during the handshake"));
+        if(witnesstarget[0] && (state == WITNESS_IDLE || state == WITNESS_CLOSED) && (totalmillis - witnessretry >= 0 || refused))
         {
             witnessseeds.setsize(0);
-            witnessconnect(witnesshost, witnessport, key, "speedbraten");
+            if(!known || refused)
+            {
+                witnessasking = !known;
+                witnesschecking = known;
+                witnessconnect(witnesshost, witnessport, NULL, "speedbraten");
+            }
+            else witnessconnect(witnesshost, witnessport, key, "speedbraten");
             witnessretry = totalmillis + WITNESSRETRY;
         }
         if(state != WITNESS_OPEN && live) DELETEP(live);
         witnessmessages();
     }
 
+    ICOMMAND(witnessstatus, "", (),
+    {
+        int state = witnessstate();
+        if(!witnesshost[0]) result("off");
+        else if(witnesskeychanged) result("the witness shows a different key");
+        else if(witnessasking && state == WITNESS_CONNECTING) result("asking for the witness's keys");
+        else if(state == WITNESS_OPEN) result("connected");
+        else if(state == WITNESS_CONNECTING) result("connecting");
+        else if(state == WITNESS_CLOSED) { defformatstring(why, "not connected: %s", witnesserror()); result(why); }
+        else result("not connected");
+    });
+    ICOMMAND(witnesskeychanged, "", (), intret(witnesskeychanged ? 1 : 0));
+    ICOMMAND(witnessnewkey, "", (), { string hex = ""; if(witnesskeychanged) sbr2::tohex(witnessnewkeys, 32, hex); result(hex); });
+    ICOMMAND(witnesstrustnewkey, "", (),
+    {
+        if(!witnesskeychanged) return;
+        defformatstring(addr, "%s:%d", witnesshost, witnessport);
+        savewitnesskeys(addr, witnessnewkeys, witnessnewkeys + 32);
+        witnesskeychanged = false;
+        conoutf("\f0witness keys saved for %s", addr);
+    });
+    ICOMMAND(witnessforgetkeys, "", (),
+    {
+        setsvar("witnesskey", "");
+        setsvar("witnesssignkey", "");
+        setsvar("witnesskeyfor", "");
+        witnesskeychanged = false;
+        witnesstarget[0] = '\0';
+    });
+
     bool witnessseed(uint &seed)
     {
         if(!witnesshost[0]) return false;
         witnessupdate();
+        // witnessupdate goes on from a key request to the connection, so a first use waits too
         for(int start = SDL_GetTicks(); witnessseeds.empty() && witnessstate() != WITNESS_IDLE && witnessstate() != WITNESS_CLOSED && int(SDL_GetTicks()) - start < WITNESSSEEDWAIT; )
         {
             witnessslice();
-            witnessmessages();
+            witnessupdate();
             if(witnessseeds.empty()) SDL_Delay(5);
         }
         if(witnessseeds.empty() || witnessstate() != WITNESS_OPEN) return false;
