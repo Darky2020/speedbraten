@@ -1136,10 +1136,14 @@ void checkinput()
             case SDL_KEYUP:
             {
                 rawevent raw(event.type == SDL_KEYDOWN ? rawevent::KEYDOWN : rawevent::KEYUP, event.key.timestamp);
-                raw.code = event.key.keysym.scancode;
-                raw.keycode = event.key.keysym.sym;
+                if(textinputmask) raw.flags |= rawevent::TEXT;
+                else
+                {
+                    raw.code = event.key.keysym.scancode;
+                    raw.keycode = event.key.keysym.sym;
+                    raw.bind = getbindaction(event.key.keysym.sym);
+                }
                 if(event.key.repeat) raw.flags |= rawevent::REPEAT;
-                raw.bind = getbindaction(event.key.keysym.sym);
                 game::rawinput(raw);
             }
                 if(keyrepeatmask || !event.key.repeat)

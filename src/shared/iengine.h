@@ -634,7 +634,7 @@ extern bool minimized;
 struct rawevent
 {
     enum { KEYDOWN = 0, KEYUP, BUTTONDOWN, BUTTONUP, MOTION, WHEEL, FOCUS };
-    enum { REPEAT = 1<<0, GRABBED = 1<<1, GAINED = 1<<2 };
+    enum { REPEAT = 1<<0, GRABBED = 1<<1, GAINED = 1<<2, TEXT = 1<<3 }; // TEXT: typed into a text field, key left out
     int tick, kind;
     long long us;      // since the run began, when the game read the event
     uint sdlms;        // SDL's event timestamp

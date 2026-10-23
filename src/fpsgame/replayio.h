@@ -6,19 +6,20 @@
 //
 // A chunk type with an uppercase first letter is required: a reader that does not know it must
 // refuse the file. flags bit 0: the payload is var(raw length) followed by the next bytes of the
-// file's single zstd stream, flushed at the chunk's end, so compressed chunks are decompressed
-// in file order. hashed(c) = type || var(raw length)
-// || raw payload. The chain starts as BLAKE3("SBR2-head" || var(version)); every chunk except
-// sIGN and END is hashed into a running digest; a SEGE chunk then sets
-// head = BLAKE3("SBR2-seg" || head || digest) and restarts the digest; END holds
-// var(segments) || BLAKE3("SBR2-end" || head || digest). Only sIGN chunks may follow END.
+// file's zstd stream, flushed at the chunk's end, so compressed chunks are decompressed in file
+// order. From version 2 on the stream restarts after every SEGE, so a reader can start decoding
+// at any segment. hashed(c) = type || var(raw length) || raw payload. The chain starts as
+// BLAKE3("SBR2-head" || var(version)); every chunk except sIGN and END is hashed into a running
+// digest; a SEGE chunk then sets head = BLAKE3("SBR2-seg" || head || digest) and restarts the
+// digest; END holds var(segments) || BLAKE3("SBR2-end" || head || digest). Only sIGN chunks may
+// follow END.
 
 #ifndef __REPLAYIO_H__
 #define __REPLAYIO_H__
 
 namespace sbr2
 {
-    enum { VERSION = 1, HASHSIZE = 32, FLAG_ZSTD = 1 };
+    enum { VERSION = 2, MINVERSION = 1, HASHSIZE = 32, FLAG_ZSTD = 1 };
 
     struct byteswriter
     {
@@ -127,10 +128,12 @@ namespace sbr2
     struct reader
     {
         vector<chunk *> chunks;
+        int version;
         vector<uchar> heads;     // HASHSIZE bytes per closed segment
         uchar content[HASHSIZE]; // recomputed content hash
         bool contentok;          // END holds the recomputed content hash
         string error;
+        reader() : version(0) {}
         ~reader() { chunks.deletecontents(); }
         // known: the chunk types this reader understands (4 chars each, concatenated); an unknown
         // required chunk is an error. Returns false with error set on any problem.

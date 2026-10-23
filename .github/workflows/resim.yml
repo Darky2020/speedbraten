@@ -80,8 +80,9 @@ jobs:
           mkdir -p results
           fail=0
           cd resimdata
-          for f in "$gold"/*.sbr; do
+          for f in "$gold"/*.sbr "$gold"/v1/*.sbr; do
             name=$(basename "$f" .sbr)
+            case "$f" in */v1/*) name=v1-$name ;; esac
             rm -rf ../home; mkdir -p ../home
             start=$(date +%s)
             set +e

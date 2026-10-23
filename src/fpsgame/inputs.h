@@ -121,13 +121,15 @@ namespace game
         vector<rawevent> raw;         // binds point into internbind's pool
         vector<aidmark> aids;         // live recordings only
         uint seed, mapcrc;
+        uint date;      // unix time the attempt (or its life) started, 0 if unknown
         uint cfgcrc;    // crc of the map cfg, 0 without one
         bool hascfgcrc; // false in the oldest replays, which have no cfg crc
-        string map, team;
+        string map, team, player;
         int mode, flagrun, race, ticks;
         int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS in the oldest replays
+        bool lifeseeds; // in flagruns and races, every spawn reseeds the RNG (lifeseed())
 
-        inputattempt() : starttick(0), seed(0), mapcrc(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS) { map[0] = team[0] = '\0'; }
+        inputattempt() : starttick(0), seed(0), mapcrc(0), date(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS), lifeseeds(false) { map[0] = team[0] = player[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -168,6 +170,8 @@ namespace game
             dst.aids = aids;
             dst.seed = seed;
             dst.mapcrc = mapcrc;
+            dst.date = date;
+            copystring(dst.player, player);
             dst.cfgcrc = cfgcrc;
             dst.hascfgcrc = hascfgcrc;
             copystring(dst.map, map);
@@ -176,6 +180,7 @@ namespace game
             dst.flagrun = flagrun;
             dst.race = race;
             dst.hashgroups = hashgroups;
+            dst.lifeseeds = lifeseeds;
             dst.ticks = ticks;
         }
     };

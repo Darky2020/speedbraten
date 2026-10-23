@@ -50,10 +50,11 @@ namespace game
         int tick, branch;
         int settings[NUMSIMSETTINGS];
         statestart *life; // start of the life the state was taken in, if known
+        uint date;
 
-        statestart() : tick(-1), branch(-1), life(NULL) {}
+        statestart() : tick(-1), branch(-1), life(NULL), date(0) {}
         bool valid() const { return tick >= 0; }
-        void clear() { state.setsize(0); tick = branch = -1; life = NULL; }
+        void clear() { state.setsize(0); tick = branch = -1; life = NULL; date = 0; }
     };
 
     // Segmented recordings form a tree: every live load starts a new branch at the loaded
@@ -159,6 +160,7 @@ namespace game
         src.copyto(a);
         a.snapshot = from.state;
         a.starttick = from.tick;
+        if(from.date) a.date = from.date;
         loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
         int n = 0;
         loopv(a.events) if(a.events[i].tick <= from.tick) { DELETEA(a.events[i].cmd); n++; } else break;
@@ -285,6 +287,7 @@ namespace game
         if(!replaylifeonly || havebots() || !takesnapshot(l->state)) { delete l; return; }
         l->tick = curtick;
         l->branch = curbranch;
+        l->date = uint(time(NULL));
         readsettings(l->settings);
         lives.add(l);
         lifestart = l;
@@ -306,8 +309,11 @@ namespace game
         return true;
     }
 
+    static void seedlife();
+
     void inputlifespawned()
     {
+        seedlife();
         if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
         lifestart = NULL;
@@ -459,6 +465,24 @@ namespace game
     }
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
+
+    static uint lifeseed(uint seed, int life)
+    {
+        uint h = seed ^ (uint(life) * 0x9E3779B1U);
+        h ^= h >> 16; h *= 0x85EBCA6BU; h ^= h >> 13; h *= 0xC2B2AE35U; h ^= h >> 16;
+        return h;
+    }
+
+    // A life in a flagrun or race then starts from the same RNG state whatever came before it
+    // in the session, so the life can be checked on its own. The spawn at map start needs no
+    // reseed: the map start seeds the RNG.
+    static void seedlife()
+    {
+        if(curtick <= 0) return;
+        const inputattempt *a = replaying ? &replaycur() : !recordingoff && !recording.empty() ? &recording.last() : NULL;
+        if(!a || !a->lifeseeds || (!a->flagrun && !a->race)) return;
+        seedMT(lifeseed(a->seed, player1->lifesequence));
+    }
 
     // Settings the simulation reads that are not part of the player's input. A recording
     // stores them at the start of each attempt and records every later change; a replay
@@ -927,6 +951,9 @@ namespace game
         if(!chained) { recording.clear(); runsaved = false; recordingran = false; tellsrunstart(); }
         inputattempt &a = recording.add();
         a.seed = gameseed;
+        a.date = uint(time(NULL));
+        copystring(a.player, player1->name);
+        a.lifeseeds = true;
         copystring(a.map, name);
         a.mode = mode;
         a.flagrun = server::flagrunactive() ? 1 : 0;

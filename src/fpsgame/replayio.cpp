@@ -29,13 +29,13 @@ namespace sbr2
         if(len) blake3_hasher_update(&h, data, len);
     }
 
-    static void starthead(uchar *head)
+    static void starthead(uchar *head, int version)
     {
         blake3_hasher h;
         blake3_hasher_init(&h);
         hashlabel(h, "SBR2-head");
         vector<uchar> v;
-        byteswriter(v).var(VERSION);
+        byteswriter(v).var(version);
         blake3_hasher_update(&h, v.getbuf(), v.length());
         blake3_hasher_finalize(&h, head, HASHSIZE);
     }
@@ -60,7 +60,7 @@ namespace sbr2
         byteswriter w(out);
         w.bytes("SBR2", 4);
         w.var(VERSION);
-        starthead(head);
+        starthead(head, VERSION);
         memset(content, 0, sizeof(content));
     }
 
@@ -125,6 +125,7 @@ namespace sbr2
         w.var(segments);
         w.var(endtick);
         add("SEGE", p);
+        if(zstream) ZSTD_CCtx_reset((ZSTD_CCtx *)zstream, ZSTD_reset_session_only);
         advance(head, *(blake3_hasher *)running, "SBR2-seg");
         segments++;
         return head;
@@ -332,10 +333,11 @@ namespace sbr2
         bytesreader r(buf, len);
         char magic[4];
         if(!r.bytes(magic, 4) || memcmp(magic, "SBR2", 4)) { copystring(error, "not an SBR2 file"); return false; }
-        unsigned long long version = r.var();
-        if(!r.ok || version != VERSION) { formatstring(error, "unsupported container version %llu", version); return false; }
+        unsigned long long v = r.var();
+        if(!r.ok || v < MINVERSION || v > VERSION) { formatstring(error, "unsupported container version %llu", v); return false; }
+        version = int(v);
         uchar head[HASHSIZE];
-        starthead(head);
+        starthead(head, version);
         blake3_hasher run;
         blake3_hasher_init(&run);
         bool ended = false;
@@ -390,6 +392,7 @@ namespace sbr2
                 if(!s.ok || s.left() || index != (unsigned long long)segment) { formatstring(error, "segment %d: bad SEGE", segment); return false; }
                 advance(head, run, "SBR2-seg");
                 heads.put(head, HASHSIZE);
+                if(version >= 2 && stream.d) ZSTD_DCtx_reset(stream.d, ZSTD_reset_session_only);
                 segment++;
             }
             if(end)

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Replays are written in a new format while you play. Older replays still play.
+- Keys typed into the console or chat are no longer stored in replays.
+
 ## v0.2.1
 
 - Races finish the way racing servers detect it. Older race replays no longer verify.

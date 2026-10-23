@@ -20,7 +20,8 @@ Format (see the design doc for the chunk contents):
   file  = "SBR2" var(version) chunk* END-chunk sIGN-chunk*
   chunk = type[4] var(flags) var(stored length) payload u32le crc32(type..payload)
   An uppercase first letter of the type marks a required chunk. flags bit 0: the payload is
-  var(raw length) + the next bytes of the file's single zstd stream, flushed at the chunk's end.
+  var(raw length) + the next bytes of the file's zstd stream, flushed at the chunk's end. From
+  version 2 on the stream restarts after every SEGE, so decoding can start at any segment.
   hashed(c) = type || var(raw length) || raw payload
   head = BLAKE3("SBR2-head" || var(version)); every chunk except sIGN and END is hashed into a
   running digest; at SEGE: head = BLAKE3("SBR2-seg" || head || digest), digest restarts;
@@ -115,7 +116,7 @@ class _PyBlake3:
 if blake3 is None:
     blake3 = _PyBlake3
 
-VERSION = 1
+VERSION, MINVERSION = 2, 1
 KNOWN_REQUIRED = {b"META", b"SETS", b"DATA", b"ATTM", b"INPS", b"HASH", b"SPLC", b"RSLT", b"SEGE", b"END "}
 
 
@@ -174,9 +175,9 @@ def parse(data):
     if r.take(4) != b"SBR2":
         raise FormatError("not an SBR2 file")
     version = r.var()
-    if version != VERSION:
+    if not MINVERSION <= version <= VERSION:
         raise FormatError("unsupported container version %d" % version)
-    head = h(b"SBR2-head", var(VERSION))
+    head = h(b"SBR2-head", var(version))
     run = blake3()
     chunks, heads, content, ended, segment = [], [], None, False, 0
     stream = zstd.ZstdDecompressor()
@@ -217,6 +218,8 @@ def parse(data):
             run = blake3()
             heads.append(head)
             segment += 1
+            if version >= 2:
+                stream = zstd.ZstdDecompressor()
         if end:
             content = h(b"SBR2-end", head, run.digest())
             s = Reader(raw)
@@ -550,6 +553,7 @@ def main():
         print("FAIL:", e)
         sys.exit(1)
     if sys.argv[1] == "dump":
+        binds = 0
         for i, (name, flags, stored, raw, seg, data) in enumerate(chunks):
             print("chunk %d %s segment %d flags %d %d bytes (stored %d)" % (i, name, seg, flags, raw, stored))
             if name in KV_CHUNKS:
@@ -568,8 +572,9 @@ def main():
                     devname = r.take(r.var()).decode("utf-8", "replace")
                     print("    %s %04x:%04x %s %s" % (kind, vendor, product, transport, devname))
             elif name == "bIND":
-                for j, b in enumerate(decode_binds(data)):
-                    print("    %d: %s" % (j + 1, b))
+                for b in decode_binds(data):
+                    binds += 1
+                    print("    %d: %s" % (binds, b))
             elif name == "INPS":
                 lo = Reader(data).var()
             elif name == "rAWI":
