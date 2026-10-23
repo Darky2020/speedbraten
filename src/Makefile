@@ -264,6 +264,7 @@ ifdef RESIM_DEPS
 $(WITNESS_OBJS): CXXFLAGS += -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include -DSTANDALONE -Isqlite $(VENDOR_INCLUDES) -D__MM_MALLOC_H
 WITNESS_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
 ifneq (,$(findstring linux,$(TARGET)))
+WITNESS_OBJS+= witness/glibccompat.o
 WITNESS_LINK+= -lpthread -ldl -lm
 endif
 else
@@ -271,6 +272,8 @@ $(WITNESS_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE -Isqlite $(VENDOR_INCLUDES
 WITNESS_LINK= $(LIBS)
 witness: libenet
 endif
+witness/glibccompat.o: witness/glibccompat.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 witness: $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_witness $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(WITNESS_LINK)
 .PHONY: witness
