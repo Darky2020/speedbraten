@@ -249,50 +249,108 @@ namespace game
         out.add("DATA", p);
     }
 
-    // Writes an attempt's ATTM chunk and segments; stops once out holds maxsegments segments
-    // (-1: no limit). Binds first used in a segment get a bIND chunk in that segment, ahead of
-    // its rAWI. Returns false if it stopped early.
-    static bool writeattempt(sbr2::writer &out, int index, const inputattempt &a, const vector<const mapdatafile *> &files, vector<const char *> &binds, int maxsegments)
-    {
-        vector<uchar> p;
-        sbr2::byteswriter w(p);
-        w.var(index);
-        w.str(a.map);
-        w.u32(a.mapcrc);
-        w.u8(a.hascfgcrc ? 1 : 0);
-        w.u32(a.cfgcrc);
-        w.u32(a.seed);
-        w.str(a.team);
-        w.svar(a.mode);
-        w.var(a.flagrun);
-        w.var(a.race);
-        w.var(a.starttick);
-        w.var(a.hashgroups);
-        w.var(a.lifeseeds ? 1 : 0);
-        w.var(a.files.length());
-        loopv(a.files) w.var(datafileindex(files, a.files[i]));
-        w.var(a.settings.length());
-        loopv(a.settings) { w.str(a.settings[i].name); w.svar(a.settings[i].value); }
-        w.var(a.snapshot.length());
-        w.bytes(a.snapshot.getbuf(), a.snapshot.length());
-        out.add("ATTM", p, true);
+    static void writetrace(sbr2::writer &out, int index, const inputattempt &a);
 
-        vector<const tickhash *> hashes;
-        loopv(a.hashes) if(a.hashes[i].tick % REPLAYHASHSTEP == 0 || a.hashes[i].tick == a.ticks) hashes.add(&a.hashes[i]);
-        int first = a.starttick, last = a.ticks;
-        if(a.events.length()) { first = min(first, a.events[0].tick); last = max(last, a.events[a.events.length()-1].tick); }
-        if(hashes.length()) { first = min(first, hashes[0]->tick); last = max(last, hashes.last()->tick); }
-        if(a.splices.length()) { first = min(first, a.splices[0].tick); last = max(last, a.splices[a.splices.length()-1].tick); }
-        if(a.raw.length()) { first = min(first, a.raw[0].tick); last = max(last, a.raw[a.raw.length()-1].tick); }
-        int ev = 0, hs = 0, sp = 0, tm = 0, rw = 0;
-        int segticks = segmentticks(a);
-        for(int seg = max(first, 0)/segticks; seg <= last/segticks; seg++)
+    // A replay file written front to back, one segment at a time, so it can be sent while the
+    // run is played: the bytes after n segments are the first bytes of the finished file.
+    // Everything before the segments is known when the run starts, and a segment is written
+    // only once it is complete. An attempt's data can come from a live recording that holds
+    // more than the run: skip leaves out everything at or before that tick, as cutattempt does.
+    struct sbr2stream
+    {
+        sbr2::writer out;
+        vector<const char *> binds;
+        const inputattempt *data;
+        int skip, seg, ev, hs, sp, tm, rw;
+
+        sbr2stream() : data(NULL), skip(-1), seg(0), ev(0), hs(0), sp(0), tm(0), rw(0) {}
+
+        void meta(const inputrun &run, const replayinfo &info)
         {
-            if(maxsegments >= 0 && out.segments >= maxsegments) return false;
-            int lo = seg*segticks, hi = lo + segticks;
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(7);
+            kvkey(w, "client", sbr2::VALUE_STR); w.str(info.client);
+            kvkey(w, "date", sbr2::VALUE_VAR); w.var(info.date);
+            kvkey(w, "flagrun", sbr2::VALUE_VAR); w.var(info.flagrun);
+            kvkey(w, "map", sbr2::VALUE_STR); utf8str(w, run.attempts.length() ? run.attempts[0]->map : "");
+            kvkey(w, "mode", sbr2::VALUE_SVAR); w.svar(info.mode);
+            kvkey(w, "player", sbr2::VALUE_STR); utf8str(w, info.player);
+            kvkey(w, "race", sbr2::VALUE_VAR); w.var(info.race);
+            out.add("META", p);
+        }
+
+        // header: the attempt as stored (map, settings, saved state, start tick); d: where its
+        // events, hashes and timing are read from
+        void beginattempt(int index, const inputattempt &header, const inputattempt &d, int simversion, int skiptick = -1)
+        {
+            vector<const mapdatafile *> files;
+            loopv(header.files) if(datafileindex(files, header.files[i]) < 0) files.add(&header.files[i]);
+            writedata(out, simversion, files);
+
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(index);
+            w.str(header.map);
+            w.u32(header.mapcrc);
+            w.u8(header.hascfgcrc ? 1 : 0);
+            w.u32(header.cfgcrc);
+            w.u32(header.seed);
+            w.str(header.team);
+            w.svar(header.mode);
+            w.var(header.flagrun);
+            w.var(header.race);
+            w.var(header.starttick);
+            w.var(header.hashgroups);
+            w.var(header.lifeseeds ? 1 : 0);
+            w.var(header.files.length());
+            loopv(header.files) w.var(datafileindex(files, header.files[i]));
+            w.var(header.settings.length());
+            loopv(header.settings) { w.str(header.settings[i].name); w.svar(header.settings[i].value); }
+            w.var(header.snapshot.length());
+            w.bytes(header.snapshot.getbuf(), header.snapshot.length());
+            out.add("ATTM", p, true);
+
+            data = &d;
+            skip = skiptick;
+            ev = hs = sp = rw = tm = 0;
+            while(ev < d.events.length() && d.events[ev].tick <= skip) ev++;
+            while(hs < d.hashes.length() && d.hashes[hs].tick <= skip) hs++;
+            while(sp < d.splices.length() && d.splices[sp].tick <= skip) sp++;
+            while(rw < d.raw.length() && d.raw[rw].tick <= skip) rw++;
+            if(skip >= 0) while(tm < d.timing.length() && d.timing[tm].segment < skip / REPLAYSEGMENTTICKS) tm++;
+            int first = header.starttick;
+            if(ev < d.events.length()) first = min(first, d.events[ev].tick);
+            if(hs < d.hashes.length()) first = min(first, d.hashes[hs].tick);
+            if(sp < d.splices.length()) first = min(first, d.splices[sp].tick);
+            if(rw < d.raw.length()) first = min(first, d.raw[rw].tick);
+            seg = max(first, 0) / segmentticks(d);
+        }
+
+        int segmentend() const { return (seg + 1) * segmentticks(*data); }
+
+        // the last segment holds the attempt's last tick, event, hash or raw event
+        int lastsegment() const
+        {
+            const inputattempt &a = *data;
+            int last = a.ticks;
+            if(a.events.length()) last = max(last, a.events[a.events.length()-1].tick);
+            if(a.hashes.length()) last = max(last, a.hashes[a.hashes.length()-1].tick);
+            if(a.splices.length()) last = max(last, a.splices[a.splices.length()-1].tick);
+            if(a.raw.length()) last = max(last, a.raw[a.raw.length()-1].tick);
+            return last / segmentticks(a);
+        }
+
+        // The next segment. Besides every REPLAYHASHSTEP-th hash it keeps the hash of endtick,
+        // the attempt's last tick (-1 while the attempt goes on).
+        void writesegment(int endtick)
+        {
+            const inputattempt &a = *data;
+            int segticks = segmentticks(a), lo = seg*segticks, hi = lo + segticks;
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
             int n = 0;
             while(ev + n < a.events.length() && a.events[ev + n].tick < hi) n++;
-            p.setsize(0);
             w.var(lo);
             w.var(hi - lo);
             writeevents(w, a.events.getbuf() + ev, n, lo);
@@ -322,11 +380,11 @@ namespace game
                 out.add("rAWI", p, true);
             }
 
-            n = 0;
-            while(hs + n < hashes.length() && hashes[hs + n]->tick < hi) n++;
+            vector<const tickhash *> hashes;
+            for(; hs < a.hashes.length() && a.hashes[hs].tick < hi; hs++)
+                if(a.hashes[hs].tick % REPLAYHASHSTEP == 0 || a.hashes[hs].tick == endtick) hashes.add(&a.hashes[hs]);
             p.setsize(0);
-            writehashes(w, hashes.getbuf() + hs, n, lo, a.hashgroups);
-            hs += n;
+            writehashes(w, hashes.getbuf(), hashes.length(), lo, a.hashgroups);
             out.add("HASH", p);
 
             n = 0;
@@ -380,9 +438,31 @@ namespace game
                 out.add("tIME", p, true);
             }
             out.endsegment(hi);
+            seg++;
         }
-        return true;
-    }
+
+        void trailer(const inputrun &run, const replayinfo &info)
+        {
+            loopv(run.attempts) writetrace(out, i, *run.attempts[i]);
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.u8(info.finished ? 1 : 0);
+            w.u8(info.started < 0 ? 2 : info.started ? 1 : 0);
+            w.var(info.ticks);
+            w.var(info.runtime);
+            w.var(info.splices);
+            w.var(run.attempts.length());
+            loopv(run.attempts) w.var(run.attempts[i]->ticks);
+            out.add("RSLT", p);
+
+            vector<runchunk *> made;
+            if(info.live) tellsencode(run, info, made);
+            const vector<runchunk *> &tells = info.live ? made : run.tells;
+            loopv(tells) out.add(tells[i]->type, tells[i]->data);
+            made.deletecontents();
+            out.finish();
+        }
+    };
 
     static void writetrace(sbr2::writer &out, int index, const inputattempt &a)
     {
@@ -409,57 +489,28 @@ namespace game
         out.add("gHST", p, true);
     }
 
-    // The file's bytes. Everything before the segments is known when the run starts and every
-    // segment is final once closed, so the bytes written with maxsegments = n (no trailer, no
-    // END) are the first bytes of the whole file: what a live stream has sent after n segments.
-    static void buildsbr2(sbr2::writer &out, const inputrun &run, const replayinfo &info, int maxsegments = -1)
+    // The whole file, or with maxsegments = n only its first n segments (no trailer, no END).
+    static void buildsbr2(sbr2stream &s, const inputrun &run, const replayinfo &info, int maxsegments = -1)
     {
-        vector<uchar> p;
-        sbr2::byteswriter w(p);
-        w.var(7);
-        kvkey(w, "client", sbr2::VALUE_STR); w.str(info.client);
-        kvkey(w, "date", sbr2::VALUE_VAR); w.var(info.date);
-        kvkey(w, "flagrun", sbr2::VALUE_VAR); w.var(info.flagrun);
-        kvkey(w, "map", sbr2::VALUE_STR); utf8str(w, run.attempts.length() ? run.attempts[0]->map : "");
-        kvkey(w, "mode", sbr2::VALUE_SVAR); w.svar(info.mode);
-        kvkey(w, "player", sbr2::VALUE_STR); utf8str(w, info.player);
-        kvkey(w, "race", sbr2::VALUE_VAR); w.var(info.race);
-        out.add("META", p);
-
-        vector<const char *> binds;
+        s.meta(run, info);
         loopv(run.attempts)
         {
             const inputattempt &a = *run.attempts[i];
-            vector<const mapdatafile *> files;
-            loopvj(a.files) if(datafileindex(files, a.files[j]) < 0) files.add(&a.files[j]);
-            writedata(out, info.simversion, files);
-            if(!writeattempt(out, i, a, files, binds, maxsegments)) return;
+            s.beginattempt(i, a, a, info.simversion);
+            for(int last = s.lastsegment(); s.seg <= last; )
+            {
+                if(maxsegments >= 0 && s.out.segments >= maxsegments) return;
+                s.writesegment(a.ticks);
+            }
         }
-        if(maxsegments >= 0) return;
-
-        loopv(run.attempts) writetrace(out, i, *run.attempts[i]);
-        p.setsize(0);
-        w.u8(info.finished ? 1 : 0);
-        w.u8(info.started < 0 ? 2 : info.started ? 1 : 0);
-        w.var(info.ticks);
-        w.var(info.runtime);
-        w.var(info.splices);
-        w.var(run.attempts.length());
-        loopv(run.attempts) w.var(run.attempts[i]->ticks);
-        out.add("RSLT", p);
-
-        vector<runchunk *> made;
-        if(info.live) tellsencode(run, info, made);
-        const vector<runchunk *> &tells = info.live ? made : run.tells;
-        loopv(tells) out.add(tells[i]->type, tells[i]->data);
-        made.deletecontents();
-        out.finish();
+        if(maxsegments < 0) s.trailer(run, info);
     }
 
     static bool writesbr2(const char *file, const inputrun &run, const replayinfo &info, uchar *content = NULL)
     {
-        sbr2::writer out;
-        buildsbr2(out, run, info);
+        sbr2stream s;
+        buildsbr2(s, run, info);
+        const sbr2::writer &out = s.out;
         if(content) memcpy(content, out.content, sbr2::HASHSIZE);
 
         stream *f = openrawfile(path(file, true), "wb");
@@ -1178,22 +1229,37 @@ namespace game
         replayinfo info;
         if(!readreplay(file, &run, info) || run.empty()) { conoutf(CON_ERROR, "STREAMCHECK %s: could not read", file); return false; }
         info.live = false;
-        sbr2::writer whole;
-        buildsbr2(whole, run, info);
+        sbr2stream wholestream;
+        buildsbr2(wholestream, run, info);
+        const sbr2::writer &whole = wholestream.out;
         int segments = whole.segments, bad = -1;
         for(int n = 0; n <= segments && bad < 0; n++)
         {
-            sbr2::writer part;
-            buildsbr2(part, run, info, n);
+            sbr2stream partstream;
+            buildsbr2(partstream, run, info, n);
+            const sbr2::writer &part = partstream.out;
             if(part.segments != n || part.out.length() > whole.out.length() || memcmp(part.out.getbuf(), whole.out.getbuf(), part.out.length())) bad = n;
         }
         if(bad >= 0) { conoutf(CON_ERROR, "STREAMCHECK %s: FAIL prefix after %d segments differs", file, bad); return false; }
+        if(info.version == sbr2::VERSION)
+        {
+            stream *in = openrawfile(path(file, true), "rb");
+            vector<uchar> orig;
+            if(in) { uchar chunk[65536]; for(size_t n; (n = in->read(chunk, sizeof(chunk))) > 0;) orig.put(chunk, int(n)); delete in; }
+            int len = whole.out.length();
+            if(orig.length() < len || memcmp(orig.getbuf(), whole.out.getbuf(), len))
+            {
+                conoutf(CON_ERROR, "STREAMCHECK %s: FAIL rewriting a current-version file changed its bytes", file);
+                return false;
+            }
+        }
         inputrun again;
         replayinfo againinfo;
         if(!readsbr2(file, whole.out, &again, againinfo)) { conoutf(CON_ERROR, "STREAMCHECK %s: FAIL rewritten file does not read", file); return false; }
         againinfo.live = false;
-        sbr2::writer twice;
-        buildsbr2(twice, again, againinfo);
+        sbr2stream twicestream;
+        buildsbr2(twicestream, again, againinfo);
+        const sbr2::writer &twice = twicestream.out;
         if(twice.out.length() != whole.out.length() || memcmp(twice.out.getbuf(), whole.out.getbuf(), whole.out.length()))
         {
             conoutf(CON_ERROR, "STREAMCHECK %s: FAIL read back and rewritten, the bytes differ", file);
