@@ -103,9 +103,12 @@ namespace game
 
     static const char *kindormode(const char *kind, int mode) { return kind[0] ? kind : server::modename(mode, "?"); }
 
-    // loads a lobby's map with the rules its host plays it under
+    static bool onlobbymap(const hublobby &l) { return !strcmp(l.map, clientmap) && l.mode == gamemode; }
+
+    // loads a lobby's map with the rules its host plays it under, unless it is already loaded
     static void loadlobbymap(const hublobby &l)
     {
+        if(onlobbymap(l)) return;
         server::forcenextflagrun(!strcmp(l.kind, "flagrun") ? 1 : 0);
         server::forcenextracerules(!strcmp(l.kind, "race") ? 1 : 0);
         changemap(l.map, l.mode);
@@ -150,7 +153,7 @@ namespace game
         hublobby *l = mylobby();
         const char *kind = runkind();
         if(!kind[0]) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
-        bool same = l && !strcmp(l->map, clientmap) && l->mode == gamemode && !strcmp(l->kind, kind);
+        bool same = l && onlobbymap(*l) && (l->host != hubmyid || !strcmp(l->kind, kind));
         if(same) return;
         if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, clientmap, gamemode);
         else mapmessage(HM_LOBBYCREATE, clientmap, gamemode);
@@ -160,7 +163,8 @@ namespace game
     {
         bool mine = hasmember(now, hubmyid);
         if(!mine || now.host == hubmyid) return;
-        if(wasmine && !strcmp(before.map, now.map) && before.mode == now.mode && !strcmp(before.kind, now.kind)) return;
+        if(wasmine && !strcmp(before.map, now.map) && before.mode == now.mode) return;
+        if(onlobbymap(now)) return;
         if(!now.map[0]) return;
         bool running = false;
         runtimerticks(running);
@@ -176,7 +180,7 @@ namespace game
         if(running) lastrunning = totalmillis;
         if(!followpending) return;
         hublobby *l = mylobby();
-        if(!l || l->host == hubmyid || !l->map[0] || remote || (!strcmp(l->map, clientmap) && l->mode == gamemode && !strcmp(l->kind, runkind()))) { followpending = false; return; }
+        if(!l || l->host == hubmyid || !l->map[0] || remote || onlobbymap(*l)) { followpending = false; return; }
         if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
         followpending = false;
         conoutf("\f2following %s to %s (%s)", playername(l->host), l->map, kindormode(l->kind, l->mode));
