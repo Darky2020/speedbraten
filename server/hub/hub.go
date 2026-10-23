@@ -25,7 +25,7 @@ import (
 var (
 	MaxConnsPerAddr      = 4
 	MaxNewInstallsPerDay = 5
-	MaxLobbies           = 200
+	MaxLobbies           = 1000
 	MaxLobbyMembers      = 32
 	MaxChat              = 200
 	OutQueue             = 512

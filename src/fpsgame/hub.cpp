@@ -38,6 +38,9 @@ namespace game
     static bool hubasking = false, hubchecking = false, hubkeychanged = false, hubwelcomed = false, hubreported = false;
     static uchar hubnewkey[32];
 
+    static bool autolobbydue = true;
+    static uint playalonglobby = 0;
+
     static bool hasmember(const hublobby &l, uint id) { loopv(l.members) if(l.members[i] == id) return true; return false; }
     static hubplayer *findplayer(uint id) { loopv(hubplayers) if(hubplayers[i].id == id) return &hubplayers[i]; return NULL; }
     static hublobby *findlobby(uint id) { loopv(hublobbies) if(hublobbies[i].id == id) return &hublobbies[i]; return NULL; }
@@ -52,6 +55,8 @@ namespace game
         hubmyname[0] = hubaskedname[0] = hubsentmap[0] = hubrefusal[0] = '\0';
         hubsentstate = -1;
         hubwelcomed = false;
+        autolobbydue = true;
+        playalonglobby = 0;
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -95,6 +100,7 @@ namespace game
         hubsentstate = state;
         hubsentmode = mode;
         copystring(hubsentmap, clientmap);
+        autolobbydue = true;
     }
 
     static void mapmessage(int type, const char *map, int mode)
@@ -104,6 +110,22 @@ namespace game
         puttext(w, map);
         w.svar(mode);
         hubsend(type, p.getbuf(), p.length());
+    }
+
+    // A race, flagrun or campaign map opens a lobby with the player as host, or moves the
+    // player's lobby to it; loading something else leaves the lobby. Playing the map of the
+    // lobby one follows keeps following it.
+    static void autolobby()
+    {
+        if(!autolobbydue || !hubmyname[0]) return;
+        autolobbydue = false;
+        hublobby *l = mylobby();
+        bool runmap = clientmap[0] && (m_sp || flagrunrules() || racerules());
+        if(!runmap) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
+        bool same = l && !strcmp(l->map, clientmap) && l->mode == gamemode;
+        if(same) return;
+        if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, clientmap, gamemode);
+        else mapmessage(HM_LOBBYCREATE, clientmap, gamemode);
     }
 
     static void lobbychanged(const hublobby &before, const hublobby &now, bool wasmine)
@@ -138,7 +160,7 @@ namespace game
                     if(!r.ok) break;
                     hubmyid = id;
                     copystring(hubrefusal, why);
-                    if(strcmp(name, hubmyname) && name[0]) conoutf("\f0hub: you are %s", name);
+                    if(strcmp(name, hubmyname) && name[0]) { conoutf("\f0hub: you are %s", name); autolobbydue = true; }
                     copystring(hubmyname, name);
                     if(why[0]) conoutf(CON_ERROR, "hub: %s", why);
                     else if(!name[0]) conoutf(CON_ERROR, "hub: pick a name to chat and join lobbies");
@@ -188,7 +210,12 @@ namespace game
                     if(!r.ok) break;
                     hublobby *old = findlobby(l.id);
                     bool wasmine = old && hasmember(*old, hubmyid);
-                    if(hubwelcomed) lobbychanged(old ? *old : l, l, wasmine);
+                    if(hubwelcomed && playalonglobby != l.id) lobbychanged(old ? *old : l, l, wasmine);
+                    if(playalonglobby == l.id && hasmember(l, hubmyid))
+                    {
+                        playalonglobby = 0;
+                        if(l.map[0] && !remote) changemap(l.map, l.mode);
+                    }
                     if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); }
                     else
                     {
@@ -213,7 +240,7 @@ namespace game
                     char text[1024] = "";
                     gettext(r, text, sizeof(text));
                     if(!r.ok) break;
-                    conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : "hub", name, text);
+                    conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : "global", name, text);
                     break;
                 }
                 case HM_NOTICE:
@@ -302,6 +329,7 @@ namespace game
                 hubsendtext(HM_SETNAME, player1->name);
             }
             sendstatus();
+            autolobby();
         }
     }
 
@@ -316,11 +344,12 @@ namespace game
         hubsend(HM_CHAT, p.getbuf(), p.length());
     }
 
-    // say, away from a game server: to the lobby if in one, else to everyone on the hub
+    // say, away from a game server: to the lobby when others are in it, else to everyone
     bool hubchat(const char *text)
     {
         if(!hubready() || !hubmyname[0]) return false;
-        sendchat(mylobby() ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
+        hublobby *l = mylobby();
+        sendchat(l && l->members.length() > 1 ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
         return true;
     }
 
@@ -384,6 +413,8 @@ namespace game
         else if(!strcmp(field, "mode")) result(server::modename(p->mode, ""));
         else if(!strcmp(field, "lobby")) intret(int(p->lobby));
         else if(!strcmp(field, "playing")) intret(p->state != HUBSTATE_MENU ? 1 : 0);
+        else if(!strcmp(field, "lobbysize")) { hublobby *l = findlobby(p->lobby); intret(l ? l->members.length() : 0); }
+        else if(!strcmp(field, "following")) { hublobby *l = findlobby(p->lobby); result(l && l->host != p->id ? playername(l->host) : ""); }
         else result("");
     });
     ICOMMAND(hublobbies, "", (),
@@ -434,6 +465,19 @@ namespace game
         sbr2::byteswriter w(p);
         w.var(uint(*id));
         hubsend(HM_LOBBYJOIN, p.getbuf(), p.length());
+    });
+    // join the lobby the player is in and load its map
+    ICOMMAND(hubplayalong, "i", (int *id),
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        if(remote) { conoutf(CON_ERROR, "leave the game server first"); return; }
+        hubplayer *p = findplayer(uint(*id));
+        if(!p || !p->lobby) { conoutf(CON_ERROR, "that player isn't playing a map"); return; }
+        playalonglobby = p->lobby;
+        vector<uchar> b;
+        sbr2::byteswriter w(b);
+        w.var(p->lobby);
+        hubsend(HM_LOBBYJOIN, b.getbuf(), b.length());
     });
     ICOMMAND(hubleave, "", (), { if(hubready()) hubsend(HM_LOBBYLEAVE, NULL, 0); });
     // the host: make the map being played the lobby's map
