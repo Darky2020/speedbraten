@@ -62,15 +62,15 @@ jobs:
       - uses: actions/cache@v4
         id: data
         with:
-          path: resimdata-v1.tar.gz
-          key: resimdata-v1
+          path: resimdata-v3.tar.gz
+          key: resimdata-v3
       - name: download game data
         if: steps.data.outputs.cache-hit != 'true'
-        run: curl -fsSL -o resimdata-v1.tar.gz https://github.com/Darky2020/speedbraten/releases/download/resimdata-v1/resimdata-v1.tar.gz
+        run: curl -fsSL -o resimdata-v3.tar.gz https://github.com/Darky2020/speedbraten/releases/download/resimdata-v3/resimdata-v3.tar.gz
       - name: unpack game data
         run: |
-          echo "cee4c89fe19a16e0bbd574e1385c1044a08a4f21b03ff0aea66c18559a09a85c  resimdata-v1.tar.gz" | (sha256sum -c - || shasum -a 256 -c -)
-          tar xzf resimdata-v1.tar.gz
+          echo "ac12942774fc4b7a594ef7de9c3c94318fe7405e8366ced422dd6ad696bb4b79  resimdata-v3.tar.gz" | (sha256sum -c - || shasum -a 256 -c -)
+          tar xzf resimdata-v3.tar.gz
       - name: noise self-test
         run: |
           chmod +x bin/sauer_resim-* || true

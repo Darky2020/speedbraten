@@ -1346,11 +1346,56 @@ bool canloadsurface(const char *name)
     return true;
 }
 
+#ifdef HEADLESS
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#define STBI_NO_LINEAR
+#define STBI_NO_HDR
+#define STBI_NO_SIMD
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_TGA
+#define STBI_ONLY_BMP
+#include "stb_image.h"
+
+static int stbread(void *f, char *data, int size) { return int(((stream *)f)->read(data, size)); }
+static void stbskip(void *f, int n) { ((stream *)f)->seek(n, SEEK_CUR); }
+static int stbeof(void *f) { return ((stream *)f)->end(); }
+static const stbi_io_callbacks stbstream = { stbread, stbskip, stbeof };
+
+// Only the alpha of textures that rays test (loadalphamask) affects gameplay, so images are
+// decoded only while that is being built; any other image is a 1x1 placeholder with the
+// image's channel layout, which decides Texture::ALPHA as the real image would.
+static bool decodeimages = false;
+
+static SDL_Surface *headlesssurface(const char *name)
+{
+    stream *f = openfile(name, "rb");
+    if(!f) return NULL;
+    int w = 0, h = 0, comp = 0;
+    bool ok = stbi_info_from_callbacks(&stbstream, f, &w, &h, &comp) != 0;
+    delete f;
+    if(!ok) return NULL;
+    int bpp = comp == 2 || comp == 4 ? 4 : 3;
+    if(!decodeimages)
+        return fixsurfaceformat(bpp == 4 ? SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 32, RGBAMASKS) : SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 24, RGBMASKS));
+    f = openfile(name, "rb");
+    if(!f) return NULL;
+    int n = 0;
+    uchar *data = stbi_load_from_callbacks(&stbstream, f, &w, &h, &n, bpp);
+    delete f;
+    if(!data) return NULL;
+    SDL_Surface *s = bpp == 4 ? SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 32, RGBAMASKS) : SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 24, RGBMASKS);
+    if(s) loopi(h) memcpy((uchar *)s->pixels + i*s->pitch, data + i*w*bpp, w*bpp);
+    stbi_image_free(data);
+    return fixsurfaceformat(s);
+}
+#endif
+
 SDL_Surface *loadsurface(const char *name)
 {
 #ifdef HEADLESS
-    // images are never shown; a 1x1 placeholder keeps every texture path working
-    return fixsurfaceformat(SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 24, 0x0000FF, 0x00FF00, 0xFF0000, 0));
+    return headlesssurface(name);
 #endif
     SDL_Surface *s = NULL;
     stream *z = openzipfile(name, "rb");
@@ -1542,7 +1587,16 @@ uchar *loadalphamask(Texture *t)
     if(t->alphamask) return t->alphamask;
     if(!(t->type&Texture::ALPHA)) return NULL;
     ImageData s;
+#ifdef HEADLESS
+    decodeimages = true;
+    bool loaded = texturedata(s, t->name, NULL, false);
+    decodeimages = false;
+    if(!loaded || !s.data || s.compressed) return NULL;
+    t->xs = s.w;
+    t->ys = s.h;
+#else
     if(!texturedata(s, t->name, NULL, false) || !s.data || s.compressed) return NULL;
+#endif
     t->alphamask = new uchar[s.h * ((s.w+7)/8)];
     uchar *srcrow = s.data, *dst = t->alphamask-1;
     loop(y, s.h)

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage: resimdata.sh <game dir> <out.tar.gz> <map>...
 # Packs the game data sauer_resim needs to re-simulate replays on the given maps: data/, every
-# file under packages/ except images, sounds and maps, plus packages/base/<map>.* for each
-# map. sauer_resim never decodes images or plays sounds, so those are left out.
+# file under packages/ except sounds, maps and the images of world textures, plus
+# packages/base/<map>.* for each map. sauer_resim plays no sounds and reads only the images of
+# models (rays pass through their see-through parts) and notexture.png, so the rest are left out.
 # <game dir> is the folder holding data/ and packages/ (on macOS:
 # /Applications/Sauerbraten.app/Contents/Resources).
 # Env: OVERLAY=<home dir> layers that home's packages/ on top, the same way the game prefers
@@ -18,7 +19,7 @@ mkdir -p "$root/packages/base"
 cp -R "$src/data" "$root/"
 copypackages() {
     ( cd "$1" && find packages -type f \
-        ! -iname '*.png' ! -iname '*.jpg' ! -iname '*.jpeg' ! -iname '*.tga' ! -iname '*.dds' ! -iname '*.bmp' \
+        \( -path 'packages/models/*' -o -path 'packages/textures/notexture.png' -o \( ! -iname '*.png' ! -iname '*.jpg' ! -iname '*.jpeg' ! -iname '*.tga' ! -iname '*.dds' ! -iname '*.bmp' \) \) \
         ! -iname '*.ogg' ! -iname '*.wav' ! -iname '*.ogz' ! -iname '*.bak' ! -iname '*.orig' ! -path 'packages/base/*' -print0 \
         | while IFS= read -r -d '' f; do mkdir -p "$root/$(dirname "$f")"; cp "$f" "$root/$f"; done )
 }
