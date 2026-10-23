@@ -134,6 +134,14 @@ namespace game
         if(!mine || now.host == hubmyid) return;
         if(wasmine && !strcmp(before.map, now.map) && before.mode == now.mode) return;
         if(!now.map[0]) return;
+        bool running = false;
+        runtimerticks(running);
+        if(!running && !remote)
+        {
+            conoutf("\f2following %s to %s (%s)", playername(now.host), now.map, server::modename(now.mode, "?"));
+            changemap(now.map, now.mode);
+            return;
+        }
         conoutf("\f2%s picked %s (%s): \f0/hubgo\f2 or the hub tab to play it", playername(now.host), now.map, server::modename(now.mode, "?"));
     }
 
