@@ -60,6 +60,7 @@ namespace witness
     enum { AFKTICKS = 6000 };
     // the input event type of a setting change (INPUT_SETTING in fpsgame/game.h), which isn't the player's doing
     enum { EVENT_SETTING = 6 };
+    enum { EVENT_CONTROLS = 0 }; // INPUT_CONTROLS
 
     static uchar channelkey[noise::KEYLEN], signingseed[32];
     static string datadir = "", resimexe = "", resimdata = "", resimoverrides = "";
@@ -124,11 +125,94 @@ namespace witness
             "CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY, session INTEGER, runid INTEGER, installkey TEXT, kind INTEGER, starttick INTEGER, started INTEGER, "
             "file TEXT, bytes INTEGER DEFAULT 0, segments INTEGER DEFAULT 0, content TEXT, finished INTEGER DEFAULT 0, violations INTEGER DEFAULT 0, maxlagms INTEGER DEFAULT 0, "
             "seedsok INTEGER DEFAULT 1, stop TEXT, refused TEXT, ended INTEGER);"
-            "CREATE TABLE IF NOT EXISTS signatures(run INTEGER, scope INTEGER, segment INTEGER, recvus INTEGER, payload BLOB);") &&
-            addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT") && addcolumn("runs", "judged INTEGER") && addcolumn("runs", "follows INTEGER");
+            "CREATE TABLE IF NOT EXISTS signatures(run INTEGER, scope INTEGER, segment INTEGER, recvus INTEGER, payload BLOB);"
+            "CREATE TABLE IF NOT EXISTS prints(hash INTEGER, run INTEGER);"
+            "CREATE INDEX IF NOT EXISTS prints_hash ON prints(hash);"
+            "CREATE INDEX IF NOT EXISTS prints_run ON prints(run);"
+            "CREATE TABLE IF NOT EXISTS flags(id INTEGER PRIMARY KEY, run INTEGER, kind TEXT, other INTEGER, matched INTEGER, total INTEGER, created INTEGER, reviewed INTEGER DEFAULT 0, note TEXT);") &&
+            addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT") && addcolumn("runs", "judged INTEGER") && addcolumn("runs", "follows INTEGER") &&
+            addcolumn("runs", "map TEXT") && addcolumn("runs", "player TEXT");
     }
 
     static vector<long long> resimqueue;
+
+    // Copy detection: a run's aim fingerprints are hashes of every 8 consecutive aim changes
+    // (yaw and pitch float bits, without ticks). Human aim doesn't repeat bit for bit, so a run
+    // that shares most of its fingerprints with an earlier run of another install is flagged
+    // for review (table flags). Unchanged aim, like a map's spawn direction, gives none.
+    enum { PRINTLEN = 8, PRINTMIN = 8 };
+    struct aimtrail
+    {
+        uint aim[2*PRINTLEN];
+        int count;
+        bool have;
+        aimtrail() : count(0), have(false) {}
+    };
+
+    static void aimprints(sbr2::bytesreader &b, aimtrail &t, vector<unsigned long long> &out, int &lo, vector<int> *ticks = NULL, vector<int> *types = NULL)
+    {
+        lo = int(b.var());
+        b.var();
+        int n = int(b.var()), tick = lo;
+        if(!b.ok || n < 0 || n > b.left()) { b.ok = false; return; }
+        vector<int> t1, ty;
+        loopi(n) { tick += int(b.var()); t1.add(tick); }
+        loopi(n) ty.add(b.u8());
+        loopi(n) b.u8();
+        vector<uint> yaws, pitches;
+        uint yaw = 0, pitch = 0;
+        loopi(n) if(ty[i] == EVENT_CONTROLS) { yaw += uint(int(b.svar())); yaws.add(yaw); }
+        loopi(n) if(ty[i] == EVENT_CONTROLS) { pitch += uint(int(b.svar())); pitches.add(pitch); }
+        if(ticks) *ticks = t1;
+        if(types) *types = ty;
+        if(!b.ok) return;
+        loopv(yaws)
+        {
+            if(t.have && t.aim[2*((t.count+PRINTLEN-1)%PRINTLEN)] == yaws[i] && t.aim[2*((t.count+PRINTLEN-1)%PRINTLEN)+1] == pitches[i]) continue;
+            t.have = true;
+            t.aim[2*(t.count%PRINTLEN)] = yaws[i];
+            t.aim[2*(t.count%PRINTLEN)+1] = pitches[i];
+            t.count++;
+            if(t.count < PRINTLEN) continue;
+            unsigned long long h = 14695981039346656037ULL;
+            loopj(PRINTLEN) loopk(2)
+            {
+                uint v = t.aim[2*((t.count+j)%PRINTLEN)+k];
+                loopl(4) { h ^= (v >> (8*l)) & 0xFF; h *= 1099511628211ULL; }
+            }
+            out.add(h);
+        }
+    }
+
+    static void storeprints(long long row, const vector<unsigned long long> &prints)
+    {
+        if(prints.empty()) return;
+        sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, "INSERT INTO prints(hash, run) VALUES(?, ?)", -1, &st, NULL) == SQLITE_OK)
+        {
+            loopv(prints)
+            {
+                sqlite3_bind_int64(st, 1, (long long)prints[i]);
+                sqlite3_bind_int64(st, 2, row);
+                sqlite3_step(st);
+                sqlite3_reset(st);
+            }
+            sqlite3_finalize(st);
+        }
+        sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+    }
+
+    static void checkcopy(long long row);
+
+    // the map and the player's name, for the review dashboard
+    static void noteheader(long long row, const vector<uchar> &meta)
+    {
+        string map = "", player = "";
+        sbr2::kvfind(meta, "map", NULL, map, sizeof(map));
+        sbr2::kvfind(meta, "player", NULL, player, sizeof(player));
+        run("UPDATE runs SET map = ?, player = ? WHERE id = ?", "ssi", map, player, row);
+    }
 
     struct witnessrun
     {
@@ -148,6 +232,8 @@ namespace witness
         int lastinput; // tick of the player's last input event, or of the attempt's start
         long long follows; // the row of the run this one continues (the next run of a life), -1 if none
         bool ended;        // its END was taken
+        aimtrail trail;
+        vector<unsigned long long> prints; // fingerprints not stored yet
 
         witnessrun() : row(-1), runid(0), kind(0), starttick(0), maxlagms(0), violations(0), inpslo(0), segticks(0), t0(0), seedsok(true), done(false), seenchunks(0), bytes(0), file(NULL), livepid(0), lastinput(0), follows(-1), ended(false) { refused[0] = '\0'; }
         ~witnessrun() { DELETEP(file); }
@@ -300,7 +386,8 @@ namespace witness
     static void handlechunk(client &c, witnessrun &r, const sbr2::chunk &ch)
     {
         sbr2::bytesreader b(ch.data.getbuf(), ch.data.length());
-        if(!memcmp(ch.type, "ATTM", 4))
+        if(!memcmp(ch.type, "META", 4)) noteheader(r.row, ch.data);
+        else if(!memcmp(ch.type, "ATTM", 4))
         {
             string map;
             b.var();
@@ -320,14 +407,15 @@ namespace witness
         }
         else if(!memcmp(ch.type, "INPS", 4))
         {
-            r.inpslo = int(b.var());
-            r.segticks = int(b.var());
+            sbr2::bytesreader head(ch.data.getbuf(), ch.data.length());
+            r.inpslo = int(head.var());
+            r.segticks = int(head.var());
             // a new segment shows the run was still played at its first tick
             if(r.inpslo - r.lastinput > AFKTICKS) { stoprun(c, r, "no input for 30 seconds"); return; }
-            int n = int(b.var()), tick = r.inpslo;
-            vector<int> ticks;
-            loopi(n) { tick += int(b.var()); ticks.add(tick); }
-            loopi(n) if(b.u8() != EVENT_SETTING && b.ok) r.lastinput = max(r.lastinput, ticks[i]);
+            vector<int> ticks, types;
+            int lo = 0;
+            aimprints(b, r.trail, r.prints, lo, &ticks, &types);
+            loopv(ticks) if(i < types.length() && types[i] != EVENT_SETTING) r.lastinput = max(r.lastinput, ticks[i]);
         }
         else if(!memcmp(ch.type, "HASH", 4))
         {
@@ -344,6 +432,8 @@ namespace witness
             vector<uchar> none;
             sign(c, r, sbr2::signature::SEGMENT, index, &r.reader.heads[index * sbr2::HASHSIZE], none);
             run("UPDATE runs SET segments = ? WHERE id = ?", "ii", (long long)(index + 1), r.row);
+            storeprints(r.row, r.prints);
+            r.prints.setsize(0);
             livemore(r);
         }
         else if(!memcmp(ch.type, "END ", 4))
@@ -367,6 +457,9 @@ namespace witness
                 DELETEP(r.file);
             }
             conoutf("%s: run %d signed: %d segments, %d bytes, %s, %d violations, max lag %d ms", c.addressname, r.runid, r.reader.segment, r.bytes, r.seedsok ? "witness seeds" : "unknown seed", r.violations, r.maxlagms);
+            storeprints(r.row, r.prints);
+            r.prints.setsize(0);
+            checkcopy(r.row);
             if(r.livepid) liveend(r);
             else if(resimexe[0]) resimqueue.add(r.row);
         }
@@ -577,6 +670,61 @@ namespace witness
         if(found) loopi(columns) { const unsigned char *t = sqlite3_column_text(st, i); copystring(out[i], t ? (const char *)t : ""); }
         sqlite3_finalize(st);
         return found;
+    }
+
+    // after a run ended: does it repeat an earlier run of another install?
+    static void checkcopy(long long row)
+    {
+        sqlite3_stmt *st = NULL;
+        const char *sql =
+            "SELECT p2.run, COUNT(DISTINCT p1.hash), (SELECT COUNT(DISTINCT hash) FROM prints WHERE run = ?1) FROM prints p1 "
+            "JOIN prints p2 ON p2.hash = p1.hash AND p2.run != p1.run JOIN runs r1 ON r1.id = p1.run JOIN runs r2 ON r2.id = p2.run "
+            "WHERE p1.run = ?1 AND r2.installkey != r1.installkey AND r2.started <= r1.started GROUP BY p2.run ORDER BY 2 DESC LIMIT 1";
+        if(sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return;
+        sqlite3_bind_int64(st, 1, row);
+        long long other = -1;
+        int matched = 0, total = 0;
+        if(sqlite3_step(st) == SQLITE_ROW) { other = sqlite3_column_int64(st, 0); matched = sqlite3_column_int(st, 1); total = sqlite3_column_int(st, 2); }
+        sqlite3_finalize(st);
+        if(other < 0 || matched < PRINTMIN || matched*4 < total) return;
+        run("INSERT INTO flags(run, kind, other, matched, total, created) VALUES(?, 'copy', ?, ?, ?, ?)", "iiiii", row, other, (long long)matched, (long long)total, (long long)(nowus()/1000));
+        conoutf("run %lld: its aim matches run %lld (%d of %d fingerprints), flagged for review", row, other, matched, total);
+    }
+
+    // -P: fingerprints and header for runs stored before the witness took them, then the copy check
+    static void backfillprints()
+    {
+        vector<long long> rows;
+        vector<bool> needprints;
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, "SELECT id, id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR id NOT IN (SELECT DISTINCT run FROM prints) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
+        while(sqlite3_step(st) == SQLITE_ROW) { rows.add(sqlite3_column_int64(st, 0)); needprints.add(sqlite3_column_int(st, 1) != 0); }
+        sqlite3_finalize(st);
+        loopv(rows)
+        {
+            string f[1];
+            if(!rowtext("SELECT file FROM runs WHERE id = ?", rows[i], 1, f)) continue;
+            stream *in = openrawfile(f[0], "rb");
+            if(!in) continue;
+            vector<uchar> buf;
+            uchar chunk[65536];
+            for(size_t n; (n = in->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+            delete in;
+            sbr2::streamreader rd;
+            rd.feed(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS);
+            aimtrail t;
+            vector<unsigned long long> prints;
+            loopvj(rd.chunks) if(!memcmp(rd.chunks[j]->type, "META", 4)) { noteheader(rows[i], rd.chunks[j]->data); break; }
+            loopvj(rd.chunks) if(!memcmp(rd.chunks[j]->type, "INPS", 4))
+            {
+                sbr2::bytesreader b(rd.chunks[j]->data.getbuf(), rd.chunks[j]->data.length());
+                int lo = 0;
+                aimprints(b, t, prints, lo);
+            }
+            if(needprints[i]) storeprints(rows[i], prints);
+        }
+        loopv(rows) if(needprints[i]) checkcopy(rows[i]);
+        conoutf("fingerprints and headers for %d earlier runs", rows.length());
     }
 
     static resimjob *findjob(pid_t pid)
@@ -1065,7 +1213,7 @@ int main(int argc, char **argv)
     using namespace witness;
     const char *seedfile = NULL, *keyfile = NULL;
     int port = WITNESSPORT;
-    bool rejudge = false;
+    bool rejudge = false, backfill = false;
     for(int i = 1; i < argc; i++) if(argv[i][0] == '-') switch(argv[i][1])
     {
         case 'd': copystring(datadir, &argv[i][2]); break;
@@ -1077,8 +1225,9 @@ int main(int argc, char **argv)
         case 'o': copystring(resimoverrides, &argv[i][2]); break;
         case 'R': rejudge = true; break;
         case 'j': maxlive = max(atoi(&argv[i][2]), 0); break;
+        case 'P': backfill = true; break;
     }
-    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-j<live re-simulations>] [-R]]");
+    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-j<live re-simulations>] [-R]] [-P]");
     mkdir(datadir, 0700);
     defformatstring(runsdir, "%s/runs", datadir);
     mkdir(runsdir, 0700);
@@ -1088,6 +1237,7 @@ int main(int argc, char **argv)
     if(!opendb()) fatal("could not open %s/witness.db", datadir);
     if(resimexe[0] && !resimdata[0]) fatal("-e needs -r<game data dir> to run sauer_resim in");
     if(datadir[0] != '/') { char cwd[4096]; if(getcwd(cwd, sizeof(cwd))) { defformatstring(abs, "%s/%s", cwd, datadir); copystring(datadir, abs); } }
+    if(backfill) backfillprints();
     if(resimexe[0]) queueunjudged(rejudge);
     signal(SIGPIPE, SIG_IGN);
     if(enet_initialize() < 0) fatal("could not initialise networking");

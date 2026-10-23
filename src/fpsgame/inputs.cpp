@@ -996,7 +996,7 @@ namespace game
     // the live recorder records it (the determinism harness's stand-in for a player)
     static inputrun feedrun;
     static int feedpos = 0, feeduntil = 0;
-    static bool feeding = false;
+    static bool feeding = false, feedseed = false;
     static inputcontrols feedlast;
 
     static void feedevents()
@@ -1022,8 +1022,8 @@ namespace game
     static void feedcontrols() { if(feeding) setcontrols(feedlast); }
 
 #ifndef SPEEDBRATEN_RELEASE
-    // until: the last tick to feed, 0 for the whole replay
-    ICOMMAND(harnessfeed, "si", (char *file, int *until),
+    // until: the last tick to feed, 0 for the whole replay; ownseed: start with the replay's seed
+    ICOMMAND(harnessfeed, "sii", (char *file, int *until, int *ownseed),
     {
         tellsharness();
         replayinfo info;
@@ -1032,6 +1032,7 @@ namespace game
         getcontrols(feedlast);
         feedpos = 0;
         feeduntil = *until;
+        feedseed = *ownseed != 0;
         feeding = true;
         forcesettings(*feedrun.attempts[0]);
         applysettings();
@@ -1099,6 +1100,7 @@ namespace game
         uint seed;
         attemptwitnessed = !fixedgameseed && witnessseed(seed);
         if(attemptwitnessed) { gameseed = seed; seedMT(gameseed); logoutf("game seed: %u (from the witness)", gameseed); }
+        else if(feeding && feedseed && !strcmp(name, feedrun.attempts[0]->map)) { gameseed = feedrun.attempts[0]->seed; seedMT(gameseed); logoutf("game seed: %u (harnessfeed)", gameseed); }
         if(!chained && !recording.empty()) recording.moveto(previous);
         if(!chained) { recording.clear(); runsaved = false; recordingran = false; tellsrunstart(); }
         inputattempt &a = recording.add();
