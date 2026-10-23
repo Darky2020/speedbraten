@@ -1069,6 +1069,43 @@ namespace game
     // set while sauer_resim judges a run for the witness: its earlier verdicts don't count
     static bool ignoreverdicts = false;
 
+    // the trusted key a signature names, or NULL
+    static const uchar *signaturekey(const vector<uchar> &keys, const sbr2::signature &s)
+    {
+        for(int k = 0; k + 32 <= keys.length(); k += 32)
+        {
+            uchar id[8];
+            sbr2::keyid(&keys[k], id);
+            if(!memcmp(id, s.keyid, 8)) return &keys[k];
+        }
+        return NULL;
+    }
+
+    // the latest verdict a trusted witness signed over the file's content, "" without one
+    static void fileverdict(const char *file, const vector<uchar> &keys, char *out, int outlen)
+    {
+        out[0] = '\0';
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) return;
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+        delete f;
+        sbr2::reader rd;
+        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) return;
+        unsigned long long latestus = 0;
+        loopv(rd.chunks)
+        {
+            const sbr2::chunk &c = *rd.chunks[i];
+            sbr2::signature s;
+            if(memcmp(c.type, "sIGN", 4) || !s.read(c.data.getbuf(), c.data.length()) || s.scope != sbr2::signature::VERDICT) continue;
+            const uchar *key = signaturekey(keys, s);
+            if(!key || memcmp(rd.content, s.hash, sbr2::HASHSIZE) || !s.check(key) || s.recvus < latestus) continue;
+            latestus = s.recvus;
+            if(!sbr2::kvfind(s.extras, "verdict", NULL, out, outlen)) copystring(out, "none", outlen);
+        }
+    }
+
     static void verifysignatures(verifier &v, const sbr2::reader &rd, const char *keyfile)
     {
         vector<uchar> keys;
@@ -1086,13 +1123,7 @@ namespace game
             if(ignoreverdicts && s.scope == sbr2::signature::VERDICT) continue;
             const uchar *expected = s.scope != sbr2::signature::SEGMENT ? rd.content :
                                     s.segment < rd.heads.length() / sbr2::HASHSIZE ? &rd.heads[s.segment * sbr2::HASHSIZE] : NULL;
-            const uchar *key = NULL;
-            for(int k = 0; k + 32 <= keys.length(); k += 32)
-            {
-                uchar id[8];
-                sbr2::keyid(&keys[k], id);
-                if(!memcmp(id, s.keyid, 8)) { key = &keys[k]; break; }
-            }
+            const uchar *key = signaturekey(keys, s);
             if(!key) { unknown++; continue; }
             if(!expected || memcmp(expected, s.hash, sbr2::HASHSIZE) || !s.check(key)) { bad++; continue; }
             good++;
@@ -1554,6 +1585,9 @@ namespace game
         livestream() : runid(0), attempts(0), sent(0), lasttick(0), starttick(0), life(false), data(NULL) {}
     };
     static livestream *live = NULL;
+    // the console hears of a lost or unreachable witness once, and again when it is back
+    static bool witnesslost = false, witnessreported = false;
+    static int witnesslaststate = WITNESS_IDLE;
     static int nextrunid = 1, witnessretry = 0;
     static vector<uint> witnessseeds;
     static string witnesstarget = "";
@@ -1585,7 +1619,9 @@ namespace game
                 uint seed = r.u32();
                 witnessseeds.setsize(0);
                 if(r.ok) witnessseeds.add(seed);
-                conoutf("\f0witness connected");
+                if(witnesslost) conoutf("\f0witness connected again");
+                else logoutf("witness connected");
+                witnesslost = false;
                 continue;
             }
             if(type == WM_SEED) { uint seed = r.u32(); if(r.ok) witnessseeds.add(seed); continue; }
@@ -1601,13 +1637,14 @@ namespace game
                 loopv(awaitingsigns) if(awaitingsigns[i].runid == runid)
                 {
                     appendsignature(awaitingsigns[i].file, payload);
-                    if(ok && sig.scope == sbr2::signature::FINAL) conoutf("\f0witness signed %s", awaitingsigns[i].file);
+                    if(ok && sig.scope == sbr2::signature::FINAL) logoutf("witness signed %s", awaitingsigns[i].file);
                     if(ok && sig.scope == sbr2::signature::VERDICT)
                     {
                         string verdict = "", reason = "";
                         sbr2::kvfind(sig.extras, "verdict", NULL, verdict, sizeof(verdict));
                         sbr2::kvfind(sig.extras, "reason", NULL, reason, sizeof(reason));
-                        conoutf(!strcmp(verdict, "valid") ? "\f0witness verdict on %s: %s" : "\f3witness verdict on %s: %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
+                        if(!strcmp(verdict, "valid")) logoutf("witness verdict on %s: valid", awaitingsigns[i].file);
+                        else conoutf(CON_ERROR, "the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
                         awaitingsigns.remove(i);
                     }
                     break;
@@ -1680,6 +1717,14 @@ namespace game
         // with the wrong key the witness can't read message 1 and hangs up
         const char *why = witnesserror();
         bool refused = state == WITNESS_CLOSED && known && !witnesschecking && (!strncmp(why, "handshake refused", 17) || strstr(why, "during the handshake"));
+        if(state == WITNESS_CLOSED && witnesslaststate != WITNESS_CLOSED && witnesstarget[0] && !refused && !witnesschecking)
+        {
+            if(witnesslaststate == WITNESS_OPEN) conoutf(CON_ERROR, "lost the connection to the witness: %s", why);
+            else if(!witnessreported) conoutf(CON_ERROR, "can't reach the witness at %s: %s", addr, why);
+            witnessreported = witnesslost = true;
+        }
+        if(state == WITNESS_OPEN) witnessreported = false;
+        witnesslaststate = state;
         if(witnesstarget[0] && (state == WITNESS_IDLE || state == WITNESS_CLOSED) && (totalmillis - witnessretry >= 0 || refused))
         {
             witnessseeds.setsize(0);
@@ -1947,12 +1992,13 @@ namespace game
     // Replay browser: replayscan caches the headers of all replay files, newest first.
     struct replayentry
     {
-        string file;
+        string file, verdict; // verdict: the latest a trusted witness signed, "" without one
         bool kept, pb, assisted;
         int size;
         replayinfo info;
     };
     static vector<replayentry> replaylist;
+    static vector<uchar> replaylistkeys;
 
     MOD(SVARP, replayfilter, "");
     MOD(VARP, replaysort, 0, 0, 1);
@@ -2031,6 +2077,7 @@ namespace game
             if(replayfilterpb && !e.pb) continue;
             if(replayfilterassisted && e.assisted != (replayfilterassisted == 2)) continue;
             e.kept = kept;
+            fileverdict(e.file, replaylistkeys, e.verdict, sizeof(e.verdict));
             stream *f = openrawfile(path(e.file, true), "rb");
             e.size = f ? int(f->size()) : 0;
             delete f;
@@ -2042,6 +2089,8 @@ namespace game
     ICOMMAND(replayscan, "", (),
     {
         replaylist.setsize(0);
+        replaylistkeys.setsize(0);
+        loadwitnesskeys(NULL, replaylistkeys);
         pbfiles.deletearrays();
         statspbreplays(pbfiles);
         assistedfiles.deletearrays();
@@ -2150,6 +2199,7 @@ namespace game
         else if(!strcmp(field, "kept")) intret(e.kept ? 1 : 0);
         else if(!strcmp(field, "pb")) intret(e.pb ? 1 : 0);
         else if(!strcmp(field, "assisted")) intret(e.assisted ? 1 : 0);
+        else if(!strcmp(field, "verdict")) result(e.verdict);
         else if(!strcmp(field, "outdated")) intret(r.simversion < REPLAYSIMVERSION ? 1 : 0);
         else result("");
     });

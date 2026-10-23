@@ -87,7 +87,7 @@ namespace witnessnet
             state = why[0] ? CLOSED : IDLE;
         }
 
-        void fail(const char *why) { conoutf(CON_ERROR, "witness connection to %s:%d: %s", host, port, why); close(why); }
+        void fail(const char *why) { logoutf("witness connection to %s:%d: %s", host, port, why); close(why); }
 
         bool frame(const vector<uchar> &msg)
         {
