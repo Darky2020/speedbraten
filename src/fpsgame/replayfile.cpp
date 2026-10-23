@@ -1014,18 +1014,24 @@ namespace game
         delete f;
     }
 
+    // set while sauer_resim judges a run for the witness: its earlier verdicts don't count
+    static bool ignoreverdicts = false;
+
     static void verifysignatures(verifier &v, const sbr2::reader &rd, const char *keyfile)
     {
         vector<uchar> keys;
         loadwitnesskeys(keyfile, keys);
         int good = 0, unknown = 0, bad = 0, final = 0, verdicts = 0, rejected = 0, unverified = 0, players = 0;
         uchar player[sbr2::signature::INSTALLKEYID];
+        unsigned long long latestus = 0;
+        string latest = "";
         loopv(rd.chunks)
         {
             const sbr2::chunk &c = *rd.chunks[i];
             if(memcmp(c.type, "sIGN", 4)) continue;
             sbr2::signature s;
             if(!s.read(c.data.getbuf(), c.data.length())) { bad++; continue; }
+            if(ignoreverdicts && s.scope == sbr2::signature::VERDICT) continue;
             const uchar *expected = s.scope != sbr2::signature::SEGMENT ? rd.content :
                                     s.segment < rd.heads.length() / sbr2::HASHSIZE ? &rd.heads[s.segment * sbr2::HASHSIZE] : NULL;
             const uchar *key = NULL;
@@ -1047,18 +1053,22 @@ namespace game
             if(s.scope == sbr2::signature::VERDICT)
             {
                 verdicts++;
-                string verdict = "";
-                if(!sbr2::kvfind(s.extras, "verdict", NULL, verdict, sizeof(verdict))) rejected++;
-                else if(!strcmp(verdict, "unverified")) unverified++;
-                else if(strcmp(verdict, "valid")) rejected++;
+                if(s.recvus >= latestus)
+                {
+                    latestus = s.recvus;
+                    if(!sbr2::kvfind(s.extras, "verdict", NULL, latest, sizeof(latest))) copystring(latest, "none");
+                }
             }
         }
+        // a run judged again carries every verdict; the latest one counts
+        if(verdicts && !strcmp(latest, "unverified")) unverified++;
+        else if(verdicts && strcmp(latest, "valid")) rejected++;
         string who = "no player key";
         if(players > 0) { copystring(who, "player "); sbr2::tohex(player, sizeof(player), &who[7]); }
-        defformatstring(detail, "%d valid (%d final, %d verdict, %d rejected, %d unverified), %d unknown key, %d bad, %d trusted keys, %s",
-            good, final, verdicts, rejected, unverified, unknown, bad, keys.length() / 32, players < 0 ? "signed for different players" : who);
+        defformatstring(detail, "%d valid (%d final, %d verdict%s%s), %d unknown key, %d bad, %d trusted keys, %s",
+            good, final, verdicts, verdicts ? ", latest " : "", verdicts ? latest : "", unknown, bad, keys.length() / 32, players < 0 ? "signed for different players" : who);
         if(bad || rejected || players < 0) v.fail("signatures", detail);
-        else if((!final && !verdicts) || unverified == verdicts && verdicts) v.warn("signatures", detail);
+        else if((!final && !verdicts) || unverified) v.warn("signatures", detail);
         else v.pass("signatures", detail);
     }
 
@@ -1239,7 +1249,10 @@ namespace game
     bool replayrules(const char *file, const char *keys, int &fails, int &warns, int &missing, char *failed)
     {
         verifier v;
-        if(!replayverify(file, keys, v)) return false;
+        ignoreverdicts = true;
+        bool read = replayverify(file, keys, v);
+        ignoreverdicts = false;
+        if(!read) return false;
         fails = v.fails;
         warns = v.warns;
         missing = v.missing;

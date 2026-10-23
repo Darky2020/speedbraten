@@ -1117,6 +1117,24 @@ namespace game
         }
     }
 
+    // The shots that matter to play (projectiles and grenades; gibs and debris are only
+    // drawn), for checking a life's start against a fresh map start.
+    uint lifeshotsdigest()
+    {
+        dethasher h;
+        loopv(projs)
+        {
+            projectile &p = projs[i];
+            h.v(p.o); h.v(p.to); h.v(p.dir); h.f(p.speed); h.i(p.gun); h.i(p.owner == player1);
+        }
+        loopv(bouncers) if(bouncers[i]->bouncetype == BNC_GRENADE)
+        {
+            bouncer &b = *bouncers[i];
+            h.v(b.o); h.v(b.vel); h.i(b.lifetime); h.i(b.owner == player1);
+        }
+        return h.h;
+    }
+
     void hashprojectiles(dethasher &h)
     {
         loopv(projs)

@@ -606,7 +606,8 @@ def main():
         if len(players) > 1:
             print("FAIL: signed for different players")
             sys.exit(1)
-        if any(s == "ok" and "verdict" in w and "verdict valid" not in w and "verdict unverified" not in w for s, w in results):
+        verdicts = [w for s, w in results if s == "ok" and w.startswith("verdict")]
+        if verdicts and not (verdicts[-1].startswith("verdict valid") or verdicts[-1].startswith("verdict unverified")):
             print("FAIL: rejected by the verdict")
             sys.exit(1)
         if any(s == "BAD" for s, _ in results) or not any(s == "ok" for s, _ in results):

@@ -217,14 +217,15 @@ namespace game
 
     // Checks a life's saved start against the state of a fresh map start, which is what a
     // respawn puts the world back to: lifestartfresh() before the saved state is restored,
-    // lifestartcompare() after. Sections that hold only clocks, counters and stats (and the
-    // player, checked field by field) are not compared.
-    static const char * const lifesameSections[] = { "MONS", "MONF", "MOVE", "ENT ", "SHOT", "SCRP", "SPWN", "SETX", "RSPN", "SETN" };
-    extern uint lifeflagsdigest();
+    // lifestartcompare() after. Sections that hold only clocks, counters and stats, the
+    // player's own spawn point (SPWN: a life may start at a custom spawn) and the player
+    // (checked field by field) are not compared byte for byte.
+    static const char * const lifesameSections[] = { "MONS", "MONF", "MOVE", "ENT ", "SCRP", "SETX", "RSPN", "SETN" };
+    extern uint lifeflagsdigest(), lifeshotsdigest();
     extern bool lifemessagesok();
     extern void lifemessagesfresh();
     enum { LIFESAME = sizeof(lifesameSections)/sizeof(lifesameSections[0]) };
-    static uint freshsections[LIFESAME], freshflags;
+    static uint freshsections[LIFESAME], freshflags, freshshots;
     static int freshhealth, freshmaxhealth, fresharmour, fresharmourtype, freshgun, freshammo[NUMGUNS];
 
     static uint sectiondigest(const char *tag)
@@ -244,6 +245,7 @@ namespace game
 
         loopi(LIFESAME) freshsections[i] = sectiondigest(lifesameSections[i]);
         freshflags = lifeflagsdigest();
+        freshshots = lifeshotsdigest();
         lifemessagesfresh();
         fpsent &d = *player1;
         freshhealth = d.health; freshmaxhealth = d.maxhealth; fresharmour = d.armour; fresharmourtype = d.armourtype; freshgun = d.gunselect;
@@ -256,6 +258,7 @@ namespace game
         string diff = "";
         loopi(LIFESAME) if(sectiondigest(lifesameSections[i]) != freshsections[i]) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, lifesameSections[i]); }
         if(lifeflagsdigest() != freshflags) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "flags"); }
+        if(lifeshotsdigest() != freshshots) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "shots"); }
         if(!lifemessagesok()) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "messages"); }
         fpsent &d = *player1;
         bool spawnok = d.state == CS_ALIVE && d.health == freshhealth && d.maxhealth == freshmaxhealth && d.armour == fresharmour &&

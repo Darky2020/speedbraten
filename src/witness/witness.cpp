@@ -12,9 +12,9 @@
 // Sessions, runs, seeds, signatures and verdicts are recorded in witness.db (SQLite).
 //
 //   sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>]
-//                 [-e<sauer_resim> -r<game data dir> [-o<overrides dir>]]
+//                 [-e<sauer_resim> -r<game data dir> [-o<overrides dir>] [-R]]
 //
-// Without -e and -r runs are signed but get no verdict.
+// Without -e and -r runs are signed but get no verdict. -R judges every finished run again.
 //
 // The channel key file holds the X25519 private key in hex; it is created if missing. The
 // signing seed comes from server/cmd/witnesskeys.
@@ -563,6 +563,7 @@ namespace witness
             copystring(reason, timedout ? "re-simulation timed out" : "re-simulation could not play the file");
         }
         else if(atoi(missing) > 0) { verdict = "unverified"; copystring(reason, "a map file is not available"); }
+        else if(strstr(failednames, "data")) { verdict = "rejected"; copystring(reason, "the map files differ from the witness's copies"); }
         else if(strcmp(ok, "true"))
         {
             verdict = "rejected";
@@ -631,10 +632,12 @@ namespace witness
         if(resimqueue.length()) startresim(resimqueue.remove(0));
     }
 
-    static void queueunjudged()
+    // all: every finished run (after a change to the rules), otherwise those without a verdict
+    static void queueunjudged(bool all)
     {
         sqlite3_stmt *st = NULL;
-        if(sqlite3_prepare_v2(db, "SELECT id FROM runs WHERE finished = 1 AND (verdict IS NULL OR verdict = 'unverified') ORDER BY id", -1, &st, NULL) != SQLITE_OK) return;
+        const char *sql = all ? "SELECT id FROM runs WHERE finished = 1 ORDER BY id" : "SELECT id FROM runs WHERE finished = 1 AND (verdict IS NULL OR verdict = 'unverified') ORDER BY id";
+        if(sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return;
         while(sqlite3_step(st) == SQLITE_ROW) resimqueue.add(sqlite3_column_int64(st, 0));
         sqlite3_finalize(st);
         if(resimqueue.length()) conoutf("%d finished runs queued for re-simulation", resimqueue.length());
@@ -758,6 +761,7 @@ int main(int argc, char **argv)
     using namespace witness;
     const char *seedfile = NULL, *keyfile = NULL;
     int port = WITNESSPORT;
+    bool rejudge = false;
     for(int i = 1; i < argc; i++) if(argv[i][0] == '-') switch(argv[i][1])
     {
         case 'd': copystring(datadir, &argv[i][2]); break;
@@ -767,6 +771,7 @@ int main(int argc, char **argv)
         case 'e': copystring(resimexe, &argv[i][2]); break;
         case 'r': copystring(resimdata, &argv[i][2]); break;
         case 'o': copystring(resimoverrides, &argv[i][2]); break;
+        case 'R': rejudge = true; break;
     }
     if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>]");
     mkdir(datadir, 0700);
@@ -778,7 +783,7 @@ int main(int argc, char **argv)
     if(!opendb()) fatal("could not open %s/witness.db", datadir);
     if(resimexe[0] && !resimdata[0]) fatal("-e needs -r<game data dir> to run sauer_resim in");
     if(datadir[0] != '/') { char cwd[4096]; if(getcwd(cwd, sizeof(cwd))) { defformatstring(abs, "%s/%s", cwd, datadir); copystring(datadir, abs); } }
-    if(resimexe[0]) queueunjudged();
+    if(resimexe[0]) queueunjudged(rejudge);
     if(enet_initialize() < 0) fatal("could not initialise networking");
     return serve(port);
 }
