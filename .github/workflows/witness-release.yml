@@ -64,10 +64,10 @@ jobs:
           cat witness.log
           grep -q "witness listening on port 28799" witness.log
           kill $pid
-          echo "resim starts (it needs game data to play, so only its usage)"
-          set +e; $d/sauer_resim > resim.log 2>&1; code=$?; set -e
-          cat resim.log | tail -3
-          [ $code = 2 ] && grep -q "usage: sauer_resim" resim.log
+          echo "resim starts (without game data it stops at the core textures)"
+          set +e; $d/sauer_resim > resim.log 2>&1; set -e
+          tail -3 resim.log
+          grep -q "could not find core textures" resim.log
           echo "witnessdash sets a password"
           echo "a long enough password" | $d/witnessdash setpass pass
           grep -q '^\$2' pass
