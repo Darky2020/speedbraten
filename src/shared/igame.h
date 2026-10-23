@@ -28,6 +28,8 @@ namespace game
 #ifdef HEADLESS
     extern bool resimstart(const char *file);
     extern void resimverify(const char *witnesskey);
+    extern void resimlivemode();
+    extern void resimwait();
     extern bool resimdone();
     extern int resimreport();
 #endif

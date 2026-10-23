@@ -31,6 +31,8 @@ namespace game
     // flagruns and races are judged per life of player1
     bool runtimerperlife() { return runkind == RUNTIMER_FLAG || runkind == RUNTIMER_RACE; }
     bool runtimerliferan() { return liferan; }
+    // tick the current run started at, -1 before it starts
+    int runtimerstarttick() { return runstate >= RUN_RUNNING ? runstart : -1; }
 
     static int runticks()
     {

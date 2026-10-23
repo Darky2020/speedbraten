@@ -51,10 +51,11 @@ namespace game
         int settings[NUMSIMSETTINGS];
         statestart *life; // start of the life the state was taken in, if known
         uint date;
+        bool chained; // where a run of a life starts that goes on from the run before it
 
-        statestart() : tick(-1), branch(-1), life(NULL), date(0) {}
+        statestart() : tick(-1), branch(-1), life(NULL), date(0), chained(false) {}
         bool valid() const { return tick >= 0; }
-        void clear() { state.setsize(0); tick = branch = -1; life = NULL; date = 0; }
+        void clear() { state.setsize(0); tick = branch = -1; life = NULL; date = 0; chained = false; }
     };
 
     // Segmented recordings form a tree: every live load starts a new branch at the loaded
@@ -160,6 +161,7 @@ namespace game
         src.copyto(a);
         a.snapshot = from.state;
         a.starttick = from.tick;
+        a.chained = from.chained;
         if(from.date) a.date = from.date;
         loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
         int n = 0;
@@ -206,6 +208,7 @@ namespace game
         a.ticks = src.ticks;
         a.hashgroups = src.hashgroups;
         a.lifeseeds = src.lifeseeds;
+        a.chained = from.chained;
     }
 
     extern int fixedgameseed;
@@ -215,12 +218,12 @@ namespace game
     static statestart *lifestart;
 
     // streams the current life; the attempt's map files and CRCs are only known from tick 1 on
-    static void witnesslife()
+    static void witnesslife(int continues = -1)
     {
         if(!attemptwitnessed || replaying || recordingoff || !lifestart || recording.attempts.length() != 1) return;
         inputattempt header;
         lifeheader(header, recording.last(), *lifestart);
-        witnessrunstart(header, recording.last(), lifestart->tick, true);
+        witnessrunstart(header, recording.last(), lifestart->tick, true, continues);
     }
 
     // Flagruns and races are judged per life: the replay of a finished run starts at the
@@ -232,7 +235,8 @@ namespace game
     static statestart savedstart;
     static vector<statestart *> lives;
     static const statestart nolife;
-    static bool lifepending = false, lifesaved = false;
+    static bool lifepending = false, lifesaved = false, chainpending = false;
+    static int chainfrom = -1; // the witnessed run the pending chained start goes on from
     static int lifesavedbranch = -1, lifesavedtick = 0; // where the saved replay of this life ends
 
     // Automatic states for segmented runs, taken every autostateinterval ms while recording;
@@ -271,6 +275,7 @@ namespace game
         schar move = d.move, strafe = d.strafe, vertical = d.vertical;
         bool jumping = d.jumping, attacking = d.attacking;
         if(!replaying && !recordingoff) witnessstop("a state was loaded");
+        chainpending = false;
         if(!restorestate(st.state)) return false;
         if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
         // back to the life the state was taken in, which may have ended since
@@ -335,10 +340,36 @@ namespace game
         if(curtick >= 1) witnesslife();
     }
 
+    // After a witnessed run ends in a life that goes on, the life's next run starts at the
+    // following tick: a start taken like a life's, without a spawn or a reseed, which the
+    // witness checks by playing on from where it re-simulated the run before.
+    static void takechainstate()
+    {
+        chainpending = false;
+        statestart *l = new statestart;
+        if(!lifestart || !takesnapshot(l->state)) { delete l; return; }
+        l->tick = curtick;
+        l->branch = curbranch;
+        l->date = uint(time(NULL));
+        l->chained = true;
+        readsettings(l->settings);
+        lives.add(l);
+        lifestart = l;
+        lifesaved = false;
+        witnesslife(chainfrom);
+    }
+
+    // after a chained start, only a run begun since counts
+    static bool liferunstarted()
+    {
+        if(lifestart && lifestart->chained) return runtimerstarttick() > lifestart->tick;
+        return runtimerliferan();
+    }
+
     static bool saveliferun(bool finished, int runtime)
     {
         if(!replaylifeonly || !lifestart || lifesaved || recording.attempts.length() != 1) return false;
-        if(!finished && !runtimerliferan()) return true;
+        if(!finished && !liferunstarted()) return true;
         inputrun run;
         cutattempt(run.add(), recording.last(), *lifestart);
         tellssavinglife(true);
@@ -357,7 +388,7 @@ namespace game
         if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
         lifestart = NULL;
-        lifesaved = false;
+        lifesaved = chainpending = false;
         lifepending = true;
     }
 
@@ -416,6 +447,7 @@ namespace game
     {
         if(replaying || recordingoff || recording.empty()) return;
         if(!saveliferun(true, runtime)) saverunreplay(recording, true, runtime, true);
+        else if(lifesaved && (chainfrom = witnesstakefinished()) >= 0) chainpending = true;
         runsaved = true;
     }
 
@@ -457,6 +489,9 @@ namespace game
         player1->jumping = c.jumping;
         player1->attacking = c.attacking;
     }
+
+    static void feedevents();
+    static void feedcontrols();
 
     // Live keys are ignored while a replay plays, so when it ends the replay's last controls
     // would otherwise keep the player moving or shooting.
@@ -811,9 +846,11 @@ namespace game
         }
         replaystartstate = false;
         if(lifepending) { seedlife(); takelifestate(); }
+        else if(chainpending) takechainstate();
         runstateops();
         snapcycletick();
         takeautostate();
+        if(replaying && replaychainhook && replayattempt == replaydata.attempts.length()-1 && curtick+1 > replaycur().ticks) replaychainhook();
         curtick++;
         tickhash h;
         if(replaying && curtick > replaycur().ticks)
@@ -892,6 +929,7 @@ namespace game
             else witnesslife();
         }
         recordsettingchanges(rec);
+        feedevents();
         while(pending.length())
         {
             inputevent e = pending.remove(0);
@@ -900,6 +938,7 @@ namespace game
             if(curtick != e.tick) { DELETEA(e.cmd); return; }
             rec.events.add(e);
         }
+        feedcontrols();
         readsettings(cursettings);
         inputcontrols c;
         getcontrols(c);
@@ -953,6 +992,52 @@ namespace game
         frameticks++;
     }
 
+    // harnessfeed: plays a replay's input into the next live attempt as if it were typed, so
+    // the live recorder records it (the determinism harness's stand-in for a player)
+    static inputrun feedrun;
+    static int feedpos = 0, feeduntil = 0;
+    static bool feeding = false;
+    static inputcontrols feedlast;
+
+    static void feedevents()
+    {
+        if(!feeding) return;
+        const inputattempt &a = *feedrun.attempts[0];
+        if(strcmp(getclientmap(), a.map)) return;
+        if(curtick == 1) feedpos = 0;
+        while(feedpos < a.events.length() && a.events[feedpos].tick < curtick) feedpos++;
+        for(int i = feedpos; i < a.events.length() && a.events[i].tick == curtick; i++)
+        {
+            const inputevent &e = a.events[i];
+            if(e.type == INPUT_CONTROLS) feedlast = e.controls;
+            else if(e.type == INPUT_JUMP || e.type == INPUT_ATTACK || e.type == INPUT_COMMAND)
+            {
+                inputevent &p = pending.add(e);
+                if(p.cmd) p.cmd = newstring(p.cmd);
+            }
+        }
+        if((feedpos >= a.events.length() && curtick > a.ticks) || (feeduntil > 0 && curtick >= feeduntil)) { feeding = false; conoutf("harnessfeed: done"); }
+    }
+
+    static void feedcontrols() { if(feeding) setcontrols(feedlast); }
+
+#ifndef SPEEDBRATEN_RELEASE
+    // until: the last tick to feed, 0 for the whole replay
+    ICOMMAND(harnessfeed, "si", (char *file, int *until),
+    {
+        tellsharness();
+        replayinfo info;
+        feeding = false;
+        if(!readreplay(file, &feedrun, info) || feedrun.empty()) { conoutf(CON_ERROR, "harnessfeed: could not read %s", file); return; }
+        getcontrols(feedlast);
+        feedpos = 0;
+        feeduntil = *until;
+        feeding = true;
+        forcesettings(*feedrun.attempts[0]);
+        applysettings();
+    });
+#endif
+
     static void seedattempt(const inputattempt &a)
     {
         gameseed = a.seed;
@@ -962,11 +1047,11 @@ namespace game
 
     void inputmapstart(const char *name, int mode)
     {
-        bool chained = mapchained(mode) && !recordingoff;
+        bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
         if(!chained || replaypending) saveunfinishedrun();
         lifestart = NULL;
         lives.deletecontents();
-        lifepending = lifesaved = false;
+        lifepending = lifesaved = chainpending = false;
         autostates.deletecontents();
         autoloadpending = false;
         savedstart.clear();
@@ -992,6 +1077,7 @@ namespace game
         }
         if(replaying)
         {
+            if(chained && replayattempt+1 >= replaydata.attempts.length() && replaywaitattempt) replaywaitattempt();
             if(chained && replayattempt+1 < replaydata.attempts.length() && !strcmp(replaydata.attempts[replayattempt+1]->map, name))
             {
                 replayattempt++;
@@ -1006,7 +1092,9 @@ namespace game
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
-        if(!chained) witnessstop("the map changed");
+        if(chained) {}
+        else if(unstarted) witnessdrop("the map changed");
+        else witnessstop("the map changed");
         seedgame();
         uint seed;
         attemptwitnessed = !fixedgameseed && witnessseed(seed);
@@ -1105,6 +1193,54 @@ namespace game
     }
 
     bool inputreplayactive() { return replaying || replaypending; }
+
+    // A replay whose file is still being written (sauer_resim -L). extend copies in what is
+    // known now; until the file is complete every attempt's length is unbounded. appendonly
+    // leaves the attempts already there alone, for use inside a tick.
+    bool (*replaywaitattempt)() = NULL;
+
+    void inputreplayextend(const inputrun &src, bool complete, bool appendonly)
+    {
+        loopv(src.attempts)
+        {
+            bool known = i < replaydata.attempts.length();
+            inputattempt &a = known ? *replaydata.attempts[i] : replaydata.add();
+            if(!known || !appendonly) src.attempts[i]->copyto(a);
+            a.ticks = complete ? src.attempts[i]->ticks : INT_MAX;
+        }
+    }
+
+    // the replay is about to play a tick of its last known attempt at or after known
+    bool inputreplayneeds(int known)
+    {
+        return replaying && replayattempt == replaydata.attempts.length()-1 && curtick+1 >= known;
+    }
+
+    int inputreplayattempts() { return replaydata.attempts.length(); }
+
+    // Called where a replay of a whole file would end, after its last tick; it may hand
+    // over the next run of the same life with inputreplaycontinue.
+    void (*replaychainhook)() = NULL;
+
+    // Goes on with a run that continues the one just replayed, from the state that replay
+    // left: its events and hashes after the current tick, without its saved start state.
+    bool inputreplaycontinue(const inputrun &src)
+    {
+        if(!replaying || src.attempts.length() != 1) return false;
+        const inputattempt &n = *src.attempts[0];
+        if(strcmp(n.map, replaycur().map) || n.mode != replaycur().mode || n.starttick > curtick) return false;
+        src.copyto(replaydata);
+        replayattempt = 0;
+        const inputattempt &a = replaycur();
+        replaypos = 0;
+        while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick) replaypos++;
+        replayhashpos = 0;
+        replaydesync = replaydesyncgroups = 0;
+        replayedticks = 0;
+        memset(lastreplayhash, 0, sizeof(lastreplayhash));
+        copystring(replaylifecheckresult, "chained");
+        return true;
+    }
     bool inputrecordinglive() { return !replaying && !replaypending && !recordingoff; }
     // the replay file being watched, "" when none or not played from a file
     const char *inputwatchedfile() { return replaying || replaypending ? replayfilename : ""; }

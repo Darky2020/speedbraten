@@ -128,8 +128,9 @@ namespace game
         int mode, flagrun, race, ticks;
         int hashgroups; // groups stored per hash: DETHASH_LEGACYGROUPS in the oldest replays
         bool lifeseeds; // in flagruns and races, every spawn reseeds the RNG (lifeseed())
+        bool chained;   // continues the previous run of the same life from where it ended, without a spawn
 
-        inputattempt() : starttick(0), seed(0), mapcrc(0), date(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS), lifeseeds(false) { map[0] = team[0] = player[0] = '\0'; }
+        inputattempt() : starttick(0), seed(0), mapcrc(0), date(0), cfgcrc(0), hascfgcrc(false), mode(0), flagrun(0), race(0), ticks(0), hashgroups(DETHASH_GROUPS), lifeseeds(false), chained(false) { map[0] = team[0] = player[0] = '\0'; }
         ~inputattempt() { clear(); }
 
         void clear()
@@ -181,6 +182,7 @@ namespace game
             dst.race = race;
             dst.hashgroups = hashgroups;
             dst.lifeseeds = lifeseeds;
+            dst.chained = chained;
             dst.ticks = ticks;
         }
     };
@@ -266,12 +268,15 @@ namespace game
     // online witnessing (replayfile.cpp)
     extern void witnessupdate();
     extern bool witnessseed(uint &seed);
-    extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life);
+    extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life, int continues = -1);
+    extern int witnesstakefinished();
+    extern void witnessdrop(const char *reason);
     extern void witnessnextattempt(const inputattempt &a);
     extern void witnessframe(int curtick);
     extern void witnessstop(const char *reason);
     extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
+    extern bool readreplayprefix(const char *file, inputrun &run, replayinfo &info, int &known);
     // content: the replay's SBR2 content hash (32 bytes), or NULL
     extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content = NULL);
     extern void statsreplaymoved(const char *from, const char *to);
@@ -309,6 +314,12 @@ namespace game
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern bool inputreplayactive();
+    extern bool (*replaywaitattempt)();
+    extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
+    extern bool inputreplayneeds(int known);
+    extern int inputreplayattempts();
+    extern void (*replaychainhook)();
+    extern bool inputreplaycontinue(const inputrun &src);
     extern int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS]);
     extern int runtimerresult(bool &finished);
 }

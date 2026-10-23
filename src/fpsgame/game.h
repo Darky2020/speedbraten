@@ -1034,6 +1034,7 @@ namespace game
     extern bool spawncountdown(char *buf);
     extern bool runtimerperlife();
     extern bool runtimerliferan();
+    extern int runtimerstarttick();
     extern void inputlifespawned();
     extern void runtimerspawned(fpsent *d);
     extern void runtimeredittoggled(bool on);

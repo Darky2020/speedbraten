@@ -1526,6 +1526,7 @@ int main(int argc, char **argv)
             case 'x': initscript = &argv[i][2]; break;
 #ifdef HEADLESS
             case 'V': game::resimverify(&argv[i][2]); break;
+            case 'L': game::resimlivemode(); break;
 #endif
 #ifdef ANTICHEAT
             case 'e': anticheatenabled = 1; break;
@@ -1680,6 +1681,9 @@ int main(int argc, char **argv)
 
     for(;;)
     {
+#ifdef HEADLESS
+        game::resimwait();
+#endif
         static int frames = 0, lastdrawmillis = 0;
         int millis = getclockmillis();
         bool draw = false;

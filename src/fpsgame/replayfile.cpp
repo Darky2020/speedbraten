@@ -37,7 +37,8 @@ namespace game
     //     DATA var sim version, var files, per file: u8 role, str path, var size, BLAKE3
     //     ATTM var index, str map, u32 map crc, u8 has cfg crc, u32 cfg crc, u32 seed, str team,
     //          svar mode, var flagrun, var race, var start tick, var hash groups, var flags (1: every
-    //          spawn in a flagrun or race reseeds the RNG with lifeseed()), var files, var
+    //          spawn in a flagrun or race reseeds the RNG with lifeseed(); 2: the attempt continues
+    //          the previous run of the same life from where it ended), var files, var
     //          index per file into the attempt's DATA, var settings, (str name, svar value) per
     //          setting, var saved state length, saved state
     //     per segment of segmentticks() ticks [lo, hi), by absolute tick:
@@ -303,7 +304,7 @@ namespace game
             w.var(header.race);
             w.var(header.starttick);
             w.var(header.hashgroups);
-            w.var(header.lifeseeds ? 1 : 0);
+            w.var((header.lifeseeds ? 1 : 0) | (header.chained ? 2 : 0));
             w.var(header.files.length());
             loopv(header.files) w.var(datafileindex(files, header.files[i]));
             w.var(header.settings.length());
@@ -580,7 +581,8 @@ namespace game
         a.hashgroups = int(r.var());
         unsigned long long flags = version >= 2 ? r.var() : 0;
         a.lifeseeds = (flags & 1) != 0;
-        if(!r.ok || hascfgcrc > 1 || a.hashgroups < 1 || a.hashgroups > DETHASH_GROUPS || flags > 1) return false;
+        a.chained = (flags & 2) != 0;
+        if(!r.ok || hascfgcrc > 1 || a.hashgroups < 1 || a.hashgroups > DETHASH_GROUPS || flags > 3) return false;
         int n = int(r.var());
         loopi(n)
         {
@@ -819,22 +821,25 @@ namespace game
     // attempt DATA (that map's files), ATTM and segments, with bIND ahead of the segment that
     // first uses a bind; then gHST per attempt, RSLT (with the attempt tick counts) and every
     // tell. With run == NULL the attempts are skipped, but the whole file is still checked.
-    static bool readsbr2(const char *file, const vector<uchar> &buf, inputrun *run, replayinfo &info)
+    // known != NULL reads the front of a version 2 file that is still being written: chunks end
+    // with a segment or an attempt header, and there is no trailer. known is set to the tick up
+    // to which the last attempt can be played: the start of its last closed segment, as a
+    // segment spans a fixed number of ticks and the attempt may end anywhere in its last one
+    // (0 before it has closed one).
+    static bool readsbr2chunks(const char *file, const vector<sbr2::chunk *> &chunks, int version, inputrun *run, replayinfo &info, int *known = NULL)
     {
-        sbr2::reader rd;
-        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
         info = replayinfo();
-        info.version = rd.version;
-        bool v2 = rd.version >= 2;
+        info.version = version;
+        bool v2 = version >= 2;
         if(run) run->clear();
         vector<mapdatafile> files;
         bool meta = false, data = false, result = false, dataforattempt = false;
-        int attempts = 0, lo = 0, hi = 0, nexttick = 0, inpssegment = -1;
+        int attempts = 0, lo = 0, hi = 0, nexttick = 0, inpssegment = -1, lastlo = 0;
         inputattempt *a = NULL;
         vector<const char *> binds;
-        loopv(rd.chunks)
+        loopv(chunks)
         {
-            const sbr2::chunk &c = *rd.chunks[i];
+            const sbr2::chunk &c = *chunks[i];
             sbr2::bytesreader r(c.data.getbuf(), c.data.length());
             bool ok = true, parsed = true;
             if(!memcmp(c.type, "META", 4)) { ok = !meta && i == 0 && readmeta(r, info); meta = true; }
@@ -848,10 +853,10 @@ namespace game
                 ok = data && !result && (!v2 || dataforattempt) && int(r.var()) == attempts;
                 dataforattempt = false;
                 attempts++;
-                nexttick = 0;
+                nexttick = lastlo = 0;
                 inpssegment = -1;
                 a = run ? &run->add() : NULL;
-                if(a && ok) ok = readattempt(r, *a, files, rd.version);
+                if(a && ok) ok = readattempt(r, *a, files, version);
                 else parsed = false;
             }
             else if(!memcmp(c.type, "bIND", 4))
@@ -880,6 +885,7 @@ namespace game
                 {
                     ok = inpssegment != c.segment && readevents(r, *a, lo, hi) && lo >= nexttick;
                     nexttick = hi;
+                    lastlo = lo;
                     inpssegment = c.segment;
                 }
                 else if(!memcmp(c.type, "tIME", 4)) ok = inpssegment == c.segment && readtiming(r, *a, lo / REPLAYSEGMENTTICKS);
@@ -930,6 +936,11 @@ namespace game
                 return false;
             }
         }
+        if(known)
+        {
+            *known = lastlo;
+            return v2 && meta && !result;
+        }
         if(!meta || !data || !result || attempts != info.maps)
         {
             conoutf(CON_ERROR, "replay %s: incomplete", file);
@@ -937,6 +948,44 @@ namespace game
             return false;
         }
         return true;
+    }
+
+    static bool readsbr2(const char *file, const vector<uchar> &buf, inputrun *run, replayinfo &info)
+    {
+        sbr2::reader rd;
+        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
+        return readsbr2chunks(file, rd.chunks, rd.version, run, info);
+    }
+
+    static bool attemptheaderchunk(const sbr2::chunk &c)
+    {
+        return !memcmp(c.type, "DATA", 4) || !memcmp(c.type, "ATTM", 4) || !memcmp(c.type, "bIND", 4);
+    }
+
+    // The front of a file that is still being written, read as far as it is complete: every
+    // closed segment, plus the header of an attempt whose first segment hasn't closed yet.
+    static bool readsbr2prefix(const char *file, const vector<uchar> &buf, inputrun &run, replayinfo &info, int &known)
+    {
+        sbr2::streamreader rd;
+        if(!rd.feed(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
+        int end = 0;
+        loopv(rd.chunks) if(!memcmp(rd.chunks[i]->type, "SEGE", 4)) end = i+1;
+        if(!end) while(end < rd.chunks.length() && (!memcmp(rd.chunks[end]->type, "META", 4) || attemptheaderchunk(*rd.chunks[end]))) end++;
+        else while(end < rd.chunks.length() && attemptheaderchunk(*rd.chunks[end])) end++;
+        vector<sbr2::chunk *> front;
+        loopi(end) front.add(rd.chunks[i]);
+        return readsbr2chunks(file, front, rd.version, &run, info, &known);
+    }
+
+    bool readreplayprefix(const char *file, inputrun &run, replayinfo &info, int &known)
+    {
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) return false;
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+        delete f;
+        return buf.length() >= 4 && !memcmp(buf.getbuf(), "SBR2", 4) && readsbr2prefix(file, buf, run, info, known);
     }
 
     bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content)
@@ -1333,6 +1382,56 @@ namespace game
     }
     ICOMMAND(replaystreamcheck, "ss", (char *file, char *out), intret(replaystreamcheck(file, out) ? 1 : 0));
 
+    static bool sameevent(const inputevent &x, const inputevent &y)
+    {
+        return x.tick == y.tick && x.type == y.type && x.arg == y.arg && x.source == y.source && x.controls == y.controls &&
+               x.cursorx == y.cursorx && x.cursory == y.cursory && !strcmp(x.cmd ? x.cmd : "", y.cmd ? y.cmd : "");
+    }
+
+    static bool samehash(const tickhash &x, const tickhash &y)
+    {
+        return x.tick == y.tick && x.combined == y.combined && !memcmp(x.groups, y.groups, sizeof(x.groups));
+    }
+
+    // Reads the file as it stands after each of its segments: each front must hold every event
+    // and hash before its known tick and nothing the whole file doesn't hold.
+    static bool replayprefixcheck(const char *file)
+    {
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info) || run.empty()) { conoutf(CON_ERROR, "PREFIXCHECK %s: could not read", file); return false; }
+        info.live = false;
+        sbr2stream wholestream;
+        buildsbr2(wholestream, run, info);
+        int segments = wholestream.out.segments;
+        for(int n = 0; n <= segments; n++)
+        {
+            sbr2stream part;
+            buildsbr2(part, run, info, n);
+            inputrun front;
+            replayinfo frontinfo;
+            int known = -1;
+            string why = "";
+            if(!readsbr2prefix(file, part.out.out, front, frontinfo, known)) copystring(why, "does not read");
+            else if(front.attempts.length() > run.attempts.length()) copystring(why, "has more attempts");
+            else loopvk(front.attempts)
+            {
+                const inputattempt &f = *front.attempts[k], &w = *run.attempts[k];
+                int limit = k == front.attempts.length()-1 ? known : INT_MAX;
+                bool ok = f.events.length() <= w.events.length() && f.hashes.length() <= w.hashes.length();
+                loopv(f.events) if(ok && !sameevent(f.events[i], w.events[i])) ok = false;
+                loopv(f.hashes) if(ok && !samehash(f.hashes[i], w.hashes[i])) ok = false;
+                if(ok && f.events.length() < w.events.length() && w.events[f.events.length()].tick < limit) ok = false;
+                if(ok && f.hashes.length() < w.hashes.length() && w.hashes[f.hashes.length()].tick < limit) ok = false;
+                if(!ok) { formatstring(why, "attempt %d differs (known tick %d, %d/%d events, %d/%d hashes)", k, known, f.events.length(), w.events.length(), f.hashes.length(), w.hashes.length()); break; }
+            }
+            if(why[0]) { conoutf(CON_ERROR, "PREFIXCHECK %s: FAIL after %d segments: front %s", file, n, why); return false; }
+        }
+        conoutf("PREFIXCHECK %s: ok, %d segments, %d attempts", file, segments, run.attempts.length());
+        return true;
+    }
+    ICOMMAND(replayprefixcheck, "s", (char *file), intret(replayprefixcheck(file) ? 1 : 0));
+
     MOD(VARP, replayautosave, 0, 1, 1);
     MOD(VARP, replaymaxunfinished, 0, 20, 1000);
 
@@ -1507,11 +1606,11 @@ namespace game
                     break;
                 }
             }
-            else if(type == WM_RUNERROR)
+            else if(type == WM_RUNERROR || type == WM_RUNSTOP)
             {
                 string why = "";
                 r.str(why, sizeof(why));
-                conoutf(CON_ERROR, "the witness refused this run: %s", why);
+                conoutf(CON_ERROR, type == WM_RUNSTOP ? "the witness stopped watching this run: %s" : "the witness refused this run: %s", why);
                 if(live && live->runid == runid) DELETEP(live);
             }
         }
@@ -1572,11 +1671,25 @@ namespace game
         }
     }
 
+    static void sendstop(const char *reason);
+
     // header: the attempt as the saved file will store it; data: the live recording; a life's
     // stream leaves out everything at or before skiptick
-    void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life)
+    static int lastfinished = -1;
+
+    // the stream that the last saved replay finished, once; -1 if none
+    int witnesstakefinished()
     {
-        DELETEP(live);
+        int runid = lastfinished;
+        lastfinished = -1;
+        return runid;
+    }
+
+    // continues: the run id of the finished stream this run of the same life goes on from
+    void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life, int continues)
+    {
+        // a life whose run never started isn't saved, so its stream ends here
+        if(live) sendstop("a new run started");
         if(witnessstate() != WITNESS_OPEN) return;
         live = new livestream;
         live->runid = nextrunid++;
@@ -1593,8 +1706,9 @@ namespace game
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(live->runid);
-        w.var(life ? WITNESSRUN_LIFE : WITNESSRUN_MAP);
+        w.var(continues >= 0 ? WITNESSRUN_CHAIN : life ? WITNESSRUN_LIFE : WITNESSRUN_MAP);
         w.var(header.starttick);
+        if(continues >= 0) w.var(continues);
         if(!witnesssend(WM_RUNSTART, p.getbuf(), p.length())) { DELETEP(live); return; }
         witnesssendbytes();
     }
@@ -1633,16 +1747,27 @@ namespace game
         }
     }
 
-    void witnessstop(const char *reason)
+    static void sendstop(const char *reason)
     {
-        if(!live) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(live->runid);
         w.str(reason);
         witnesssend(WM_STOP, p.getbuf(), p.length());
-        conoutf("\f2witness: this run is no longer witnessed (%s)", reason);
         DELETEP(live);
+    }
+
+    // a stream whose run never started ends without telling the player
+    void witnessdrop(const char *reason)
+    {
+        if(live) sendstop(reason);
+    }
+
+    void witnessstop(const char *reason)
+    {
+        if(!live) return;
+        conoutf("\f2witness: this run is no longer witnessed (%s)", reason);
+        sendstop(reason);
     }
 
     // The saved replay of the streamed run: finishes the stream with the run's end and trailer
@@ -1716,7 +1841,7 @@ namespace game
             delete f;
             memcpy(content, live->s.out.content, sizeof(content));
             awaitingsign &w = awaitingsigns.add();
-            w.runid = live->runid;
+            w.runid = lastfinished = live->runid;
             copystring(w.file, file);
             DELETEP(live);
         }
