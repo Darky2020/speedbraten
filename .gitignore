@@ -10,6 +10,7 @@ src/**/*.tmp
 src/sauer_client
 src/sauer_server
 src/sauer_resim
+src/sauer_witness
 src/headless/
 src/Makefile.bak
 

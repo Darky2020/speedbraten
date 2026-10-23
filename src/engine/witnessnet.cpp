@@ -264,7 +264,40 @@ namespace witnessnet
         }
     };
 
-    static connection conn;
+    static connection conn, witness;
+}
+
+void witnessconnect(const char *host, int port, const uchar *serverkey, const char *build)
+{
+    if(!host || !host[0]) { witnessnet::witness.close(""); return; }
+    witnessnet::witness.open(host, port, serverkey, "witness", (const uchar *)build, strlen(build));
+}
+
+int witnessstate()
+{
+    switch(witnessnet::witness.state)
+    {
+        case witnessnet::IDLE: return WITNESS_IDLE;
+        case witnessnet::OPEN: return WITNESS_OPEN;
+        case witnessnet::CLOSED: return WITNESS_CLOSED;
+        default: return WITNESS_CONNECTING;
+    }
+}
+
+const char *witnesserror() { return witnessnet::witness.error; }
+
+bool witnesssend(int type, const uchar *data, int len) { return witnessnet::witness.sendmessage(type, data, len); }
+
+bool witnessreceive(int &type, vector<uchar> &payload)
+{
+    vector<witnessnet::received *> &inbox = witnessnet::witness.inbox;
+    if(inbox.empty()) return false;
+    witnessnet::received *r = inbox.remove(0);
+    type = r->type;
+    payload.setsize(0);
+    payload.move(r->payload);
+    delete r;
+    return true;
 }
 
 // The interop check against server/cmd/noiseecho: sends count messages of growing size and
@@ -339,6 +372,7 @@ namespace witnessnet
 
 void witnessslice()
 {
+    witnessnet::witness.slice();
     witnessnet::conn.slice();
     witnessnet::interopslice();
 }

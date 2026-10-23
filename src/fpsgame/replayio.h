@@ -141,6 +141,31 @@ namespace sbr2
         const chunk *find(const char *type, int from = 0) const;
     };
 
+    // The same checks as reader, on a file that arrives in pieces: feed() takes the next bytes
+    // and keeps every chunk completed so far in chunks (with its segment), the chain head after
+    // each SEGE in heads, and the content hash once END has arrived.
+    struct streamreader
+    {
+        int version, segment;
+        bool ended;
+        vector<chunk *> chunks;
+        vector<uchar> heads;
+        uchar content[HASHSIZE];
+        string error;
+
+        streamreader();
+        ~streamreader();
+        // false once anything is wrong; error says what
+        bool feed(const uchar *data, int len, const char *known);
+
+    private:
+        vector<uchar> pending;
+        uchar head[HASHSIZE];
+        void *running, *zstream;
+        bool failed;
+        bool fail(const char *msg) { copystring(error, msg); failed = true; return false; }
+    };
+
     void tohex(const uchar *p, int n, char *out);
     // exactly 2*n hex digits into n bytes
     bool fromhex(const char *s, uchar *out, int n);

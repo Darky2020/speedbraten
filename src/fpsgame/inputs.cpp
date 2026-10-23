@@ -183,6 +183,46 @@ namespace game
         if(n > 1) a.aids.remove(0, n-1);
     }
 
+    // what cutattempt keeps of an attempt besides its events, hashes and timing
+    static void lifeheader(inputattempt &a, const inputattempt &src, const statestart &from)
+    {
+        a.clear();
+        a.settings = src.settings;
+        loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
+        a.snapshot = from.state;
+        a.starttick = from.tick;
+        a.files = src.files;
+        a.seed = src.seed;
+        a.mapcrc = src.mapcrc;
+        a.date = from.date ? from.date : src.date;
+        a.cfgcrc = src.cfgcrc;
+        a.hascfgcrc = src.hascfgcrc;
+        copystring(a.map, src.map);
+        copystring(a.team, src.team);
+        copystring(a.player, src.player);
+        a.mode = src.mode;
+        a.flagrun = src.flagrun;
+        a.race = src.race;
+        a.ticks = src.ticks;
+        a.hashgroups = src.hashgroups;
+        a.lifeseeds = src.lifeseeds;
+    }
+
+    extern int fixedgameseed;
+
+    // the current attempt's seed came from the witness, so its runs are streamed to it
+    static bool attemptwitnessed = false;
+    static statestart *lifestart;
+
+    // streams the current life; the attempt's map files and CRCs are only known from tick 1 on
+    static void witnesslife()
+    {
+        if(!attemptwitnessed || replaying || recordingoff || !lifestart || recording.attempts.length() != 1) return;
+        inputattempt header;
+        lifeheader(header, recording.last(), *lifestart);
+        witnessrunstart(header, recording.last(), lifestart->tick, true);
+    }
+
     // Flagruns and races are judged per life: the replay of a finished run starts at the
     // spawn of the life it was run in, and an unfinished life whose run started is saved
     // on its own when it ends.
@@ -190,7 +230,6 @@ namespace game
     // lifestart: start of the current life, one of lives, which also keeps the life starts that
     // saved states still refer to
     static statestart savedstart;
-    static statestart *lifestart = NULL;
     static vector<statestart *> lives;
     static const statestart nolife;
     static bool lifepending = false, lifesaved = false;
@@ -231,6 +270,7 @@ namespace game
         bool keys[6] = { d.k_left, d.k_right, d.k_forward, d.k_backward, d.k_up, d.k_down };
         schar move = d.move, strafe = d.strafe, vertical = d.vertical;
         bool jumping = d.jumping, attacking = d.attacking;
+        if(!replaying && !recordingoff) witnessstop("a state was loaded");
         if(!restorestate(st.state)) return false;
         if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
         // back to the life the state was taken in, which may have ended since
@@ -292,6 +332,7 @@ namespace game
         lives.add(l);
         lifestart = l;
         tellslifestart();
+        if(curtick >= 1) witnesslife();
     }
 
     static bool saveliferun(bool finished, int runtime)
@@ -384,6 +425,7 @@ namespace game
     void inputdisconnect()
     {
         saveunfinishedrun();
+        witnessstop("disconnected");
         restoresettings();
     }
     static inputcontrols lastcontrols;
@@ -830,6 +872,12 @@ namespace game
             rec.cfgcrc = getmapcfgcrc();
             rec.hascfgcrc = true;
             rec.files = getmapdatafiles();
+            if(attemptwitnessed && !(replaylifeonly && (rec.flagrun || rec.race)))
+            {
+                if(recording.attempts.length() == 1) witnessrunstart(rec, rec, -1, false);
+                else witnessnextattempt(rec);
+            }
+            else witnesslife();
         }
         recordsettingchanges(rec);
         while(pending.length())
@@ -946,7 +994,11 @@ namespace game
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
+        if(!chained) witnessstop("the map changed");
         seedgame();
+        uint seed;
+        attemptwitnessed = !fixedgameseed && witnessseed(seed);
+        if(attemptwitnessed) { gameseed = seed; seedMT(gameseed); logoutf("game seed: %u (from the witness)", gameseed); }
         if(!chained && !recording.empty()) recording.moveto(previous);
         if(!chained) { recording.clear(); runsaved = false; recordingran = false; tellsrunstart(); }
         inputattempt &a = recording.add();
@@ -998,12 +1050,14 @@ namespace game
 
     void frametimed(int us, int ticks, bool drawn)
     {
+        witnessupdate();
         int aids = tellsframe(us);
         if(frameticks) readsettings(framesettings);
         frameticks = 0;
         if(replaying || recordingoff || recording.attempts.empty() || !connected) return;
         inputattempt &a = recording.last();
         markaids(a, max(curtick, 0) + 1, aids);
+        if(tellsassistframe(aids)) witnessstop("an assist was used");
         int seg = max(curtick, 0) / REPLAYSEGMENTTICKS;
         cuttiming(a, curtick);
         if(a.timing.empty() || a.timing.last().segment != seg) a.timing.add(segmenttiming(seg));
@@ -1021,6 +1075,7 @@ namespace game
         if(!t.frames++) t.speedmin = t.speedmax = speed;
         else { t.speedmin = min(t.speedmin, speed); t.speedmax = max(t.speedmax, speed); }
         t.fixedframe = max(t.fixedframe, fixedframe);
+        witnessframe(curtick);
     }
 
     void playinputrun(const inputrun &src, const char *file)

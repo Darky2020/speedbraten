@@ -1,6 +1,11 @@
-// Replay file building blocks: zstd, BLAKE3 and Ed25519 (RFC 8032).
+// Replay file building blocks: zstd, BLAKE3 and Ed25519 (RFC 8032). With STANDALONE (the
+// witness) only the sbr2 namespace is built.
 
+#ifdef STANDALONE
+#include "cube.h"
+#else
 #include "game.h"
+#endif
 #include "replayio.h"
 #include "zstd.h"
 #include "blake3.h"
@@ -332,6 +337,117 @@ namespace sbr2
         return r.ok && !r.left() && version >= 1 && version <= VERSION && scope <= (version >= 2 ? int(VERDICT) : int(FINAL));
     }
 
+    streamreader::streamreader() : version(0), segment(0), ended(false), running(NULL), zstream(NULL), failed(false)
+    {
+        error[0] = '\0';
+        memset(content, 0, sizeof(content));
+        running = new blake3_hasher;
+        blake3_hasher_init((blake3_hasher *)running);
+    }
+
+    streamreader::~streamreader()
+    {
+        chunks.deletecontents();
+        delete (blake3_hasher *)running;
+        if(zstream) ZSTD_freeDCtx((ZSTD_DCtx *)zstream);
+    }
+
+    bool streamreader::feed(const uchar *data, int len, const char *known)
+    {
+        if(failed) return false;
+        pending.put(data, len);
+        int pos = 0;
+        if(!version)
+        {
+            bytesreader r(pending.getbuf(), pending.length());
+            char magic[4];
+            if(pending.length() < 4) return true;
+            if(memcmp(pending.getbuf(), "SBR2", 4)) return fail("not an SBR2 file");
+            r.bytes(magic, 4);
+            unsigned long long v = r.var();
+            if(!r.ok) return true;
+            if(v < 2 || v > VERSION) return fail("unsupported container version");
+            version = int(v);
+            starthead(head, version);
+            pos = int(r.p - pending.getbuf());
+        }
+        for(;;)
+        {
+            bytesreader r(pending.getbuf() + pos, pending.length() - pos);
+            if(!r.left()) break;
+            const uchar *start = r.p;
+            chunk c;
+            c.type[4] = '\0';
+            if(!r.bytes(c.type, 4)) break;
+            c.flags = int(r.var());
+            unsigned long long stored = r.var();
+            if(!r.ok) break;
+            if(stored > (1ULL<<30)) return fail("chunk too long");
+            if(stored + 4 > (unsigned long long)r.left()) break;
+            const uchar *payload = r.p;
+            r.p += stored;
+            uint crc = r.u32();
+            if(crc != uint(crc32(crc32(0, Z_NULL, 0), start, int(r.p - 4 - start)))) return fail("CRC mismatch");
+            if(c.flags & ~FLAG_ZSTD) return fail("unknown chunk flags");
+            if(c.flags & FLAG_ZSTD)
+            {
+                bytesreader pr(payload, int(stored));
+                unsigned long long raw = pr.var();
+                if(!pr.ok || raw > (1ULL<<30)) return fail("bad compressed payload");
+                if(!zstream) zstream = ZSTD_createDCtx();
+                c.data.growbuf(int(raw) + 1);
+                ZSTD_inBuffer in = { pr.p, size_t(pr.left()), 0 };
+                ZSTD_outBuffer out = { c.data.getbuf(), size_t(raw) + 1, 0 };
+                bool ok = true;
+                while(ok && in.pos < in.size)
+                {
+                    size_t before = in.pos + out.pos;
+                    if(ZSTD_isError(ZSTD_decompressStream((ZSTD_DCtx *)zstream, &out, &in)) || in.pos + out.pos == before) ok = false;
+                }
+                if(!ok || out.pos != raw) return fail("bad compressed payload");
+                c.data.setsize(int(raw));
+            }
+            else c.data.put(payload, int(stored));
+            bool sign = istype(c.type, "sIGN"), end = istype(c.type, "END ");
+            if(ended && !sign) return fail("chunk after END");
+            if(required(c.type) && !strstr(known, c.type)) return fail("unknown required chunk");
+            c.segment = segment;
+            if(!sign && !end) hashchunk(*(blake3_hasher *)running, c.type, c.data.getbuf(), c.data.length());
+            if(istype(c.type, "SEGE"))
+            {
+                bytesreader s(c.data.getbuf(), c.data.length());
+                unsigned long long index = s.var();
+                s.var();
+                if(!s.ok || s.left() || index != (unsigned long long)segment) return fail("bad SEGE");
+                advance(head, *(blake3_hasher *)running, "SBR2-seg");
+                heads.put(head, HASHSIZE);
+                if(zstream) ZSTD_DCtx_reset((ZSTD_DCtx *)zstream, ZSTD_reset_session_only);
+                segment++;
+            }
+            if(end)
+            {
+                memcpy(content, head, HASHSIZE);
+                advance(content, *(blake3_hasher *)running, "SBR2-end");
+                bytesreader s(c.data.getbuf(), c.data.length());
+                unsigned long long count = s.var();
+                uchar want[HASHSIZE];
+                s.bytes(want, HASHSIZE);
+                if(!s.ok || s.left() || count != (unsigned long long)segment) return fail("bad END chunk");
+                if(memcmp(want, content, HASHSIZE)) return fail("content hash mismatch");
+                ended = true;
+            }
+            chunk *keep = new chunk;
+            memcpy(keep->type, c.type, 5);
+            keep->flags = c.flags;
+            keep->segment = c.segment;
+            keep->data.move(c.data);
+            chunks.add(keep);
+            pos = int(r.p - pending.getbuf());
+        }
+        pending.remove(0, pos);
+        return true;
+    }
+
     const chunk *reader::find(const char *type, int from) const
     {
         for(int i = from; i < chunks.length(); i++) if(istype(chunks[i]->type, type)) return chunks[i];
@@ -434,6 +550,7 @@ namespace sbr2
     }
 }
 
+#ifndef STANDALONE
 namespace game
 {
     using sbr2::tohex;
@@ -608,3 +725,4 @@ namespace game
         intret(1);
     });
 }
+#endif

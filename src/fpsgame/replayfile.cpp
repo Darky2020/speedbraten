@@ -6,6 +6,7 @@
 #include "inputs.h"
 #include "replayio.h"
 #include "blake3.h"
+#include "witnessproto.h"
 
 namespace game
 {
@@ -441,7 +442,8 @@ namespace game
             seg++;
         }
 
-        void trailer(const inputrun &run, const replayinfo &info)
+        // tells: the run metadata chunks, if already made (made from run and info otherwise)
+        void trailer(const inputrun &run, const replayinfo &info, const vector<runchunk *> *given = NULL)
         {
             loopv(run.attempts) writetrace(out, i, *run.attempts[i]);
             vector<uchar> p;
@@ -456,8 +458,8 @@ namespace game
             out.add("RSLT", p);
 
             vector<runchunk *> made;
-            if(info.live) tellsencode(run, info, made);
-            const vector<runchunk *> &tells = info.live ? made : run.tells;
+            if(!given && info.live) tellsencode(run, info, made);
+            const vector<runchunk *> &tells = given ? *given : info.live ? made : run.tells;
             loopv(tells) out.add(tells[i]->type, tells[i]->data);
             made.deletecontents();
             out.finish();
@@ -490,7 +492,7 @@ namespace game
     }
 
     // The whole file, or with maxsegments = n only its first n segments (no trailer, no END).
-    static void buildsbr2(sbr2stream &s, const inputrun &run, const replayinfo &info, int maxsegments = -1)
+    static void buildsbr2(sbr2stream &s, const inputrun &run, const replayinfo &info, int maxsegments = -1, const vector<runchunk *> *tells = NULL)
     {
         s.meta(run, info);
         loopv(run.attempts)
@@ -503,7 +505,7 @@ namespace game
                 s.writesegment(a.ticks);
             }
         }
-        if(maxsegments < 0) s.trailer(run, info);
+        if(maxsegments < 0) s.trailer(run, info, tells);
     }
 
     static bool writesbr2(const char *file, const inputrun &run, const replayinfo &info, uchar *content = NULL)
@@ -1253,6 +1255,19 @@ namespace game
                 return false;
             }
         }
+        {
+            sbr2::reader whole1;
+            sbr2::streamreader pieces;
+            bool ok = whole1.parse(whole.out.getbuf(), whole.out.length(), sbr2::KNOWNCHUNKS);
+            for(int pos = 0, step = 1; ok && pos < whole.out.length(); pos += step, step = step % 997 + 13)
+                ok = pieces.feed(whole.out.getbuf() + pos, min(step, whole.out.length() - pos), sbr2::KNOWNCHUNKS);
+            if(!ok || !pieces.ended || pieces.chunks.length() != whole1.chunks.length() || pieces.heads.length() != whole1.heads.length() ||
+               memcmp(pieces.heads.getbuf(), whole1.heads.getbuf(), whole1.heads.length()) || memcmp(pieces.content, whole1.content, sbr2::HASHSIZE))
+            {
+                conoutf(CON_ERROR, "STREAMCHECK %s: FAIL reading the file in pieces differs: %s", file, pieces.error);
+                return false;
+            }
+        }
         inputrun again;
         replayinfo againinfo;
         if(!readsbr2(file, whole.out, &again, againinfo)) { conoutf(CON_ERROR, "STREAMCHECK %s: FAIL rewritten file does not read", file); return false; }
@@ -1373,6 +1388,245 @@ namespace game
         copystring(info.map, first.map);
     }
 
+    // Online witnessing: with witnesshost set, the client keeps a channel to the witness, takes
+    // the seed of every map start from it and streams each run's replay file while it is played.
+    // The witness signs segment heads as they close and the content hash at the end; the
+    // signatures go into the saved file after END.
+    SVARP(witnesshost, "");
+    VARP(witnessport, 1, WITNESSPORT, 65535);
+    SVARP(witnesskey, ""); // the witness's channel public key, 64 hex digits
+    enum { WITNESSRETRY = 10000, WITNESSSEEDWAIT = 3000, WITNESSPIECE = 60000 };
+
+    struct livestream
+    {
+        int runid, attempts, sent, lasttick, starttick;
+        bool life;
+        sbr2stream s;
+        replayinfo info;
+        const inputattempt *data;
+        vector<vector<uchar> > signatures;
+
+        livestream() : runid(0), attempts(0), sent(0), lasttick(0), starttick(0), life(false), data(NULL) {}
+    };
+    static livestream *live = NULL;
+    static int nextrunid = 1, witnessretry = 0;
+    static vector<uint> witnessseeds;
+    static string witnesstarget = "";
+    struct awaitingsign { int runid; string file; };
+    static vector<awaitingsign> awaitingsigns;
+
+    static void appendsignature(const char *file, const vector<uchar> &payload)
+    {
+        stream *f = openrawfile(path(file, true), "ab");
+        if(!f) return;
+        vector<uchar> chunk;
+        sbr2::appendchunk(chunk, "sIGN", payload);
+        f->write(chunk.getbuf(), chunk.length());
+        delete f;
+    }
+
+    static void witnessmessages()
+    {
+        int type;
+        vector<uchar> p;
+        while(witnessreceive(type, p))
+        {
+            sbr2::bytesreader r(p.getbuf(), p.length());
+            if(type < 0)
+            {
+                r.u8();
+                uchar skip[40];
+                r.bytes(skip, 40);
+                uint seed = r.u32();
+                witnessseeds.setsize(0);
+                if(r.ok) witnessseeds.add(seed);
+                conoutf("\f0witness connected");
+                continue;
+            }
+            if(type == WM_SEED) { uint seed = r.u32(); if(r.ok) witnessseeds.add(seed); continue; }
+            int runid = int(r.var());
+            if(!r.ok) continue;
+            if(type == WM_SIGN)
+            {
+                vector<uchar> payload;
+                payload.put(r.p, r.left());
+                if(live && live->runid == runid) { live->signatures.add(payload); continue; }
+                sbr2::signature sig;
+                bool final = sig.read(payload.getbuf(), payload.length()) && sig.scope == sbr2::signature::FINAL;
+                loopv(awaitingsigns) if(awaitingsigns[i].runid == runid)
+                {
+                    appendsignature(awaitingsigns[i].file, payload);
+                    if(final)
+                    {
+                        conoutf("\f0witness signed %s", awaitingsigns[i].file);
+                        awaitingsigns.remove(i);
+                    }
+                    break;
+                }
+            }
+            else if(type == WM_RUNERROR)
+            {
+                string why = "";
+                r.str(why, sizeof(why));
+                conoutf(CON_ERROR, "the witness refused this run: %s", why);
+                if(live && live->runid == runid) DELETEP(live);
+            }
+        }
+    }
+
+    // keeps the channel open while witnesshost is set, and reads what the witness sent
+    void witnessupdate()
+    {
+        uchar key[32];
+        bool valid = witnesshost[0] && sbr2::fromhex(witnesskey, key, 32);
+        defformatstring(target, "%s:%d:%s", valid ? witnesshost : "", witnessport, witnesskey);
+        int state = witnessstate();
+        if(strcmp(target, witnesstarget))
+        {
+            copystring(witnesstarget, target);
+            witnessseeds.setsize(0);
+            DELETEP(live);
+            witnessconnect(valid ? witnesshost : "", witnessport, key, "speedbraten");
+            witnessretry = totalmillis + WITNESSRETRY;
+        }
+        else if(valid && (state == WITNESS_IDLE || state == WITNESS_CLOSED) && totalmillis - witnessretry >= 0)
+        {
+            witnessseeds.setsize(0);
+            witnessconnect(witnesshost, witnessport, key, "speedbraten");
+            witnessretry = totalmillis + WITNESSRETRY;
+        }
+        if(state != WITNESS_OPEN && live) DELETEP(live);
+        witnessmessages();
+    }
+
+    bool witnessseed(uint &seed)
+    {
+        if(!witnesshost[0]) return false;
+        witnessupdate();
+        for(int start = SDL_GetTicks(); witnessseeds.empty() && witnessstate() != WITNESS_IDLE && witnessstate() != WITNESS_CLOSED && int(SDL_GetTicks()) - start < WITNESSSEEDWAIT; )
+        {
+            witnessslice();
+            witnessmessages();
+            if(witnessseeds.empty()) SDL_Delay(5);
+        }
+        if(witnessseeds.empty() || witnessstate() != WITNESS_OPEN) return false;
+        seed = witnessseeds.remove(0);
+        return true;
+    }
+
+    static void witnesssendbytes()
+    {
+        const vector<uchar> &out = live->s.out.out;
+        while(live->sent < out.length())
+        {
+            int n = min(out.length() - live->sent, int(WITNESSPIECE));
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(live->runid);
+            w.bytes(out.getbuf() + live->sent, n);
+            if(!witnesssend(WM_DATA, p.getbuf(), p.length())) { DELETEP(live); return; }
+            live->sent += n;
+        }
+    }
+
+    // header: the attempt as the saved file will store it; data: the live recording; a life's
+    // stream leaves out everything at or before skiptick
+    void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life)
+    {
+        DELETEP(live);
+        if(witnessstate() != WITNESS_OPEN) return;
+        live = new livestream;
+        live->runid = nextrunid++;
+        live->life = life;
+        live->attempts = 1;
+        live->starttick = header.starttick;
+        live->lasttick = header.starttick;
+        live->data = &data;
+        inputrun first;
+        header.copyto(first.add());
+        fillreplayinfo(first, false, 0, live->info);
+        live->s.meta(first, live->info);
+        live->s.beginattempt(0, header, data, live->info.simversion, skiptick);
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(live->runid);
+        w.var(life ? WITNESSRUN_LIFE : WITNESSRUN_MAP);
+        w.var(header.starttick);
+        if(!witnesssend(WM_RUNSTART, p.getbuf(), p.length())) { DELETEP(live); return; }
+        witnesssendbytes();
+    }
+
+    // the next map of a chained run
+    void witnessnextattempt(const inputattempt &a)
+    {
+        if(!live) return;
+        const inputattempt &prev = *live->data;
+        for(int last = live->s.lastsegment(); live->s.seg <= last; ) live->s.writesegment(prev.ticks);
+        live->s.beginattempt(live->attempts++, a, a, live->info.simversion);
+        live->data = &a;
+        witnesssendbytes();
+    }
+
+    // once per frame while recording: closed segments and a TICK every WITNESSTICKSTEP ticks
+    void witnessframe(int curtick)
+    {
+        if(!live) return;
+        const inputattempt &a = *live->data;
+        while(curtick >= live->s.segmentend()) live->s.writesegment(-1);
+        witnesssendbytes();
+        if(!live) return;
+        for(int t = (live->lasttick / WITNESSTICKSTEP + 1) * WITNESSTICKSTEP; t <= curtick; t += WITNESSTICKSTEP)
+        {
+            const tickhash *h = NULL;
+            for(int i = a.hashes.length()-1; i >= 0 && a.hashes[i].tick >= t; i--) if(a.hashes[i].tick == t) { h = &a.hashes[i]; break; }
+            live->lasttick = t;
+            if(!h) continue;
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(live->runid);
+            w.var(t);
+            w.u32(combinedhash(h->groups, a.hashgroups));
+            if(!witnesssend(WM_TICK, p.getbuf(), p.length())) { DELETEP(live); return; }
+        }
+    }
+
+    void witnessstop(const char *reason)
+    {
+        if(!live) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(live->runid);
+        w.str(reason);
+        witnesssend(WM_STOP, p.getbuf(), p.length());
+        conoutf("\f2witness: this run is no longer witnessed (%s)", reason);
+        DELETEP(live);
+    }
+
+    // The saved replay of the streamed run: finishes the stream with the run's end and trailer
+    // and returns its bytes if they are the file's bytes; otherwise the stream ends unsigned.
+    static bool witnessfinish(const inputrun &run, const replayinfo &info, sbr2stream &whole)
+    {
+        if(!live) return false;
+        if(run.attempts.length() != live->attempts || run.attempts[0]->starttick != live->starttick) { witnessstop("a different run was saved"); return false; }
+        const inputattempt &a = *live->data;
+        for(int last = live->s.lastsegment(); live->s.seg <= last; ) live->s.writesegment(a.ticks);
+        vector<runchunk *> tells;
+        if(info.live) tellsencode(run, info, tells);
+        else loopv(run.tells) { runchunk *c = tells.add(new runchunk); memcpy(c->type, run.tells[i]->type, sizeof(c->type)); c->late = run.tells[i]->late; c->data = run.tells[i]->data; }
+        live->s.trailer(run, info, &tells);
+        buildsbr2(whole, run, info, -1, &tells);
+        tells.deletecontents();
+        const vector<uchar> &mine = live->s.out.out, &want = whole.out.out;
+        if(mine.length() != want.length() || memcmp(mine.getbuf(), want.getbuf(), want.length()))
+        {
+            conoutf(CON_ERROR, "witness: the streamed replay differs from the saved one");
+            witnessstop("the stream differs from the saved replay");
+            return false;
+        }
+        witnesssendbytes();
+        return live != NULL;
+    }
+
     // started: the run counts for the statistics (a flagrun or race life whose run began)
     void saverunreplay(const inputrun &run, bool finished, int runtime, bool started)
     {
@@ -1389,6 +1643,8 @@ namespace game
         info.started = started || finished ? 1 : 0;
         if(!replayautosave)
         {
+            sbr2stream whole;
+            if(witnessfinish(run, info, whole)) DELETEP(live);
             if(started) statsrecord(run, info, NULL);
             return;
         }
@@ -1406,7 +1662,22 @@ namespace game
             formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
         uchar content[sbr2::HASHSIZE];
-        bool written = writereplay(file, finished ? traced : run, info, content);
+        sbr2stream whole;
+        bool written;
+        if(witnessfinish(finished ? traced : run, info, whole))
+        {
+            vector<uchar> bytes(live->s.out.out);
+            loopv(live->signatures) sbr2::appendchunk(bytes, "sIGN", live->signatures[i]);
+            stream *f = openrawfile(path(file, true), "wb");
+            written = f && f->write(bytes.getbuf(), bytes.length()) == size_t(bytes.length());
+            delete f;
+            memcpy(content, live->s.out.content, sizeof(content));
+            awaitingsign &w = awaitingsigns.add();
+            w.runid = live->runid;
+            copystring(w.file, file);
+            DELETEP(live);
+        }
+        else written = writereplay(file, finished ? traced : run, info, content);
         if(started) statsrecord(run, info, written ? file : NULL, written ? content : NULL);
         if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);

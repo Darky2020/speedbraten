@@ -208,7 +208,7 @@ all: client server
 
 clean:
 	cd enet && make clean && cd ..
-	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) sauer_client sauer_server sauer_resim
+	-$(RM) $(CLIENT_OBJS) $(SERVER_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(WITNESS_OBJS) sauer_client sauer_server sauer_resim sauer_witness
 	-$(RM) -r headless
 
 %-standalone.o: %.cpp
@@ -253,6 +253,17 @@ client: $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
 
 server: $(SERVER_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_server $(SERVER_OBJS) $(LIBS)
+
+# Witness server: receives replays while they are played and signs them (Linux and macOS).
+WITNESS_OBJS= shared/tools-standalone.o shared/stream-standalone.o shared/noise-standalone.o \
+	fpsgame/replayio-standalone.o witness/witness-standalone.o
+$(WITNESS_OBJS): CXXFLAGS += $(INCLUDES) -DSTANDALONE -Isqlite $(VENDOR_INCLUDES)
+witness: libenet
+witness: $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_witness $(WITNESS_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(LIBS)
+.PHONY: witness
+witness/witness-standalone.o: shared/noise.h shared/witnessproto.h fpsgame/replayio.h
+engine/witnessnet.o: shared/noise.h
 
 # Headless re-simulation binary: the client sim without a window, GL or drawing.
 RESIM_OBJS= $(addprefix headless/,$(CLIENT_OBJS)) headless/engine/nullgl.o headless/engine/nullsdl.o headless/fpsgame/resim.o
@@ -583,7 +594,7 @@ fpsgame/inputs.o: fpsgame/inputs.h
 fpsgame/replayfile.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/replayfile.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/replayfile.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
-fpsgame/replayfile.o: fpsgame/inputs.h fpsgame/replayio.h
+fpsgame/replayfile.o: fpsgame/inputs.h fpsgame/replayio.h shared/witnessproto.h
 fpsgame/runtimer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/runtimer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/runtimer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

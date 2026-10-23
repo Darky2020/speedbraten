@@ -647,6 +647,17 @@ struct rawevent
 };
 extern const char *getbindaction(int code);
 
+// the encrypted channel to the witness (engine/witnessnet.cpp); messages in shared/witnessproto.h
+enum { WITNESS_IDLE = 0, WITNESS_CONNECTING, WITNESS_OPEN, WITNESS_CLOSED };
+// an empty host closes the channel; serverkey is the witness's pinned X25519 public key
+extern void witnessconnect(const char *host, int port, const uchar *serverkey, const char *build);
+extern int witnessstate();
+extern const char *witnesserror();
+extern bool witnesssend(int type, const uchar *data, int len);
+// the next received message; type -1 is the witness's handshake payload
+extern bool witnessreceive(int &type, vector<uchar> &payload);
+extern void witnessslice();
+
 // an input device the system reports; kind: 0 other, 1 keyboard, 2 mouse
 struct inputdevice
 {

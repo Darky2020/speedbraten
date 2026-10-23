@@ -241,6 +241,7 @@ namespace game
     // the run (or life) being saved was slowed, sped up, paused, played with fixedframe or with
     // single-player slow motion (which also keeps the player alive)
     extern bool tellsassisted(const inputrun &r);
+    extern bool tellsassistframe(int features);
     extern int inputrunaids(const inputrun &r);
     extern void tellssavinglife(bool on); // the replay being saved holds one life
     // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use
@@ -254,6 +255,14 @@ namespace game
     // content, if given, receives an SBR2 file's content hash (32 bytes)
     extern bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content = NULL);
     extern void fillreplayinfo(const inputrun &run, bool finished, int runtime, replayinfo &info);
+
+    // online witnessing (replayfile.cpp)
+    extern void witnessupdate();
+    extern bool witnessseed(uint &seed);
+    extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life);
+    extern void witnessnextattempt(const inputattempt &a);
+    extern void witnessframe(int curtick);
+    extern void witnessstop(const char *reason);
     extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
     // content: the replay's SBR2 content hash (32 bytes), or NULL

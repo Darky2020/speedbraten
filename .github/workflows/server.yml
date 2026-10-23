@@ -6,6 +6,10 @@ on:
     paths:
       - 'server/**'
       - 'tests/noise/**'
+      - 'src/witness/**'
+      - 'src/shared/noise*'
+      - 'src/shared/witnessproto.h'
+      - 'src/fpsgame/replayio.*'
       - '.github/workflows/server.yml'
 
 jobs:
@@ -21,3 +25,17 @@ jobs:
           go-version-file: server/go.mod
       - run: go vet ./...
       - run: go test -count=1 ./...
+
+  witness:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: build sauer_witness
+        run: make -C src -j4 witness
+      - name: start it
+        run: |
+          printf '%064d\n' 1 > seed
+          ./src/sauer_witness -dwdata -sseed -p28799 > witness.log 2>&1 &
+          sleep 2
+          cat witness.log
+          grep -q "witness listening on port 28799" witness.log

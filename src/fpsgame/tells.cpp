@@ -80,6 +80,9 @@ namespace game
         const tellcounters &c = savinglife ? life : run;
         return inputrunaids(r) & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP) || c.fixedframe;
     }
+    // a frame's features (tellsframe) include an assist: changed game speed, pause, slow
+    // motion, or a fixed frame time
+    bool tellsassistframe(int features) { return (features & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP)) || fixedframe; }
     void tellssavinglife(bool on) { savinglife = on; }
     void tellssave() { run.saves++; life.saves++; }
     void tellsload() { run.loads++; life.loads++; }
