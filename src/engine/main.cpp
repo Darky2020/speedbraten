@@ -1705,6 +1705,7 @@ int main(int argc, char **argv)
         updatetime();
  
         checkinput();
+        witnessslice();
         {
             inputsourcescope src(INPUTSRC_MENU);
             menuprocess();

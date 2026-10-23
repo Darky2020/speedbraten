@@ -71,6 +71,15 @@ jobs:
         run: |
           echo "cee4c89fe19a16e0bbd574e1385c1044a08a4f21b03ff0aea66c18559a09a85c  resimdata-v1.tar.gz" | (sha256sum -c - || shasum -a 256 -c -)
           tar xzf resimdata-v1.tar.gz
+      - name: noise self-test
+        run: |
+          chmod +x bin/sauer_resim-* || true
+          exe=$(cd bin && pwd)/$(ls bin)
+          mkdir -p nhome
+          cd resimdata
+          out=$("$exe" -q../nhome -x"noiseselftest; quit" none.sbr 2>&1 | tr -d '\r' || true)
+          echo "$out" | grep -i noise || true
+          echo "$out" | grep -q "noise selftest: ok"
       - name: re-simulate gold replays
         run: |
           chmod +x bin/sauer_resim-* || true

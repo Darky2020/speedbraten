@@ -59,7 +59,7 @@ endif
 
 ifneq (,$(findstring windows,$(TARGET)))
 	INCLUDES+= -Iwindows/include/zlib
-	LIBS= -L../bin64 -Lwindows/lib64 -lzlib1 -lenet -lws2_32 -lwinmm
+	LIBS= -L../bin64 -Lwindows/lib64 -lzlib1 -lenet -lws2_32 -lwinmm -lbcrypt
 	ifdef ANTICHEAT
 		LIBS+= -lEOSSDK-Win64-Shipping
 	endif
@@ -95,6 +95,8 @@ endif
 CLIENT_OBJS= \
 	shared/crypto.o \
 	shared/geom.o \
+	shared/noise.o \
+	shared/noisetest.o \
 	shared/glemu.o \
 	shared/stream.o \
 	shared/tools.o \
@@ -113,6 +115,7 @@ CLIENT_OBJS= \
 	engine/grass.o \
 	engine/lightmap.o \
 	engine/main.o \
+	engine/witnessnet.o \
 	engine/material.o \
 	engine/menus.o \
 	engine/movie.o \
@@ -260,7 +263,7 @@ ifdef RESIM_DEPS
 RESIM_CXXINCLUDES= -Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -I$(RESIM_DEPS)/include $(RESIM_INCLUDES) $(VENDOR_INCLUDES)
 RESIM_LINK= -L$(RESIM_DEPS)/lib -lenet -lz
 ifneq (,$(findstring windows,$(TARGET)))
-RESIM_LINK+= -lws2_32 -lwinmm
+RESIM_LINK+= -lws2_32 -lwinmm -lbcrypt
 endif
 else
 RESIM_CXXINCLUDES= $(INCLUDES) $(RESIM_INCLUDES) $(VENDOR_INCLUDES)
