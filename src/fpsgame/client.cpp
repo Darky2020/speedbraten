@@ -934,6 +934,68 @@ namespace game
         s.i(messagecn); s.i(messagereliable);
     }
 
+    // The parts of the flag state that matter to play: a fresh life must have the same flags
+    // as a fresh map start (scores, reset counters, timestamps and drawing state aside).
+    uint lifeflagsdigest()
+    {
+        if(!m_ctf) return 0;
+        dethasher h;
+        loopv(ctfmode.flags)
+        {
+            ctfclientmode::flag &f = ctfmode.flags[i];
+            h.i(f.id); h.i(f.team); h.i(f.spawnindex); h.v(f.spawnloc); h.f(f.spawnangle);
+            h.i(f.owner ? f.owner->clientnum : -1);
+            h.i(f.droptime ? 1 : 0);
+            if(f.droptime) { h.v(f.droploc); h.f(f.dropangle); }
+        }
+        return h.h;
+    }
+
+    // The messages queued for the server, split into messages (type and arguments, fixed
+    // sizes only); false if the queue holds one of variable size.
+    static bool splitmessages(const vector<uchar> &buf, vector<vector<int> > &out)
+    {
+        ucharbuf p((uchar *)buf.getbuf(), buf.length());
+        while(p.remaining())
+        {
+            int type = getint(p), size = server::msgsizelookup(type);
+            if(size <= 0 || p.overread()) return false;
+            vector<int> &m = out.add();
+            m.add(type);
+            loopi(size-1) m.add(getint(p));
+            if(p.overread()) return false;
+        }
+        return true;
+    }
+
+    static vector<uchar> freshmessages;
+    void lifemessagesfresh() { freshmessages = messages; }
+
+    // A life starts with its own spawn queued for the server and otherwise only messages a
+    // fresh map start also has queued (a life can begin at the map start), besides player
+    // model changes.
+    bool lifemessagesok()
+    {
+        vector<vector<int> > life, fresh;
+        if(!splitmessages(messages, life) || !splitmessages(freshmessages, fresh)) return false;
+        int spawns = 0;
+        loopv(life)
+        {
+            const vector<int> &m = life[i];
+            if(m[0] == N_SPAWN)
+            {
+                if(m.length() != 3 || m[1] != player1->lifesequence || m[2] != player1->gunselect || spawns++) return false;
+                continue;
+            }
+            if(m[0] == N_SWITCHMODEL) continue;
+            int found = -1;
+            loopvj(fresh) if(fresh[j].length() == m.length() && !memcmp(fresh[j].getbuf(), m.getbuf(), m.length()*sizeof(int))) { found = j; break; }
+            if(found < 0) return false;
+            fresh.remove(found);
+        }
+        return spawns == 1;
+    }
+
     void snapclientmodes(snapio &s)
     {
         int ctf = m_ctf ? 1 : 0;

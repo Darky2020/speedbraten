@@ -1524,6 +1524,9 @@ int main(int argc, char **argv)
                 break;
             }
             case 'x': initscript = &argv[i][2]; break;
+#ifdef HEADLESS
+            case 'V': game::resimverify(&argv[i][2]); break;
+#endif
 #ifdef ANTICHEAT
             case 'e': anticheatenabled = 1; break;
 #endif

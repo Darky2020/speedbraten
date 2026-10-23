@@ -215,6 +215,68 @@ namespace game
 
     const vector<uchar> &savedstatedata(int &tick) { tick = savedtick; return savedstate; }
 
+    // Checks a life's saved start against the state of a fresh map start, which is what a
+    // respawn puts the world back to: lifestartfresh() before the saved state is restored,
+    // lifestartcompare() after. Sections that hold only clocks, counters and stats (and the
+    // player, checked field by field) are not compared.
+    static const char * const lifesameSections[] = { "MONS", "MONF", "MOVE", "ENT ", "SHOT", "SCRP", "SPWN", "SETX", "RSPN", "SETN" };
+    extern uint lifeflagsdigest();
+    extern bool lifemessagesok();
+    extern void lifemessagesfresh();
+    enum { LIFESAME = sizeof(lifesameSections)/sizeof(lifesameSections[0]) };
+    static uint freshsections[LIFESAME], freshflags;
+    static int freshhealth, freshmaxhealth, fresharmour, fresharmourtype, freshgun, freshammo[NUMGUNS];
+
+    static uint sectiondigest(const char *tag)
+    {
+        for(size_t i = 0; i < sizeof(snapsections)/sizeof(snapsections[0]); i++) if(!strcmp(snapsections[i].tag, tag))
+        {
+            vector<uchar> buf;
+            snapio s(buf, false);
+            snapsections[i].snap(s);
+            return bufdigest(buf);
+        }
+        return 0;
+    }
+
+    void lifestartfresh()
+    {
+
+        loopi(LIFESAME) freshsections[i] = sectiondigest(lifesameSections[i]);
+        freshflags = lifeflagsdigest();
+        lifemessagesfresh();
+        fpsent &d = *player1;
+        freshhealth = d.health; freshmaxhealth = d.maxhealth; fresharmour = d.armour; fresharmourtype = d.armourtype; freshgun = d.gunselect;
+        loopi(NUMGUNS) freshammo[i] = d.ammo[i];
+    }
+
+    // out: "ok" or the differences; checkrng: the RNG must be in the state seedMT(rngseed) gives
+    void lifestartcompare(bool checkrng, uint rngseed, char *out, int outlen)
+    {
+        string diff = "";
+        loopi(LIFESAME) if(sectiondigest(lifesameSections[i]) != freshsections[i]) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, lifesameSections[i]); }
+        if(lifeflagsdigest() != freshflags) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "flags"); }
+        if(!lifemessagesok()) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "messages"); }
+        fpsent &d = *player1;
+        bool spawnok = d.state == CS_ALIVE && d.health == freshhealth && d.maxhealth == freshmaxhealth && d.armour == fresharmour &&
+                       d.armourtype == fresharmourtype && d.gunselect == freshgun && d.vel.iszero() && d.falling.iszero();
+        loopi(NUMGUNS) if(d.ammo[i] != freshammo[i]) spawnok = false;
+        if(!spawnok) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "player"); }
+        if(checkrng)
+        {
+            vector<uchar> saved;
+            snapio keep(saved, false);
+            snaprng(keep);
+            uint now = sectiondigest("RNG ");
+            seedMT(rngseed);
+            uint want = sectiondigest("RNG ");
+            snapio back(saved, true);
+            snaprng(back);
+            if(now != want) { concatstring(diff, diff[0] ? "," : ""); concatstring(diff, "rng"); }
+        }
+        copystring(out, diff[0] ? diff : "ok", outlen);
+    }
+
     // starts a replay from a saved state: the player's own sleeps keep counting from now
     bool restorereplaystart(vector<uchar> &buf)
     {

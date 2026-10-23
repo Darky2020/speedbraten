@@ -242,6 +242,13 @@ namespace game
     // single-player slow motion (which also keeps the player alive)
     extern bool tellsassisted(const inputrun &r);
     extern bool tellsassistframe(int features);
+
+    // sauer_resim -V: check a life's saved start against a fresh map start (savestate.cpp)
+    extern bool replaylifecheck;
+    extern string replaylifecheckresult;
+    extern void lifestartfresh();
+    extern void lifestartcompare(bool checkrng, uint rngseed, char *out, int outlen);
+    extern bool replayrules(const char *file, const char *keys, int &fails, int &warns, int &missing, char *failed);
     extern int inputrunaids(const inputrun &r);
     extern void tellssavinglife(bool on); // the replay being saved holds one life
     // spawns.cpp: a custom flagrun spawn, or a forced race start, is in use

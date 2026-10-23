@@ -11,12 +11,21 @@ namespace game
     static replayinfo resiminfo;
     static bool resimstarted = false;
 
+    // -V<witness key>: also apply the leaderboard rules (as replayverify, trusting that key) and
+    // check a life's saved start; the results are extra JSON fields, the exit code is unchanged
+    static string resimkey = "";
+    static bool resimrulesread = false;
+    static int resimfails = 0, resimwarns = 0, resimmissing = 0;
+    static string resimfailed = "";
+    void resimverify(const char *witnesskey) { copystring(resimkey, witnesskey); replaylifecheck = true; }
+
     bool resimstart(const char *file)
     {
         inputrun run;
         if(!file || !file[0]) { fprintf(stderr, "usage: sauer_resim [-q<home>] [-x<script>] <replay.sbr>\n"); return false; }
         if(!readreplay(file, &run, resiminfo) || run.empty()) { fprintf(stderr, "could not read replay %s\n", file); return false; }
         copystring(resimfile, file);
+        if(resimkey[0]) resimrulesread = replayrules(file, resimkey, resimfails, resimwarns, resimmissing, resimfailed);
         playinputrun(run);
         resimstarted = true;
         return true;
@@ -55,7 +64,15 @@ namespace game
         printf(",\"recorded_finished\":%s,\"recorded_runtime_ms\":%d", resiminfo.finished ? "true" : "false", resiminfo.runtime);
         printf(",\"desync_tick\":%d,\"hash\":\"", desync);
         loopi(DETHASH_GROUPS) printf("%08x", hash[i]);
-        printf("\",\"ok\":%s}\n", ok ? "true" : "false");
+        printf("\",\"ok\":%s", ok ? "true" : "false");
+        if(resimkey[0])
+        {
+            printf(",\"rules_read\":%s,\"rules_failed\":%d,\"rules_warned\":%d,\"missing_files\":%d,\"failed\":", resimrulesread ? "true" : "false", resimfails, resimwarns, resimmissing);
+            jsonstring(resimfailed);
+            printf(",\"lifestart\":");
+            jsonstring(replaylifecheckresult);
+        }
+        printf("}\n");
         fflush(stdout);
         return ok ? 0 : 1;
     }

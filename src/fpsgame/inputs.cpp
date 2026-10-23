@@ -354,7 +354,6 @@ namespace game
 
     void inputlifespawned()
     {
-        seedlife();
         if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
         lifestart = NULL;
@@ -508,6 +507,10 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    bool replaylifecheck = false;
+    string replaylifecheckresult = "skipped";
+    enum { LIFECHECKWAIT = 400 };
+
     static uint lifeseed(uint seed, int life)
     {
         uint h = seed ^ (uint(life) * 0x9E3779B1U);
@@ -515,13 +518,12 @@ namespace game
         return h;
     }
 
-    // A life in a flagrun or race then starts from the same RNG state whatever came before it
-    // in the session, so the life can be checked on its own. The spawn at map start needs no
-    // reseed: the map start seeds the RNG.
+    // At the start of the tick after a spawn in a flagrun or race, where the life's saved state
+    // is taken, the RNG is reseeded: a life then starts from the same RNG state whatever came
+    // before it in the session, and can be checked on its own.
     static void seedlife()
     {
-        if(curtick <= 0) return;
-        const inputattempt *a = replaying ? &replaycur() : !recordingoff && !recording.empty() ? &recording.last() : NULL;
+        const inputattempt *a = replaying ? &replaycur() : !recordingoff && recording.attempts.length() ? &recording.last() : NULL;
         if(!a || !a->lifeseeds || (!a->flagrun && !a->race)) return;
         seedMT(lifeseed(a->seed, player1->lifesequence));
     }
@@ -781,8 +783,16 @@ namespace game
         if(!connected) { clearevents(pending); return; }
         if(replaystartstate && replaying)
         {
-            replaystartstate = false;
             inputattempt &a = replaycur();
+            bool lifecheck = replaylifecheck && (a.flagrun || a.race);
+            // the fresh state to check a life against is taken where a life's state is taken:
+            // at the start of the tick after the spawn, here the map start's
+            static int lifecheckwait = 0;
+            if(lifecheck && !lifepending && lifecheckwait++ < LIFECHECKWAIT) return;
+            if(lifecheck && !lifepending) copystring(replaylifecheckresult, "no spawn at the map start");
+            lifecheckwait = 0;
+            replaystartstate = false;
+            if(lifecheck && lifepending) lifestartfresh();
             if(!restorereplaystart(a.snapshot))
             {
                 conoutf(CON_ERROR, "the replay's saved state does not fit this map or build: replay stopped");
@@ -792,13 +802,15 @@ namespace game
             }
             else
             {
+                if(lifecheck && !strcmp(replaylifecheckresult, "skipped"))
+                    lifestartcompare(a.lifeseeds, lifeseed(a.seed, player1->lifesequence), replaylifecheckresult, sizeof(replaylifecheckresult));
                 replaypos = 0;
                 while(replaypos < a.events.length() && a.events[replaypos].tick <= curtick) replaypos++;
                 replayhashpos = 0;
             }
         }
         replaystartstate = false;
-        if(lifepending) takelifestate();
+        if(lifepending) { seedlife(); takelifestate(); }
         runstateops();
         snapcycletick();
         takeautostate();

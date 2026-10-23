@@ -961,11 +961,17 @@ namespace game
     // replayverify: checks a replay for leaderboard use and prints one line per check
     struct verifier
     {
-        int fails, warns;
-        verifier() : fails(0), warns(0) {}
+        int fails, warns, missing; // missing: data files this game does not have
+        string failed;             // names of the failed checks, comma separated
+        verifier() : fails(0), warns(0), missing(0) { failed[0] = '\0'; }
 
         void pass(const char *name, const char *detail = "") { conoutf("\f0PASS\f7 %s %s", name, detail); }
-        void fail(const char *name, const char *detail = "") { conoutf("\f3FAIL\f7 %s %s", name, detail); fails++; }
+        void fail(const char *name, const char *detail = "")
+        {
+            conoutf("\f3FAIL\f7 %s %s", name, detail);
+            if(fails++) concatstring(failed, ",");
+            concatstring(failed, name);
+        }
         void warn(const char *name, const char *detail = "") { conoutf("\f2WARN\f7 %s %s", name, detail); warns++; }
         void check(bool ok, const char *name, const char *detail = "") { if(ok) pass(name, detail); else fail(name, detail); }
     };
@@ -1012,7 +1018,7 @@ namespace game
     {
         vector<uchar> keys;
         loadwitnesskeys(keyfile, keys);
-        int good = 0, unknown = 0, bad = 0, final = 0, verdicts = 0, rejected = 0, players = 0;
+        int good = 0, unknown = 0, bad = 0, final = 0, verdicts = 0, rejected = 0, unverified = 0, players = 0;
         uchar player[sbr2::signature::INSTALLKEYID];
         loopv(rd.chunks)
         {
@@ -1042,15 +1048,17 @@ namespace game
             {
                 verdicts++;
                 string verdict = "";
-                if(!sbr2::kvfind(s.extras, "verdict", NULL, verdict, sizeof(verdict)) || strcmp(verdict, "valid")) rejected++;
+                if(!sbr2::kvfind(s.extras, "verdict", NULL, verdict, sizeof(verdict))) rejected++;
+                else if(!strcmp(verdict, "unverified")) unverified++;
+                else if(strcmp(verdict, "valid")) rejected++;
             }
         }
         string who = "no player key";
         if(players > 0) { copystring(who, "player "); sbr2::tohex(player, sizeof(player), &who[7]); }
-        defformatstring(detail, "%d valid (%d final, %d verdict, %d rejected), %d unknown key, %d bad, %d trusted keys, %s",
-            good, final, verdicts, rejected, unknown, bad, keys.length() / 32, players < 0 ? "signed for different players" : who);
+        defformatstring(detail, "%d valid (%d final, %d verdict, %d rejected, %d unverified), %d unknown key, %d bad, %d trusted keys, %s",
+            good, final, verdicts, rejected, unverified, unknown, bad, keys.length() / 32, players < 0 ? "signed for different players" : who);
         if(bad || rejected || players < 0) v.fail("signatures", detail);
-        else if(!final && !verdicts) v.warn("signatures", detail);
+        else if((!final && !verdicts) || unverified == verdicts && verdicts) v.warn("signatures", detail);
         else v.pass("signatures", detail);
     }
 
@@ -1075,10 +1083,11 @@ namespace game
                 same = len == f.size && !memcmp(hash, f.hash, sizeof(hash));
                 delete[] buf;
             }
+            if(!buf) v.missing++;
             if(!same && !mismatched++) copystring(first, f.path);
         }
         if(!files) { v.fail("data", "no file hashes (converted or older replay)"); return; }
-        defformatstring(detail, "%d files%s%s", files, mismatched ? ", differs or missing: " : " match", first);
+        defformatstring(detail, "%d files%s%s%s", files, mismatched ? ", differs or missing: " : " match", first, v.missing ? " (some missing)" : "");
         v.check(!mismatched, "data", detail);
     }
 
@@ -1192,11 +1201,10 @@ namespace game
         else v.pass("window", d);
     }
 
-    static void replayverify(const char *file, const char *keyfile)
+    static bool replayverify(const char *file, const char *keyfile, verifier &v)
     {
-        verifier v;
         stream *f = openrawfile(path(file, true), "rb");
-        if(!f) { conoutf(CON_ERROR, "replayverify: could not open %s", file); intret(-1); return; }
+        if(!f) { conoutf(CON_ERROR, "replayverify: could not open %s", file); return false; }
         vector<uchar> buf;
         uchar chunk[65536];
         for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
@@ -1217,9 +1225,27 @@ namespace game
             verifyrules(v, run, info);
         }
         conoutf("replayverify: %d failed, %d warnings: %s", v.fails, v.warns, v.fails ? "\f3not eligible" : "\f0eligible");
-        intret(v.fails);
+        return true;
     }
-    ICOMMAND(replayverify, "ss", (char *file, char *keys), replayverify(file, keys));
+
+    static void replayverifycmd(const char *file, const char *keys)
+    {
+        verifier v;
+        intret(replayverify(file, keys, v) ? v.fails : -1);
+    }
+    ICOMMAND(replayverify, "ss", (char *file, char *keys), replayverifycmd(file, keys));
+
+    // the leaderboard rules of replayverify for sauer_resim: false if the file can't be read
+    bool replayrules(const char *file, const char *keys, int &fails, int &warns, int &missing, char *failed)
+    {
+        verifier v;
+        if(!replayverify(file, keys, v)) return false;
+        fails = v.fails;
+        warns = v.warns;
+        missing = v.missing;
+        copystring(failed, v.failed, MAXSTRLEN);
+        return true;
+    }
 
     // Rewrites a replay in the current format in memory and checks that it can be streamed: the
     // bytes written after n segments are the first bytes of the whole file for every n, and
@@ -1452,13 +1478,17 @@ namespace game
                 payload.put(r.p, r.left());
                 if(live && live->runid == runid) { live->signatures.add(payload); continue; }
                 sbr2::signature sig;
-                bool final = sig.read(payload.getbuf(), payload.length()) && sig.scope == sbr2::signature::FINAL;
+                bool ok = sig.read(payload.getbuf(), payload.length());
                 loopv(awaitingsigns) if(awaitingsigns[i].runid == runid)
                 {
                     appendsignature(awaitingsigns[i].file, payload);
-                    if(final)
+                    if(ok && sig.scope == sbr2::signature::FINAL) conoutf("\f0witness signed %s", awaitingsigns[i].file);
+                    if(ok && sig.scope == sbr2::signature::VERDICT)
                     {
-                        conoutf("\f0witness signed %s", awaitingsigns[i].file);
+                        string verdict = "", reason = "";
+                        sbr2::kvfind(sig.extras, "verdict", NULL, verdict, sizeof(verdict));
+                        sbr2::kvfind(sig.extras, "reason", NULL, reason, sizeof(reason));
+                        conoutf(!strcmp(verdict, "valid") ? "\f0witness verdict on %s: %s" : "\f3witness verdict on %s: %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
                         awaitingsigns.remove(i);
                     }
                     break;

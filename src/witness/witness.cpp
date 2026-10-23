@@ -6,9 +6,15 @@
 //   - checks every TICK commitment against the state hash stored for that tick,
 //   - bounds how far the run's ticks fall behind or run ahead of its own clock,
 //   - signs each segment's chain head as it closes and the content hash once END arrives.
-// Sessions, runs, seeds and signatures are recorded in witness.db (SQLite).
+// Every finished run is then re-simulated by sauer_resim (one at a time, in its own process)
+// with the leaderboard rules and, for a flagrun or race life, a check of the life's saved
+// start; the witness signs the verdict and sends it to the player if still connected.
+// Sessions, runs, seeds, signatures and verdicts are recorded in witness.db (SQLite).
 //
 //   sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>]
+//                 [-e<sauer_resim> -r<game data dir> [-o<overrides dir>]]
+//
+// Without -e and -r runs are signed but get no verdict.
 //
 // The channel key file holds the X25519 private key in hex; it is created if missing. The
 // signing seed comes from server/cmd/witnesskeys.
@@ -21,6 +27,11 @@
 
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 void conoutfv(int type, const char *fmt, va_list args)
 {
@@ -47,7 +58,8 @@ namespace witness
     enum { LAG = 2000, LEAD = 500 };
 
     static uchar channelkey[noise::KEYLEN], signingseed[32];
-    static string datadir = "";
+    static string datadir = "", resimexe = "", resimdata = "", resimoverrides = "";
+    enum { RESIMCPU = 600, RESIMWALL = 900 }; // seconds
     static sqlite3 *db = NULL;
     static unsigned long long signcounter = 0;
 
@@ -90,6 +102,14 @@ namespace witness
         return sqlite3_last_insert_rowid(db);
     }
 
+    // for databases made before the column existed
+    static bool addcolumn(const char *table, const char *column)
+    {
+        defformatstring(sql, "ALTER TABLE %s ADD COLUMN %s", table, column);
+        sqlite3_exec(db, sql, NULL, NULL, NULL);
+        return true;
+    }
+
     static bool opendb()
     {
         defformatstring(file, "%s/witness.db", datadir);
@@ -100,8 +120,11 @@ namespace witness
             "CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY, session INTEGER, runid INTEGER, installkey TEXT, kind INTEGER, starttick INTEGER, started INTEGER, "
             "file TEXT, bytes INTEGER DEFAULT 0, segments INTEGER DEFAULT 0, content TEXT, finished INTEGER DEFAULT 0, violations INTEGER DEFAULT 0, maxlagms INTEGER DEFAULT 0, "
             "seedsok INTEGER DEFAULT 1, stop TEXT, refused TEXT, ended INTEGER);"
-            "CREATE TABLE IF NOT EXISTS signatures(run INTEGER, scope INTEGER, segment INTEGER, recvus INTEGER, payload BLOB);");
+            "CREATE TABLE IF NOT EXISTS signatures(run INTEGER, scope INTEGER, segment INTEGER, recvus INTEGER, payload BLOB);") &&
+            addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT");
     }
+
+    static vector<long long> resimqueue;
 
     struct witnessrun
     {
@@ -293,6 +316,7 @@ namespace witness
                 DELETEP(r.file);
             }
             conoutf("%s: run %d signed: %d segments, %d bytes, %s, %d violations, max lag %d ms", c.addressname, r.runid, r.reader.segment, r.bytes, r.seedsok ? "witness seeds" : "unknown seed", r.violations, r.maxlagms);
+            if(resimexe[0]) resimqueue.add(r.row);
         }
     }
 
@@ -397,7 +421,9 @@ namespace witness
         tohexstr(c.installid, sizeof(c.installid), c.installhex);
         string sessionhex;
         tohexstr(c.session, sizeof(c.session), sessionhex);
-        run("UPDATE sessions SET session = ?, installkey = ?, build = ? WHERE id = ?", "sssi", sessionhex, c.installhex, c.build, c.sessionrow);
+        string noncehex;
+        tohexstr(c.nonce, sizeof(c.nonce), noncehex);
+        run("UPDATE sessions SET session = ?, nonce = ?, installkey = ?, build = ? WHERE id = ?", "ssssi", sessionhex, noncehex, c.installhex, c.build, c.sessionrow);
         DELETEP(c.hs);
         c.open = true;
         conoutf("%s: session %s, player %s, %s", c.addressname, sessionhex, c.installhex, c.build);
@@ -436,6 +462,182 @@ namespace witness
         if(c.sessionrow >= 0) run("UPDATE sessions SET ended = ? WHERE id = ?", "ii", (long long)(nowus()/1000), c.sessionrow);
         conoutf("%s: disconnected", c.addressname);
         delete clients.remove(i);
+    }
+
+    // re-simulation of finished runs: one sauer_resim process at a time
+    static pid_t resimpid = 0;
+    static long long resimrow = -1;
+    static unsigned long long resimstarted = 0;
+    static string resimout = "";
+
+    static bool jsonfield(const char *json, const char *key, char *out, int outlen)
+    {
+        defformatstring(pattern, "\"%s\":", key);
+        const char *p = strstr(json, pattern);
+        if(!p) return false;
+        p += strlen(pattern);
+        int n = 0;
+        if(*p == '"') { p++; while(p[n] && p[n] != '"' && n < outlen-1) n++; }
+        else while(p[n] && p[n] != ',' && p[n] != '}' && n < outlen-1) n++;
+        memcpy(out, p, n);
+        out[n] = '\0';
+        return true;
+    }
+
+    static bool rowtext(const char *sql, long long row, int columns, char (*out)[MAXSTRLEN])
+    {
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return false;
+        sqlite3_bind_int64(st, 1, row);
+        bool found = sqlite3_step(st) == SQLITE_ROW;
+        if(found) loopi(columns) { const unsigned char *t = sqlite3_column_text(st, i); copystring(out[i], t ? (const char *)t : ""); }
+        sqlite3_finalize(st);
+        return found;
+    }
+
+    static void startresim(long long row)
+    {
+        string f[1];
+        if(!rowtext("SELECT file FROM runs WHERE id = ?", row, 1, f)) return;
+        defformatstring(home, "%s/resimhome", datadir);
+        mkdir(home, 0700);
+        formatstring(resimout, "%s/resim-%lld.json", home, row);
+        uchar pub[32];
+        sbr2::publickey(signingseed, pub);
+        string pubhex;
+        tohexstr(pub, 32, pubhex);
+        defformatstring(qarg, "-q%s", home);
+        defformatstring(oarg, "-o%s", resimoverrides);
+        defformatstring(varg, "-V%s", pubhex);
+        pid_t pid = fork();
+        if(pid < 0) return;
+        if(!pid)
+        {
+            struct rlimit cpu = { RESIMCPU, RESIMCPU };
+            setrlimit(RLIMIT_CPU, &cpu);
+            int out = open(resimout, O_WRONLY | O_CREAT | O_TRUNC, 0600), null = open("/dev/null", O_WRONLY);
+            if(out >= 0) dup2(out, 1);
+            if(null >= 0) dup2(null, 2);
+            if(chdir(resimdata) < 0) _exit(3);
+            if(resimoverrides[0]) execl(resimexe, resimexe, qarg, oarg, varg, f[0], (char *)NULL);
+            else execl(resimexe, resimexe, qarg, varg, f[0], (char *)NULL);
+            _exit(3);
+        }
+        resimpid = pid;
+        resimrow = row;
+        resimstarted = nowus();
+    }
+
+    static client *sessionclient(long long sessionrow)
+    {
+        loopv(clients) if(clients[i]->sessionrow == sessionrow && clients[i]->open) return clients[i];
+        return NULL;
+    }
+
+    // the verdict on a finished run, signed over its content hash
+    static void finishresim(int status, bool timedout)
+    {
+        long long row = resimrow;
+        resimpid = 0;
+        resimrow = -1;
+        char json[8192] = "";
+        stream *in = openrawfile(resimout, "rb");
+        if(in) { size_t n = in->read(json, sizeof(json) - 1); json[n] = '\0'; delete in; }
+        string ok = "", desync = "", runtime = "", recorded = "", failed = "", missing = "", lifestart = "", ticks = "";
+        bool read = jsonfield(json, "ok", ok, sizeof(ok)) && jsonfield(json, "rules_failed", failed, sizeof(failed));
+        jsonfield(json, "desync_tick", desync, sizeof(desync));
+        jsonfield(json, "runtime_ms", runtime, sizeof(runtime));
+        jsonfield(json, "recorded_runtime_ms", recorded, sizeof(recorded));
+        jsonfield(json, "missing_files", missing, sizeof(missing));
+        jsonfield(json, "lifestart", lifestart, sizeof(lifestart));
+        jsonfield(json, "ticks", ticks, sizeof(ticks));
+        string failednames = "";
+        jsonfield(json, "failed", failednames, sizeof(failednames));
+        string info[7];
+        if(!rowtext("SELECT r.runid, r.content, r.violations, r.seedsok, r.session, s.session, s.nonce || ' ' || r.installkey FROM runs r JOIN sessions s ON s.id = r.session WHERE r.id = ?", row, 7, info)) return;
+        const char *verdict = "valid";
+        string reason = "";
+        if(timedout || !read || (WIFEXITED(status) && WEXITSTATUS(status) >= 2))
+        {
+            verdict = "unverified";
+            copystring(reason, timedout ? "re-simulation timed out" : "re-simulation could not play the file");
+        }
+        else if(atoi(missing) > 0) { verdict = "unverified"; copystring(reason, "a map file is not available"); }
+        else if(strcmp(ok, "true"))
+        {
+            verdict = "rejected";
+            if(atoi(desync)) formatstring(reason, "the replay desynced at tick %s", desync);
+            else formatstring(reason, "the re-simulated run (%s ms) differs from the recorded one (%s ms)", runtime, recorded);
+        }
+        else if(atoi(failed) > 0) { verdict = "rejected"; formatstring(reason, "rules: %s", failednames); }
+        else if(strcmp(lifestart, "ok") && strcmp(lifestart, "skipped")) { verdict = "rejected"; formatstring(reason, "life start differs: %s", lifestart); }
+        else if(atoi(info[2]) > 0) { verdict = "rejected"; copystring(reason, "not played in real time"); }
+        else if(!atoi(info[3])) { verdict = "rejected"; copystring(reason, "a seed did not come from the witness"); }
+
+        sbr2::signature sig;
+        sig.scope = sbr2::signature::VERDICT;
+        char *space = strchr(info[6], ' ');
+        if(space) *space = '\0';
+        sbr2::fromhex(info[5], sig.session, sizeof(sig.session));
+        sbr2::fromhex(info[6], sig.nonce, sizeof(sig.nonce));
+        if(space) sbr2::fromhex(space + 1, sig.installkey, sizeof(sig.installkey));
+        sbr2::fromhex(info[1], sig.hash, sbr2::HASHSIZE);
+        sig.counter = ++signcounter;
+        sig.recvus = nowus();
+        sbr2::kvwriter kv;
+        kv.str("verdict", verdict);
+        if(reason[0]) kv.str("reason", reason);
+        kv.var("runtimems", atoi(runtime));
+        kv.var("ticks", atoi(ticks));
+        kv.build(sig.extras);
+        sig.sign(signingseed);
+        vector<uchar> payload;
+        sig.write(payload);
+        run("INSERT INTO signatures(run, scope, segment, recvus, payload) VALUES(?, ?, 0, ?, ?)", "iiib", row, (long long)sig.scope, (long long)sig.recvus, payload.getbuf(), payload.length());
+        run("UPDATE runs SET verdict = ?, reason = ?, resim = ? WHERE id = ?", "sssi", verdict, reason, json, row);
+        string file[1];
+        if(strcmp(verdict, "unverified") && rowtext("SELECT file FROM runs WHERE id = ?", row, 1, file))
+        {
+            stream *f = openrawfile(file[0], "ab");
+            if(f) { vector<uchar> chunk; sbr2::appendchunk(chunk, "sIGN", payload); f->write(chunk.getbuf(), chunk.length()); delete f; }
+        }
+        client *c = sessionclient(atoll(info[4]));
+        if(c)
+        {
+            vector<uchar> msg;
+            sbr2::byteswriter w(msg);
+            w.var(atoi(info[0]));
+            w.bytes(payload.getbuf(), payload.length());
+            sendmsg(*c, WM_SIGN, msg);
+        }
+        conoutf("run %lld (session %s, run %s): %s%s%s", row, info[4], info[0], verdict, reason[0] ? ": " : "", reason);
+    }
+
+    static void resimslice()
+    {
+        if(resimpid)
+        {
+            int status = 0;
+            pid_t done = waitpid(resimpid, &status, WNOHANG);
+            if(done == resimpid) finishresim(status, false);
+            else if(nowus() - resimstarted > (unsigned long long)RESIMWALL * 1000000)
+            {
+                kill(resimpid, SIGKILL);
+                waitpid(resimpid, &status, 0);
+                finishresim(status, true);
+            }
+            return;
+        }
+        if(resimqueue.length()) startresim(resimqueue.remove(0));
+    }
+
+    static void queueunjudged()
+    {
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, "SELECT id FROM runs WHERE finished = 1 AND (verdict IS NULL OR verdict = 'unverified') ORDER BY id", -1, &st, NULL) != SQLITE_OK) return;
+        while(sqlite3_step(st) == SQLITE_ROW) resimqueue.add(sqlite3_column_int64(st, 0));
+        sqlite3_finalize(st);
+        if(resimqueue.length()) conoutf("%d finished runs queued for re-simulation", resimqueue.length());
     }
 
     static bool loadhexfile(const char *file, uchar *out, int n, bool create)
@@ -498,7 +700,8 @@ namespace witness
                 if(c.out.length()) ENET_SOCKETSET_ADD(writeset, c.sock);
                 maxsock = max(maxsock, c.sock);
             }
-            if(enet_socketset_select(maxsock, &readset, &writeset, 1000) < 0) continue;
+            if(resimexe[0]) resimslice();
+            if(enet_socketset_select(maxsock, &readset, &writeset, resimpid || resimqueue.length() ? 100 : 1000) < 0) continue;
             int now = int(nowus() / 1000);
             if(ENET_SOCKETSET_CHECK(readset, listener))
             {
@@ -561,6 +764,9 @@ int main(int argc, char **argv)
         case 's': seedfile = &argv[i][2]; break;
         case 'c': keyfile = &argv[i][2]; break;
         case 'p': port = atoi(&argv[i][2]); break;
+        case 'e': copystring(resimexe, &argv[i][2]); break;
+        case 'r': copystring(resimdata, &argv[i][2]); break;
+        case 'o': copystring(resimoverrides, &argv[i][2]); break;
     }
     if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>]");
     mkdir(datadir, 0700);
@@ -570,6 +776,9 @@ int main(int argc, char **argv)
     defformatstring(defaultkey, "%s/channel.key", datadir);
     if(!loadhexfile(keyfile ? keyfile : defaultkey, channelkey, noise::KEYLEN, true)) fatal("could not read or create the channel key");
     if(!opendb()) fatal("could not open %s/witness.db", datadir);
+    if(resimexe[0] && !resimdata[0]) fatal("-e needs -r<game data dir> to run sauer_resim in");
+    if(datadir[0] != '/') { char cwd[4096]; if(getcwd(cwd, sizeof(cwd))) { defformatstring(abs, "%s/%s", cwd, datadir); copystring(datadir, abs); } }
+    if(resimexe[0]) queueunjudged();
     if(enet_initialize() < 0) fatal("could not initialise networking");
     return serve(port);
 }
