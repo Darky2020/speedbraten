@@ -215,6 +215,10 @@ clean:
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite $(VENDOR_INCLUDES)
+# RELEASE=1: release builds, without the test-only commands
+ifdef RELEASE
+$(CLIENT_OBJS): CXXFLAGS += -DSPEEDBRATEN_RELEASE
+endif
 
 # the commit a build comes from, for replay files; rebuilt when the git index changes
 GITCOMMIT:= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)

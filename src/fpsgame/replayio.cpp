@@ -235,6 +235,17 @@ namespace sbr2
         memcpy(id, h, 8);
     }
 
+    void installkeyid(const uchar *publickey, uchar *id)
+    {
+        uchar h[HASHSIZE];
+        blake3_hasher b;
+        blake3_hasher_init(&b);
+        hashlabel(b, "SBR2-install");
+        blake3_hasher_update(&b, publickey, 32);
+        blake3_hasher_finalize(&b, h, HASHSIZE);
+        memcpy(id, h, signature::INSTALLKEYID);
+    }
+
     void publickey(const uchar *seed, uchar *out)
     {
         uchar s[32], sk[64];
@@ -253,6 +264,7 @@ namespace sbr2
         w.bytes(s.keyid, 8);
         w.bytes(s.session, 16);
         w.bytes(s.nonce, 16);
+        if(s.version >= 2) w.bytes(s.installkey, signature::INSTALLKEYID);
         w.var(s.segment);
         w.var(s.counter);
         w.u64(s.recvus);
@@ -305,6 +317,8 @@ namespace sbr2
         r.bytes(keyid, 8);
         r.bytes(session, 16);
         r.bytes(nonce, 16);
+        if(version >= 2) r.bytes(installkey, INSTALLKEYID);
+        else memset(installkey, 0, sizeof(installkey));
         segment = int(r.var());
         counter = r.var();
         recvus = r.u64();
@@ -315,7 +329,7 @@ namespace sbr2
         extras.put(r.p, int(n));
         r.p += n;
         r.bytes(sig, 64);
-        return r.ok && !r.left() && version == VERSION && scope <= FINAL;
+        return r.ok && !r.left() && version >= 1 && version <= VERSION && scope <= (version >= 2 ? int(VERDICT) : int(FINAL));
     }
 
     const chunk *reader::find(const char *type, int from) const
@@ -508,7 +522,7 @@ namespace game
         conoutf("sbr2writetest: %s, %d bytes, content %s", file, w.out.length(), hex);
     });
 
-    // sbr2check file: verifies an SBR2 file and prints its chunks, segment heads and content hash
+#ifndef SPEEDBRATEN_RELEASE
     static void replaytestkey(const char *seedhex)
     {
         uchar seed[32], pk[32];
@@ -521,12 +535,16 @@ namespace game
     }
     COMMAND(replaytestkey, "s");
 
-    // Until a witness exists: appends a signature made with the key of this seed, over the
-    // content hash (scope 1) or the chain head of a segment (scope 0).
-    static void replaysign(const char *file, const char *seedhex, int scope, int segment)
+    // Test signing (not in release builds): appends a signature made with the key of this seed,
+    // over the chain head of a segment (scope 0), the content hash (scope 1) or the content
+    // hash with a "valid" verdict (scope 2), naming the install key installhex (64 hex digits,
+    // or empty).
+    static void replaysign(const char *file, const char *seedhex, int scope, int segment, const char *installhex)
     {
-        uchar seed[32];
+        uchar seed[32], install[32];
         if(!sbr2::fromhex(seedhex, seed, 32)) { conoutf(CON_ERROR, "replaysign: the seed is 64 hex digits"); return; }
+        if(installhex[0] && !sbr2::fromhex(installhex, install, 32)) { conoutf(CON_ERROR, "replaysign: the install key is 64 hex digits"); return; }
+        if(scope < 0 || scope > sbr2::signature::VERDICT) { conoutf(CON_ERROR, "replaysign: scope is 0, 1 or 2"); return; }
         stream *f = openrawfile(path(file, true), "rb");
         if(!f) { conoutf(CON_ERROR, "replaysign: could not open %s", file); return; }
         vector<uchar> buf;
@@ -536,7 +554,14 @@ namespace game
         sbr2::reader rd;
         if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) { conoutf(CON_ERROR, "replaysign: %s", rd.error); return; }
         sbr2::signature s;
-        s.scope = scope ? int(sbr2::signature::FINAL) : int(sbr2::signature::SEGMENT);
+        s.scope = scope;
+        if(installhex[0]) sbr2::installkeyid(install, s.installkey);
+        if(s.scope == sbr2::signature::VERDICT)
+        {
+            sbr2::kvwriter kv;
+            kv.str("verdict", "valid");
+            kv.build(s.extras);
+        }
         if(s.scope == sbr2::signature::SEGMENT)
         {
             if(segment < 0 || segment >= rd.heads.length() / sbr2::HASHSIZE) { conoutf(CON_ERROR, "replaysign: no segment %d", segment); return; }
@@ -553,10 +578,12 @@ namespace game
         if(!f) { conoutf(CON_ERROR, "replaysign: could not write %s", file); return; }
         f->write(buf.getbuf(), buf.length());
         delete f;
-        conoutf("replaysign: signed %s (%s)", file, s.scope ? "content" : "segment");
+        conoutf("replaysign: signed %s (%s)", file, s.scope == sbr2::signature::SEGMENT ? "segment" : s.scope == sbr2::signature::FINAL ? "content" : "verdict");
     }
-    ICOMMAND(replaysign, "ssii", (char *file, char *seed, int *scope, int *segment), replaysign(file, seed, *scope, *segment));
+    ICOMMAND(replaysign, "ssiis", (char *file, char *seed, int *scope, int *segment, char *install), replaysign(file, seed, *scope, *segment, install));
+#endif
 
+    // sbr2check file: verifies an SBR2 file and prints its chunks, segment heads and content hash
     ICOMMAND(sbr2check, "s", (char *file),
     {
         stream *f = openrawfile(path(file, true), "rb");

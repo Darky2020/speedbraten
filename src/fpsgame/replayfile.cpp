@@ -932,9 +932,14 @@ namespace game
     }
 
     // file: a list of hex public keys, one per line, or a single key in hex
+    // The public keys of the witness, built in. A key list in a file (witnesskeys.txt, or the
+    // keys argument of replayverify) adds to them.
+    static const char * const witnesspinnedkeys[] = { NULL };
+
     static void loadwitnesskeys(const char *file, vector<uchar> &keys)
     {
         uchar key[32];
+        for(int i = 0; witnesspinnedkeys[i]; i++) if(sbr2::fromhex(witnesspinnedkeys[i], key, 32)) keys.put(key, 32);
         if(file && sbr2::fromhex(file, key, 32)) { keys.put(key, 32); return; }
         stream *f = openutf8file(path(file && file[0] ? file : "witnesskeys.txt", true), "r");
         if(!f) return;
@@ -945,7 +950,6 @@ namespace game
             while(*s && isspace(uchar(*s))) s++;
             char *e = s + strlen(s);
             while(e > s && isspace(uchar(e[-1]))) *--e = '\0';
-            uchar key[32];
             if(sbr2::fromhex(s, key, 32)) keys.put(key, 32);
         }
         delete f;
@@ -955,14 +959,15 @@ namespace game
     {
         vector<uchar> keys;
         loadwitnesskeys(keyfile, keys);
-        int good = 0, unknown = 0, bad = 0, final = 0;
+        int good = 0, unknown = 0, bad = 0, final = 0, verdicts = 0, rejected = 0, players = 0;
+        uchar player[sbr2::signature::INSTALLKEYID];
         loopv(rd.chunks)
         {
             const sbr2::chunk &c = *rd.chunks[i];
             if(memcmp(c.type, "sIGN", 4)) continue;
             sbr2::signature s;
             if(!s.read(c.data.getbuf(), c.data.length())) { bad++; continue; }
-            const uchar *expected = s.scope == sbr2::signature::FINAL ? rd.content :
+            const uchar *expected = s.scope != sbr2::signature::SEGMENT ? rd.content :
                                     s.segment < rd.heads.length() / sbr2::HASHSIZE ? &rd.heads[s.segment * sbr2::HASHSIZE] : NULL;
             const uchar *key = NULL;
             for(int k = 0; k + 32 <= keys.length(); k += 32)
@@ -971,13 +976,28 @@ namespace game
                 sbr2::keyid(&keys[k], id);
                 if(!memcmp(id, s.keyid, 8)) { key = &keys[k]; break; }
             }
-            if(!key) unknown++;
-            else if(!expected || memcmp(expected, s.hash, sbr2::HASHSIZE) || !s.check(key)) bad++;
-            else { good++; if(s.scope == sbr2::signature::FINAL) final++; }
+            if(!key) { unknown++; continue; }
+            if(!expected || memcmp(expected, s.hash, sbr2::HASHSIZE) || !s.check(key)) { bad++; continue; }
+            good++;
+            if(s.version >= 2)
+            {
+                if(!players++) memcpy(player, s.installkey, sizeof(player));
+                else if(memcmp(player, s.installkey, sizeof(player))) players = -1000;
+            }
+            if(s.scope == sbr2::signature::FINAL) final++;
+            if(s.scope == sbr2::signature::VERDICT)
+            {
+                verdicts++;
+                string verdict = "";
+                if(!sbr2::kvfind(s.extras, "verdict", NULL, verdict, sizeof(verdict)) || strcmp(verdict, "valid")) rejected++;
+            }
         }
-        defformatstring(detail, "%d valid (%d final), %d unknown key, %d bad, %d trusted keys", good, final, unknown, bad, keys.length() / 32);
-        if(bad) v.fail("signatures", detail);
-        else if(!final) v.warn("signatures", detail);
+        string who = "no player key";
+        if(players > 0) { copystring(who, "player "); sbr2::tohex(player, sizeof(player), &who[7]); }
+        defformatstring(detail, "%d valid (%d final, %d verdict, %d rejected), %d unknown key, %d bad, %d trusted keys, %s",
+            good, final, verdicts, rejected, unknown, bad, keys.length() / 32, players < 0 ? "signed for different players" : who);
+        if(bad || rejected || players < 0) v.fail("signatures", detail);
+        else if(!final && !verdicts) v.warn("signatures", detail);
         else v.pass("signatures", detail);
     }
 

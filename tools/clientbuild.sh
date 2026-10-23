@@ -19,7 +19,7 @@ t0=$(date +%s)
 echo "phase client $target: start" >&2
 case $target in
     *windows*)
-        make -j"$jobs" client USEZIG=1 TARGET="$target"
+        make -j"$jobs" client RELEASE=1 USEZIG=1 TARGET="$target"
         cp sauer_client "$out/speedbraten_${arch}_client.exe"
         ;;
     *linux*)
@@ -29,7 +29,7 @@ case $target in
         ln -s /usr/include/SDL2 sysinc/SDL2
         ln -s /usr/include/zlib.h /usr/include/zconf.h /usr/include/X11 sysinc/
         ln -s "/usr/include/$arch-linux-gnu/SDL2" sysinc/arch/SDL2
-        make -j"$jobs" client USEZIG=1 TARGET="$t" CFLAGS="--target=$t -O2 -fno-fast-math -ffp-contract=off" \
+        make -j"$jobs" client RELEASE=1 USEZIG=1 TARGET="$t" CFLAGS="--target=$t -O2 -fno-fast-math -ffp-contract=off" \
             INCLUDES="-Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include" \
             CLIENT_INCLUDES="-Isysinc -Isysinc/SDL2 -Isysinc/arch -D_REENTRANT" \
             LIBS="-Lenet -lenet -L$lib -lz" \
@@ -39,7 +39,7 @@ case $target in
         ;;
     *macos*)
         make -C enet CC='zig cc' AR='zig ar' CFLAGS="--target=$target -O2 -fno-fast-math -ffp-contract=off -mmacosx-version-min=11.0"
-        make -j"$jobs" client USEZIG=1 TARGET="$target" OSXMIN=11.0 \
+        make -j"$jobs" client RELEASE=1 USEZIG=1 TARGET="$target" OSXMIN=11.0 \
             INCLUDES="-Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -idirafter macos/sdk_11.3/usr/include" \
             LIBS="-Lmacos/sdk_11.3/usr/lib -lz -Lenet -lenet"
         cp sauer_client "$out/speedbraten_${arch}_client"

@@ -310,6 +310,7 @@ def decode_sign(raw):
     d = {"version": r.take(1)[0], "algorithm": r.take(1)[0], "scope": r.take(1)[0]}
     r.take(1)
     d["keyid"], d["session"], d["nonce"] = r.take(8), r.take(16), r.take(16)
+    d["installkey"] = r.take(16) if d["version"] >= 2 else None
     d["segment"], d["counter"] = r.var(), r.var()
     d["recvus"] = int.from_bytes(r.take(8), "little")
     d["hash"] = r.take(32)
@@ -322,8 +323,14 @@ def decode_sign(raw):
     return d
 
 
+def installkey_id(public):
+    """The id a version 2 signature uses for a client's install (Noise static) public key."""
+    return h(b"SBR2-install", public)[:16]
+
+
 def verify_signatures(chunks, heads, content, keys):
-    """-> list of (status, description) per sIGN chunk."""
+    """-> list of (status, description) per sIGN chunk. Scopes: 0 segment head, 1 content hash,
+    2 content hash with a verdict in the extras."""
     byid = {}
     for k in keys:
         h = blake3()
@@ -334,8 +341,16 @@ def verify_signatures(chunks, heads, content, keys):
         if name != "sIGN":
             continue
         d = decode_sign(data)
-        what = "content" if d["scope"] == 1 else "segment %d" % d["segment"]
-        expected = content if d["scope"] == 1 else (heads[d["segment"]] if d["segment"] < len(heads) else None)
+        if d["version"] not in (1, 2) or d["scope"] > (2 if d["version"] >= 2 else 1):
+            out.append(("BAD", "unknown signature version %d scope %d" % (d["version"], d["scope"])))
+            continue
+        what = {1: "content", 2: "verdict"}.get(d["scope"], "segment %d" % d["segment"])
+        if d["scope"] == 2:
+            verdict = dict(decode_kv(d["extras"])).get("verdict")
+            what += " %s" % verdict
+        if d["installkey"] is not None:
+            what += ", player %s" % d["installkey"].hex()
+        expected = content if d["scope"] in (1, 2) else (heads[d["segment"]] if d["segment"] < len(heads) else None)
         key = byid.get(d["keyid"])
         if key is None:
             out.append(("unknown key", "%s, key id %s" % (what, d["keyid"].hex())))
@@ -587,6 +602,13 @@ def main():
             print("signature %s: %s" % (status, what))
         if not results:
             print("no signatures")
+        players = {w.split("player ")[1] for s, w in results if s == "ok" and "player " in w}
+        if len(players) > 1:
+            print("FAIL: signed for different players")
+            sys.exit(1)
+        if any(s == "ok" and "verdict" in w and "verdict valid" not in w for s, w in results):
+            print("FAIL: rejected by the verdict")
+            sys.exit(1)
         if any(s == "BAD" for s, _ in results) or not any(s == "ok" for s, _ in results):
             print("FAIL: no valid signature" if not any(s == "BAD" for s, _ in results) else "FAIL: bad signature")
             sys.exit(1)

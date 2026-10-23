@@ -151,20 +151,23 @@ namespace sbr2
     // appends a chunk to a file's bytes (no hashing: for sIGN after END)
     void appendchunk(vector<uchar> &out, const char *type, const vector<uchar> &payload);
 
-    // A witness signature (sIGN chunk) over a segment's chain head (scope SEGMENT) or the
-    // content hash (scope FINAL).
+    // A witness signature (sIGN chunk) over a segment's chain head (scope SEGMENT), the content
+    // hash as streamed (scope FINAL) or the content hash after re-simulation, with the result in
+    // the extras (scope VERDICT). From version 2 on it names the player's install key.
     struct signature
     {
-        enum { VERSION = 1, ED25519 = 1 };
-        enum { SEGMENT = 0, FINAL = 1 };
+        enum { VERSION = 2, ED25519 = 1 };
+        enum { SEGMENT = 0, FINAL = 1, VERDICT = 2 };
+        enum { INSTALLKEYID = 16 };
         int version, algorithm, scope, segment;
-        uchar keyid[8], session[16], nonce[16], hash[HASHSIZE], sig[64];
+        uchar keyid[8], session[16], nonce[16], installkey[INSTALLKEYID], hash[HASHSIZE], sig[64];
         unsigned long long counter, recvus;
         vector<uchar> extras; // key-value
 
         signature() : version(VERSION), algorithm(ED25519), scope(FINAL), segment(0), counter(0), recvus(0)
         {
             memset(keyid, 0, sizeof(keyid)); memset(session, 0, sizeof(session)); memset(nonce, 0, sizeof(nonce));
+            memset(installkey, 0, sizeof(installkey));
             memset(hash, 0, sizeof(hash)); memset(sig, 0, sizeof(sig));
         }
         // the signed bytes: "SBR2-sig" and every field before the signature
@@ -177,6 +180,8 @@ namespace sbr2
     // a key's value in a key-value payload: svar/var/bool values in num, str values in str
     bool kvfind(const vector<uchar> &data, const char *key, long long *num, char *str = NULL, int strsize = 0);
     void keyid(const uchar *publickey, uchar *id);
+    // the id a signature uses for a client's install key (its Noise static public key)
+    void installkeyid(const uchar *publickey, uchar *id);
     void publickey(const uchar *seed, uchar *out);
 }
 
