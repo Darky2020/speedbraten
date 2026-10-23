@@ -13,7 +13,7 @@ namespace game
     VARP(hubport, 1, HUBPORT, 65535);
     SVARP(hubkey, ""); // the hub's channel public key, 64 hex digits
     SVARP(hubkeyfor, ""); // the "host:port" hubkey was learned from
-    enum { HUBRETRY = 10000 };
+    enum { HUBRETRY = 10000, FOLLOWDELAY = 1500 };
 
     struct hubplayer
     {
@@ -40,6 +40,9 @@ namespace game
 
     static bool autolobbydue = true;
     static uint playalonglobby = 0;
+    // a host map change waiting for the follower's run to end, and when a run last ran
+    static bool followpending = false;
+    static int lastrunning = -FOLLOWDELAY;
 
     static bool hasmember(const hublobby &l, uint id) { loopv(l.members) if(l.members[i] == id) return true; return false; }
     static hubplayer *findplayer(uint id) { loopv(hubplayers) if(hubplayers[i].id == id) return &hubplayers[i]; return NULL; }
@@ -57,6 +60,7 @@ namespace game
         hubwelcomed = false;
         autolobbydue = true;
         playalonglobby = 0;
+        followpending = false;
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -136,13 +140,23 @@ namespace game
         if(!now.map[0]) return;
         bool running = false;
         runtimerticks(running);
-        if(!running && !remote)
-        {
-            conoutf("\f2following %s to %s (%s)", playername(now.host), now.map, server::modename(now.mode, "?"));
-            changemap(now.map, now.mode);
-            return;
-        }
-        conoutf("\f2%s picked %s (%s): \f0/hubgo\f2 or the hub tab to play it", playername(now.host), now.map, server::modename(now.mode, "?"));
+        if(running) conoutf("\f2%s picked %s (%s): you follow when this run ends", playername(now.host), now.map, server::modename(now.mode, "?"));
+        followpending = true;
+    }
+
+    // follows the host's map once the player's run has been over for FOLLOWDELAY
+    static void followupdate()
+    {
+        bool running = false;
+        runtimerticks(running);
+        if(running) lastrunning = totalmillis;
+        if(!followpending) return;
+        hublobby *l = mylobby();
+        if(!l || l->host == hubmyid || !l->map[0] || remote || (!strcmp(l->map, clientmap) && l->mode == gamemode)) { followpending = false; return; }
+        if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
+        followpending = false;
+        conoutf("\f2following %s to %s (%s)", playername(l->host), l->map, server::modename(l->mode, "?"));
+        changemap(l->map, l->mode);
     }
 
     static void hubmessages()
@@ -338,6 +352,7 @@ namespace game
             }
             sendstatus();
             autolobby();
+            followupdate();
         }
     }
 
