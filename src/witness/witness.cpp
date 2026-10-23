@@ -28,6 +28,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/statvfs.h>
 #include <sys/resource.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -107,6 +108,51 @@ namespace witness
         return sqlite3_last_insert_rowid(db);
     }
 
+    // Limits per install and per address, counted from witness.db so a restart doesn't reset
+    // them; -l<name>=<value> sets one (bytes for the byte limits).
+    static struct { const char *name; long long value; } limits[] =
+    {
+        { "runbytes", 16LL << 20 }, { "runsperminute", 60 }, { "runsperhour", 1500 }, { "addressrunsperminute", 120 },
+        { "bytesperday", 200LL << 20 }, { "addressbytesperday", 500LL << 20 }, { "newinstallsperday", 5 },
+        { "queued", 20 }, { "freedisk", 1LL << 30 }
+    };
+    enum { L_RUNBYTES = 0, L_RUNSPERMINUTE, L_RUNSPERHOUR, L_ADDRESSRUNSPERMINUTE, L_BYTESPERDAY, L_ADDRESSBYTESPERDAY, L_NEWINSTALLS, L_QUEUED, L_FREEDISK };
+    static long long limit(int i) { return limits[i].value; }
+
+    static bool setlimit(const char *arg)
+    {
+        const char *eq = strchr(arg, '=');
+        if(!eq) return false;
+        for(size_t i = 0; i < sizeof(limits)/sizeof(limits[0]); i++)
+            if(size_t(eq - arg) == strlen(limits[i].name) && !strncmp(arg, limits[i].name, eq - arg)) { limits[i].value = atoll(eq + 1); return true; }
+        return false;
+    }
+
+    static long long scalar(const char *sql, const char *types, ...)
+    {
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return 0;
+        va_list args;
+        va_start(args, types);
+        for(int i = 0; types[i]; i++) switch(types[i])
+        {
+            case 'i': sqlite3_bind_int64(st, i+1, va_arg(args, long long)); break;
+            case 's': sqlite3_bind_text(st, i+1, va_arg(args, const char *), -1, SQLITE_TRANSIENT); break;
+        }
+        va_end(args);
+        long long v = sqlite3_step(st) == SQLITE_ROW ? sqlite3_column_int64(st, 0) : 0;
+        sqlite3_finalize(st);
+        return v;
+    }
+
+    static long long freedisk()
+    {
+        struct statvfs fs;
+        return statvfs(datadir, &fs) ? -1 : (long long)fs.f_bavail * (long long)fs.f_frsize;
+    }
+
+    enum { MINUTE = 60*1000, HOUR = 60*MINUTE, DAY = 24*HOUR };
+
     // for databases made before the column existed
     static bool addcolumn(const char *table, const char *column)
     {
@@ -131,7 +177,12 @@ namespace witness
             "CREATE INDEX IF NOT EXISTS prints_run ON prints(run);"
             "CREATE TABLE IF NOT EXISTS flags(id INTEGER PRIMARY KEY, run INTEGER, kind TEXT, other INTEGER, matched INTEGER, total INTEGER, created INTEGER, reviewed INTEGER DEFAULT 0, note TEXT);") &&
             addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT") && addcolumn("runs", "judged INTEGER") && addcolumn("runs", "follows INTEGER") &&
-            addcolumn("runs", "map TEXT") && addcolumn("runs", "player TEXT");
+            addcolumn("runs", "map TEXT") && addcolumn("runs", "player TEXT") && addcolumn("sessions", "host TEXT") &&
+            sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS installs(installkey TEXT PRIMARY KEY, host TEXT, firstseen INTEGER);"
+                "CREATE INDEX IF NOT EXISTS runs_install ON runs(installkey, started);"
+                "CREATE INDEX IF NOT EXISTS runs_session ON runs(session);"
+                "CREATE INDEX IF NOT EXISTS sessions_host ON sessions(host);"
+                "CREATE INDEX IF NOT EXISTS installs_host ON installs(host, firstseen);", NULL, NULL, NULL) == SQLITE_OK;
     }
 
     static vector<long long> resimqueue;
@@ -243,7 +294,7 @@ namespace witness
     {
         ENetSocket sock;
         ENetAddress address;
-        string addressname, build;
+        string addressname, build, host;
         int connected;
         noise::handshake *hs;
         noise::cipherstate send, recv;
@@ -298,6 +349,7 @@ namespace witness
     static void livestart(client &c, witnessrun &r);
     static void livecontinue(client &c, witnessrun &r);
     static void releaseidle(long long session);
+    static void queuebatch(long long row);
     static void livemore(witnessrun &r);
     static void liveend(witnessrun &r);
     static void liveabandon(witnessrun &r);
@@ -461,8 +513,21 @@ namespace witness
             r.prints.setsize(0);
             checkcopy(r.row);
             if(r.livepid) liveend(r);
-            else if(resimexe[0]) resimqueue.add(r.row);
+            else if(resimexe[0]) queuebatch(r.row);
         }
+    }
+
+    // why the client can't start another run now, or NULL
+    static const char *runlimit(client &c)
+    {
+        long long now = nowus()/1000, disk = freedisk();
+        if(disk >= 0 && disk < limit(L_FREEDISK)) { conoutf("the disk is nearly full (%lld MB free): new runs are refused", disk >> 20); return "the witness is out of storage"; }
+        if(scalar("SELECT COUNT(*) FROM runs WHERE installkey = ? AND started > ?", "si", c.installhex, now - MINUTE) >= limit(L_RUNSPERMINUTE)) return "too many runs this minute";
+        if(scalar("SELECT COUNT(*) FROM runs WHERE installkey = ? AND started > ?", "si", c.installhex, now - HOUR) >= limit(L_RUNSPERHOUR)) return "too many runs this hour";
+        if(scalar("SELECT COUNT(*) FROM runs r JOIN sessions s ON s.id = r.session WHERE s.host = ? AND r.started > ?", "si", c.host, now - MINUTE) >= limit(L_ADDRESSRUNSPERMINUTE)) return "too many runs from this address this minute";
+        if(scalar("SELECT COALESCE(SUM(bytes), 0) FROM runs WHERE installkey = ? AND started > ?", "si", c.installhex, now - DAY) >= limit(L_BYTESPERDAY)) return "too much data today";
+        if(scalar("SELECT COALESCE(SUM(r.bytes), 0) FROM runs r JOIN sessions s ON s.id = r.session WHERE s.host = ? AND r.started > ?", "si", c.host, now - DAY) >= limit(L_ADDRESSBYTESPERDAY)) return "too much data from this address today";
+        return NULL;
     }
 
     static witnessrun *findrun(client &c, int runid)
@@ -487,6 +552,7 @@ namespace witness
                 witnessrun *before = continues >= 0 ? findrun(c, continues) : NULL;
                 loopv(c.runs) if(c.runs[i]->runid > continues) before = NULL;
                 if(continues < 0) releaseidle(c.sessionrow);
+                const char *toomuch = runlimit(c);
                 r = c.runs.add(new witnessrun);
                 r->runid = runid;
                 r->kind = kind;
@@ -498,6 +564,7 @@ namespace witness
                 r->file = openrawfile(file, "wb");
                 r->row = run("INSERT INTO runs(session, runid, installkey, kind, starttick, started, file) VALUES(?, ?, ?, ?, ?, ?, ?)", "iisiiis",
                     c.sessionrow, (long long)runid, c.installhex, (long long)r->kind, (long long)r->starttick, (long long)(r->t0/1000), file);
+                if(toomuch) { refuse(c, *r, toomuch); DELETEP(r->file); break; }
                 if(continues >= 0)
                 {
                     if(!before || !before->ended) { refuse(c, *r, "it continues a run the witness did not see end"); break; }
@@ -511,6 +578,7 @@ namespace witness
             {
                 if(!r || r->done) return;
                 int n = b.left();
+                if(r->bytes + n > limit(L_RUNBYTES)) { refuse(c, *r, "the run is too long"); DELETEP(r->file); return; }
                 r->bytes += n;
                 if(r->file) r->file->write(b.p, n);
                 if(!r->reader.feed(b.p, n, sbr2::KNOWNCHUNKS)) { refuse(c, *r, r->reader.error); return; }
@@ -557,7 +625,10 @@ namespace witness
         {
             noise::randombytes(c.session, sizeof(c.session));
             noise::randombytes(c.nonce, sizeof(c.nonce));
-            c.sessionrow = run("INSERT INTO sessions(session, address, started) VALUES(?, ?, ?)", "ssi", "", c.addressname, (long long)(nowus()/1000));
+            copystring(c.host, c.addressname);
+            char *port = strrchr(c.host, ':');
+            if(port) *port = '\0';
+            c.sessionrow = run("INSERT INTO sessions(session, address, host, started) VALUES(?, ?, ?, ?)", "sssi", "", c.addressname, c.host, (long long)(nowus()/1000));
             vector<uchar> hello, out;
             sbr2::byteswriter w(hello);
             w.u8(WITNESSPROTO);
@@ -574,6 +645,19 @@ namespace witness
         c.hs->split(c.send, c.recv);
         sbr2::installkeyid(c.hs->remotestatic(), c.installid);
         tohexstr(c.installid, sizeof(c.installid), c.installhex);
+        long long now = nowus()/1000;
+        if(!scalar("SELECT COUNT(*) FROM installs WHERE installkey = ?", "s", c.installhex))
+        {
+            if(scalar("SELECT COUNT(*) FROM installs WHERE host = ? AND firstseen > ?", "si", c.host, now - DAY) >= limit(L_NEWINSTALLS))
+            {
+                conoutf("%s: refused: too many new installs from this address today", c.addressname);
+                run("DELETE FROM sessions WHERE id = ?", "i", c.sessionrow);
+                c.sessionrow = -1;
+                c.closing = true;
+                return;
+            }
+            run("INSERT INTO installs(installkey, host, firstseen) VALUES(?, ?, ?)", "ssi", c.installhex, c.host, now);
+        }
         string sessionhex;
         tohexstr(c.session, sizeof(c.session), sessionhex);
         string noncehex;
@@ -916,7 +1000,7 @@ namespace witness
         resimjob *job = NULL;
         jobrun *run = livejobrun(r, job);
         r.livepid = 0;
-        if(!run) { if(resimexe[0]) resimqueue.add(r.row); return; }
+        if(!run) { if(resimexe[0]) queuebatch(r.row); return; }
         tell(*job, "end\n");
         run->ended = true;
         run->since = nowus();
@@ -940,7 +1024,8 @@ namespace witness
     }
 
     // the verdict on a finished run, signed over its content hash
-    static void finishresim(const jobrun &job, bool live, int status, bool timedout)
+    // busy: judged unverified without a re-simulation, for that reason
+    static void finishresim(const jobrun &job, bool live, int status, bool timedout, const char *busy = NULL)
     {
         long long row = job.row;
         char json[8192] = "";
@@ -961,7 +1046,8 @@ namespace witness
         const char *verdict = "valid";
         string reason = "", follows[1] = { "" }, before[2] = { "", "" };
         rowtext("SELECT follows FROM runs WHERE id = ?", row, 1, follows);
-        if(timedout || !read || (WIFEXITED(status) && WEXITSTATUS(status) >= 2))
+        if(busy) { verdict = "unverified"; copystring(reason, busy); }
+        else if(timedout || !read || (WIFEXITED(status) && WEXITSTATUS(status) >= 2))
         {
             verdict = "unverified";
             copystring(reason, timedout ? "re-simulation timed out" : "re-simulation could not play the file");
@@ -1026,6 +1112,22 @@ namespace witness
             live ? "live, after the end" : "re-simulated", (nowus() - job.since) / 1e6);
     }
 
+    // a finished run for the batch queue, unless its install already has its share there
+    static void queuebatch(long long row)
+    {
+        string key[1];
+        int queued = 0;
+        if(rowtext("SELECT installkey FROM runs WHERE id = ?", row, 1, key))
+            loopv(resimqueue) { string other[1]; if(rowtext("SELECT installkey FROM runs WHERE id = ?", resimqueue[i], 1, other) && !strcmp(other[0], key[0])) queued++; }
+        if(queued < limit(L_QUEUED)) { resimqueue.add(row); return; }
+        jobrun run;
+        run.row = row;
+        run.out[0] = '\0';
+        run.judge = run.ended = true;
+        run.since = nowus();
+        finishresim(run, false, 0, false, "the witness is busy");
+    }
+
     static void forgetlive(pid_t pid)
     {
         loopv(clients) loopvj(clients[i]->runs) if(clients[i]->runs[j]->livepid == pid) clients[i]->runs[j]->livepid = 0;
@@ -1075,7 +1177,7 @@ namespace witness
             {
                 const jobrun &run = job.runs[j];
                 // a live job that stopped leaves its runs to batch jobs, once they have ended
-                if(job.live) { if(run.ended) { conoutf("run %lld: live re-simulation failed, re-simulating the finished file", run.row); resimqueue.add(run.row); } }
+                if(job.live) { if(run.ended) { conoutf("run %lld: live re-simulation failed, re-simulating the finished file", run.row); queuebatch(run.row); } }
                 else if(run.judge) finishresim(run, false, status, timedout);
             }
             closeinput(job);
@@ -1226,8 +1328,9 @@ int main(int argc, char **argv)
         case 'R': rejudge = true; break;
         case 'j': maxlive = max(atoi(&argv[i][2]), 0); break;
         case 'P': backfill = true; break;
+        case 'l': if(!setlimit(&argv[i][2])) fatal("unknown limit: %s", &argv[i][2]); break;
     }
-    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-j<live re-simulations>] [-R]] [-P]");
+    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-j<live re-simulations>] [-R]] [-P] [-l<limit>=<value>]");
     mkdir(datadir, 0700);
     defformatstring(runsdir, "%s/runs", datadir);
     mkdir(runsdir, 0700);
