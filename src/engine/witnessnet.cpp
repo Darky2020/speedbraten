@@ -1,11 +1,12 @@
-// Client side of the encrypted channel to a speedbraten server (witness or hub): a TCP
+// Client side of the encrypted channels to the speedbraten servers (witness and hub): a TCP
 // connection carrying Noise_XK_25519_ChaChaPoly_BLAKE2b (shared/noise.h) with the server's
 // static key pinned. Nothing here blocks: the host name is resolved on its own thread, the
 // socket is non-blocking and witnessslice() moves the connection along once per frame.
 //
 // Framing matches server/noisechan: a big-endian u16 length, then a Noise message; a transport
 // message's plaintext is a u8 type followed by the payload. Opened without a server key, a
-// connection asks for the server's public keys instead (an empty first frame) and closes.
+// connection asks for the server's public keys instead (an empty first frame) and closes: the
+// witness answers "SBRW", 1, its channel and signing keys; the hub "SBRH", 1, its channel key.
 
 #include "engine.h"
 #include "noise.h"
@@ -52,8 +53,8 @@ namespace witnessnet
         string host, error;
         int port;
         uchar serverkey[noise::KEYLEN];
-        bool askkeys, learned;
-        uchar keys[2*noise::KEYLEN]; // what a key request got: the channel key, then the signing key
+        bool askkeys, learned, hub;
+        uchar keys[2*noise::KEYLEN]; // what a key request got: the channel key, then the witness's signing key
         vector<uchar> prologue, hello;
         lookup *pending;
         ENetSocket sock;
@@ -62,7 +63,7 @@ namespace witnessnet
         vector<uchar> in, out;
         vector<received *> inbox;
 
-        connection() : state(IDLE), started(0), port(0), askkeys(false), learned(false), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
+        connection() : state(IDLE), started(0), port(0), askkeys(false), learned(false), hub(false), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
         ~connection() { close(""); }
 
         void close(const char *why)
@@ -87,7 +88,7 @@ namespace witnessnet
             state = why[0] ? CLOSED : IDLE;
         }
 
-        void fail(const char *why) { logoutf("witness connection to %s:%d: %s", host, port, why); close(why); }
+        void fail(const char *why) { logoutf("%s connection to %s:%d: %s", hub ? "hub" : "witness", host, port, why); close(why); }
 
         bool frame(const vector<uchar> &msg)
         {
@@ -142,8 +143,10 @@ namespace witnessnet
         {
             if(state == HANDSHAKE && askkeys)
             {
-                if(len != 5 + 2*noise::KEYLEN || memcmp(msg, "SBRW", 4) || msg[4] != 1) { fail("the server didn't send its keys"); return; }
-                memcpy(keys, msg + 5, sizeof(keys));
+                int n = hub ? 1 : 2;
+                if(len != 5 + n*noise::KEYLEN || memcmp(msg, hub ? "SBRH" : "SBRW", 4) || msg[4] != 1) { fail("the server didn't send its keys"); return; }
+                memset(keys, 0, sizeof(keys));
+                memcpy(keys, msg + 5, n*noise::KEYLEN);
                 learned = true;
                 close("");
                 return;
@@ -245,6 +248,7 @@ namespace witnessnet
             port = p;
             askkeys = !key;
             learned = false;
+            hub = !strcmp(service, "hub");
             if(key) memcpy(serverkey, key, noise::KEYLEN);
             prologue.setsize(0);
             prologue.put((const uchar *)"speedbraten/1 ", 14);
@@ -284,7 +288,29 @@ namespace witnessnet
         }
     };
 
-    static connection conn, witness;
+    static connection conn, witness, hub;
+
+    static bool receive(connection &c, int &type, vector<uchar> &payload)
+    {
+        if(c.inbox.empty()) return false;
+        received *r = c.inbox.remove(0);
+        type = r->type;
+        payload.setsize(0);
+        payload.move(r->payload);
+        delete r;
+        return true;
+    }
+
+    static int publicstate(const connection &c)
+    {
+        switch(c.state)
+        {
+            case IDLE: return WITNESS_IDLE;
+            case OPEN: return WITNESS_OPEN;
+            case CLOSED: return WITNESS_CLOSED;
+            default: return WITNESS_CONNECTING;
+        }
+    }
 }
 
 // serverkey NULL: ask the server for its keys (witnesslearnedkeys) instead of connecting
@@ -294,16 +320,7 @@ void witnessconnect(const char *host, int port, const uchar *serverkey, const ch
     witnessnet::witness.open(host, port, serverkey, "witness", (const uchar *)build, strlen(build));
 }
 
-int witnessstate()
-{
-    switch(witnessnet::witness.state)
-    {
-        case witnessnet::IDLE: return WITNESS_IDLE;
-        case witnessnet::OPEN: return WITNESS_OPEN;
-        case witnessnet::CLOSED: return WITNESS_CLOSED;
-        default: return WITNESS_CONNECTING;
-    }
-}
+int witnessstate() { return witnessnet::publicstate(witnessnet::witness); }
 
 const char *witnesserror() { return witnessnet::witness.error; }
 
@@ -319,17 +336,28 @@ bool witnesslearnedkeys(uchar *channelkey, uchar *signingkey)
 
 bool witnesssend(int type, const uchar *data, int len) { return witnessnet::witness.sendmessage(type, data, len); }
 
-bool witnessreceive(int &type, vector<uchar> &payload)
+bool witnessreceive(int &type, vector<uchar> &payload) { return witnessnet::receive(witnessnet::witness, type, payload); }
+
+void hubconnect(const char *host, int port, const uchar *serverkey, const char *build)
 {
-    vector<witnessnet::received *> &inbox = witnessnet::witness.inbox;
-    if(inbox.empty()) return false;
-    witnessnet::received *r = inbox.remove(0);
-    type = r->type;
-    payload.setsize(0);
-    payload.move(r->payload);
-    delete r;
+    if(!host || !host[0]) { witnessnet::hub.close(""); return; }
+    witnessnet::hub.open(host, port, serverkey, "hub", (const uchar *)build, strlen(build));
+}
+
+int hubstate() { return witnessnet::publicstate(witnessnet::hub); }
+const char *huberror() { return witnessnet::hub.error; }
+
+bool hublearnedkey(uchar *channelkey)
+{
+    witnessnet::connection &c = witnessnet::hub;
+    if(!c.learned) return false;
+    memcpy(channelkey, c.keys, noise::KEYLEN);
+    c.learned = false;
     return true;
 }
+
+bool hubsend(int type, const uchar *data, int len) { return witnessnet::hub.sendmessage(type, data, len); }
+bool hubreceive(int &type, vector<uchar> &payload) { return witnessnet::receive(witnessnet::hub, type, payload); }
 
 // The interop check against server/cmd/noiseecho: sends count messages of growing size and
 // expects each one back unchanged. Prints NOISEINTEROP lines.
@@ -404,6 +432,7 @@ namespace witnessnet
 void witnessslice()
 {
     witnessnet::witness.slice();
+    witnessnet::hub.slice();
     witnessnet::conn.slice();
     witnessnet::interopslice();
 }

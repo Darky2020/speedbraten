@@ -1,6 +1,6 @@
 name: witness release
 
-# Builds the witness server for Linux x86_64 (sauer_witness, sauer_resim, witnessdash) against
+# Builds the witness server and the hub for Linux x86_64 (sauer_witness, sauer_resim, witnessdash, hub) against
 # glibc 2.31, so it runs on older distributions too, and publishes it as a pre-release asset.
 on:
   push:
@@ -38,15 +38,19 @@ jobs:
       - name: witnessdash
         working-directory: server
         run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/witnessdash ./cmd/witnessdash
+      - name: hub
+        working-directory: server
+        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/hub ./cmd/hub
       - name: package
         run: |
           mkdir -p pkg/speedbraten-witness
           cp src/sauer_witness pkg/speedbraten-witness/
           cp out/sauer_resim-$TARGET pkg/speedbraten-witness/sauer_resim
           cp out/witnessdash pkg/speedbraten-witness/
+          cp out/hub pkg/speedbraten-witness/
           cp -R data/overrides pkg/speedbraten-witness/overrides
           git rev-parse HEAD > pkg/speedbraten-witness/COMMIT
-          for f in sauer_witness sauer_resim witnessdash; do
+          for f in sauer_witness sauer_resim witnessdash hub; do
             need=$(objdump -T pkg/speedbraten-witness/$f | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
             echo "$f needs $need"
             printf '%s\n%s\n' "$need" GLIBC_2.31 | sort -CV || { echo "$f needs a newer glibc than 2.31"; exit 1; }
@@ -63,7 +67,14 @@ jobs:
           sleep 2
           cat witness.log
           grep -q "witness listening on port 28799" witness.log
-          kill $pid
+          echo "hub starts and asks the witness for its keys"
+          $d/hub -d . -listen 127.0.0.1:28798 -witness 127.0.0.1:28799 > hub.log 2>&1 &
+          hpid=$!
+          sleep 2
+          cat hub.log
+          grep -q "hub listening on 127.0.0.1:28798" hub.log
+          grep -q "witness 127.0.0.1:28799: channel key" hub.log
+          kill $hpid $pid
           echo "resim starts (without game data it stops at the core textures)"
           set +e; $d/sauer_resim > resim.log 2>&1; set -e
           tail -3 resim.log
@@ -81,5 +92,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "witness server ($TAG)" --notes "Linux x86_64 build of the witness server (sauer_witness, sauer_resim, witnessdash), glibc 2.31 or newer."
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "witness server ($TAG)" --notes "Linux x86_64 build of the witness server and the hub (sauer_witness, sauer_resim, witnessdash, hub), glibc 2.31 or newer."
           gh release upload "$TAG" --clobber speedbraten-witness-linux-x86_64.tar.gz speedbraten-witness-linux-x86_64.tar.gz.sha256

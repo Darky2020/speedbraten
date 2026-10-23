@@ -157,6 +157,7 @@ CLIENT_OBJS= \
 	fpsgame/runtimer.o \
 	fpsgame/speedometer.o \
 	fpsgame/replayfile.o \
+	fpsgame/hub.o \
 	fpsgame/savestate.o \
 	fpsgame/stats.o \
 	fpsgame/ghost.o \
@@ -610,6 +611,10 @@ fpsgame/replayfile.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/replayfile.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/replayfile.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
 fpsgame/replayfile.o: fpsgame/inputs.h fpsgame/replayio.h shared/witnessproto.h
+fpsgame/hub.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
+fpsgame/hub.o: shared/ents.h shared/command.h shared/glexts.h
+fpsgame/hub.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h
+fpsgame/hub.o: fpsgame/inputs.h fpsgame/replayio.h shared/hubproto.h
 fpsgame/runtimer.o: fpsgame/game.h shared/cube.h shared/tools.h shared/geom.h
 fpsgame/runtimer.o: shared/ents.h shared/command.h shared/glexts.h
 fpsgame/runtimer.o: shared/glemu.h shared/iengine.h shared/igame.h fpsgame/ai.h

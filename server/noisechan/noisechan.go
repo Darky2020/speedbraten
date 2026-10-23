@@ -8,6 +8,7 @@
 package noisechan
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -145,6 +146,44 @@ func Client(rw io.ReadWriter, static noise.DHKey, serverStatic, prologue, payloa
 // client's payload is returned with the channel.
 func Server(rw io.ReadWriter, static noise.DHKey, prologue, payload []byte) (*Conn, []byte, error) {
 	return handshake(rw, noise.Config{StaticKeypair: static, Prologue: prologue}, payload)
+}
+
+// ErrKeyRequest is what Accept returns after answering a key request.
+var ErrKeyRequest = errors.New("noisechan: key request answered")
+
+// Accept is Server for a listener that also answers key requests: a connection whose first
+// frame is empty gets keys back as one plain frame, and Accept returns ErrKeyRequest.
+func Accept(rw io.ReadWriter, static noise.DHKey, prologue, payload, keys []byte) (*Conn, []byte, error) {
+	first, err := readFrame(rw, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(first) == 0 {
+		if err := writeFrame(rw, keys); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, ErrKeyRequest
+	}
+	var replay bytes.Buffer
+	if err := writeFrame(&replay, first); err != nil {
+		return nil, nil, err
+	}
+	c, got, err := Server(struct {
+		io.Reader
+		io.Writer
+	}{io.MultiReader(&replay, rw), rw}, static, prologue, payload)
+	if c != nil {
+		c.rw = rw
+	}
+	return c, got, err
+}
+
+// RequestKeys sends a key request and returns the server's plain reply.
+func RequestKeys(rw io.ReadWriter) ([]byte, error) {
+	if err := writeFrame(rw, nil); err != nil {
+		return nil, err
+	}
+	return readFrame(rw, nil)
 }
 
 // Write sends one transport message.

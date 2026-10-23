@@ -1153,6 +1153,7 @@ namespace game
     void frametimed(int us, int ticks, bool drawn)
     {
         witnessupdate();
+        hubupdate();
         int aids = tellsframe(us);
         if(frameticks) readsettings(framesettings);
         frameticks = 0;

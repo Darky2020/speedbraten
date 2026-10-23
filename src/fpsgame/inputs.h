@@ -267,6 +267,9 @@ namespace game
 
     // online witnessing (replayfile.cpp)
     extern void witnessupdate();
+    extern void witnessfromhub(const char *host, int port, const uchar *channel, const uchar *signing);
+    // the hub (hub.cpp)
+    extern void hubupdate();
     extern bool witnessseed(uint &seed);
     extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life, int continues = -1);
     extern int witnesstakefinished();

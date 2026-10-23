@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"testing"
@@ -229,5 +230,56 @@ func TestTampering(t *testing.T) {
 		if tamper(t, f) {
 			t.Errorf("%s message was accepted", name)
 		}
+	}
+}
+
+func TestAccept(t *testing.T) {
+	srv, _ := GenerateKey()
+	cli, _ := GenerateKey()
+	prologue := []byte("speedbraten/1 test")
+
+	a, b := net.Pipe()
+	go func(b net.Conn) {
+		_, _, err := Accept(b, srv, prologue, nil, []byte("keys"))
+		if err != ErrKeyRequest {
+			t.Errorf("key request: %v", err)
+		}
+		b.Close()
+	}(b)
+	got, err := RequestKeys(a)
+	if err != nil || string(got) != "keys" {
+		t.Fatalf("key request got %q, %v", got, err)
+	}
+	a.Close()
+
+	a, b = net.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		c, hello, err := Accept(b, srv, prologue, []byte("srv"), []byte("keys"))
+		if err == nil && string(hello) != "cli" {
+			err = errors.New("wrong hello")
+		}
+		if err == nil {
+			var typ byte
+			var p []byte
+			if typ, p, err = c.Read(); err == nil {
+				err = c.Write(typ, p)
+			}
+		}
+		done <- err
+	}()
+	c, hello, err := Client(a, cli, srv.Public, prologue, []byte("cli"))
+	if err != nil || string(hello) != "srv" {
+		t.Fatalf("handshake: %q, %v", hello, err)
+	}
+	if err := c.Write(7, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	typ, p, err := c.Read()
+	if err != nil || typ != 7 || string(p) != "ping" {
+		t.Fatalf("echo: %d %q %v", typ, p, err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

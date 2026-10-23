@@ -658,6 +658,13 @@ extern bool witnesssend(int type, const uchar *data, int len);
 // the next received message; type -1 is the witness's handshake payload
 extern bool witnessreceive(int &type, vector<uchar> &payload);
 extern void witnessslice();
+// the same channel to the hub (messages in shared/hubproto.h); witnessslice moves both along
+extern void hubconnect(const char *host, int port, const uchar *serverkey, const char *build);
+extern int hubstate();
+extern const char *huberror();
+extern bool hublearnedkey(uchar *channelkey);
+extern bool hubsend(int type, const uchar *data, int len);
+extern bool hubreceive(int &type, vector<uchar> &payload);
 
 // an input device the system reports; kind: 0 other, 1 keyboard, 2 mouse
 struct inputdevice

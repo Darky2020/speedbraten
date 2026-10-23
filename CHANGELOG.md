@@ -7,6 +7,7 @@
 - In races, an item you just took can be taken again after a respawn.
 - The speedrun menu has a witness tab: enter the server's address and its keys are fetched and saved.
 - The replay browser marks runs a witness verified. Fewer witness messages in the console.
+- The speedrun menu has a hub tab: see who is online, join lobbies and chat.
 
 ## v0.2.1
 

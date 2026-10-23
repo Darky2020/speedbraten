@@ -882,6 +882,8 @@ namespace game
     extern void sendmapinfo();
     extern void stopdemo();
     extern void changemap(const char *name, int mode);
+    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
+    extern bool hubchat(const char *text);
     extern void forceintermission();
     extern void c2sinfo(bool force = false);
     extern void sendposition(fpsent *d, bool reliable = false);

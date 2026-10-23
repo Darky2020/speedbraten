@@ -9,6 +9,7 @@ on:
       - 'src/witness/**'
       - 'src/shared/noise*'
       - 'src/shared/witnessproto.h'
+      - 'src/shared/hubproto.h'
       - 'src/fpsgame/replayio.*'
       - '.github/workflows/server.yml'
 
