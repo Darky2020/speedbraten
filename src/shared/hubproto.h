@@ -22,7 +22,8 @@
 //   REPORT       var player id, str reason
 //   POS          svar x, svar y, svar z (1/16 units), var yaw, var pitch (0-65535 over the circle /
 //                -90..90 degrees), var ghost flags (fpsgame/inputs.h ghostsample) - 20 a second
-//   SPECTATE     var player id (0: stop)
+//   SPECTATE     var player id (0: stop) - also moves the player into that player's lobby as a
+//                spectator, and out of it when it stops
 //   VIEW         var view id, str map, svar mode, str kind - the client's spectator stream starts a
 //                new view: a replay file without a trailer, from a map start or a saved state
 //   VIEWDATA     var view id, var offset, bytes - the view's next bytes
@@ -35,7 +36,8 @@
 //                (new or changed)
 //   GONE         var id
 //   LOBBY        var id, var host id, str map, svar mode, var count, count x var member id,
-//                str kind
+//                str kind, var count, count x var spectator id (players spectating a member; they
+//                hear the lobby's chat and finishes)
 //   LOBBYGONE    var id
 //   CHATFROM     var scope, var from id, str name, str text
 //   NOTICE       str text

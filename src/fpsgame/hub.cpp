@@ -26,7 +26,7 @@ namespace game
         uint id, host;
         int mode;
         string map, kind;
-        vector<uint> members;
+        vector<uint> members, specs;
     };
     static vector<hubplayer> hubplayers;
     static vector<hublobby> hublobbies;
@@ -47,7 +47,9 @@ namespace game
     static bool hasmember(const hublobby &l, uint id) { loopv(l.members) if(l.members[i] == id) return true; return false; }
     static hubplayer *findplayer(uint id) { loopv(hubplayers) if(hubplayers[i].id == id) return &hubplayers[i]; return NULL; }
     static hublobby *findlobby(uint id) { loopv(hublobbies) if(hublobbies[i].id == id) return &hublobbies[i]; return NULL; }
-    static hublobby *mylobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
+    static bool hasspec(const hublobby &l, uint id) { loopv(l.specs) if(l.specs[i] == id) return true; return false; }
+    // the lobby the player is in, as a member or as a spectator of one
+    static hublobby *mylobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid) || hasspec(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
     static const char *playername(uint id) { hubplayer *p = findplayer(id); return p ? p->name : "?"; }
 
     static void hubreset()
@@ -188,7 +190,7 @@ namespace game
     // lobby one follows keeps following it.
     static void autolobby()
     {
-        if(!autolobbydue || !hubmyname[0] || inputreplayactive()) return;
+        if(!autolobbydue || !hubmyname[0] || inputreplayactive() || spectating()) return;
         autolobbydue = false;
         hublobby *l = mylobby();
         const char *kind = runkind();
@@ -299,6 +301,7 @@ namespace game
                     int n = int(r.var());
                     for(int i = 0; i < n && r.ok && i < 256; i++) l.members.add(uint(r.var()));
                     gettext(r, l.kind, sizeof(l.kind));
+                    if(r.left()) { int n = int(r.var()); for(int i = 0; i < n && r.ok && i < 256; i++) l.specs.add(uint(r.var())); }
                     if(!r.ok) break;
                     hublobby *old = findlobby(l.id);
                     bool wasmine = old && hasmember(*old, hubmyid);
@@ -308,12 +311,13 @@ namespace game
                         playalonglobby = 0;
                         if(l.map[0] && !remote) loadlobbymap(l);
                     }
-                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); }
+                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); old->specs.setsize(0); old->specs.put(l.specs.getbuf(), l.specs.length()); }
                     else
                     {
                         hublobby &added = hublobbies.add();
                         added.id = l.id; added.host = l.host; added.mode = l.mode; copystring(added.map, l.map); copystring(added.kind, l.kind);
                         added.members.put(l.members.getbuf(), l.members.length());
+                        added.specs.put(l.specs.getbuf(), l.specs.length());
                     }
                     break;
                 }
@@ -384,7 +388,7 @@ namespace game
                     uint target = uint(r.var());
                     string why = "";
                     gettext(r, why, sizeof(why));
-                    if(r.ok && target == spectatingid()) spectateend(why);
+                    if(r.ok && target == spectatingid()) { spectateend(why); autolobbydue = true; }
                     break;
                 }
                 case HM_RESULT:
@@ -522,7 +526,7 @@ namespace game
 
     void hubrunfinished(int runtime)
     {
-        if(!hubready() || !mylobby()) return;
+        if(!hubready() || !mylobby() || inputreplayactive()) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);
         puttext(w, runmap());
@@ -617,12 +621,13 @@ namespace game
         else if(!strcmp(field, "mode")) result(server::modename(l->mode, ""));
         else if(!strcmp(field, "kind")) result(l->kind);
         else if(!strcmp(field, "count")) intret(l->members.length());
-        else if(!strcmp(field, "members"))
+        else if(!strcmp(field, "members") || !strcmp(field, "spectators"))
         {
+            const vector<uint> &ids = field[0] == 'm' ? l->members : l->specs;
             vector<char> buf;
-            loopvj(l->members)
+            loopvj(ids)
             {
-                const char *n = playername(l->members[j]);
+                const char *n = playername(ids[j]);
                 if(buf.length()) buf.put(", ", 2);
                 buf.put(n, strlen(n));
             }
@@ -665,6 +670,7 @@ namespace game
         if(!spectating()) return;
         if(hubready()) { vector<uchar> b; sbr2::byteswriter w(b); w.var(0); hubsend(HM_SPECTATE, b.getbuf(), b.length()); }
         spectatestop();
+        autolobbydue = true;
     });
     ICOMMAND(hubspectating, "", (), result(spectatingname()));
     ICOMMAND(hubspectatebehind, "", (), { defformatstring(s, "%.1f", spectatebehind()); result(s); });

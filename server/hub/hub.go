@@ -70,6 +70,7 @@ type player struct {
 	mode       int64
 	kind       string
 	lobby      *lobby
+	watching   bool // in lobby as a spectator of the one it spectates
 	admin      bool
 	mutedUntil int64
 	msgs, talk bucket
@@ -87,6 +88,7 @@ type lobby struct {
 	mode    int64
 	kind    string
 	members []*player
+	specs   []*player // spectators of members, in the lobby to see its chat
 }
 
 type bucket struct {
@@ -308,6 +310,10 @@ func lobbyMsg(l *lobby) []byte {
 		w.u(m.id)
 	}
 	w.str(l.kind)
+	w.u(uint64(len(l.specs)))
+	for _, s := range l.specs {
+		w.u(s.id)
+	}
 	return w.b
 }
 
@@ -446,6 +452,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			h.notice(p, "there are too many lobbies right now")
 			return nil
 		}
+		h.stopWatching(p)
 		h.leaveLobby(p)
 		h.nextLobby++
 		l := &lobby{id: h.nextLobby, host: p, mapname: mapname, mode: mode, kind: kind, members: []*player{p}}
@@ -453,6 +460,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		p.lobby = l
 		h.broadcast(MsgLobby, lobbyMsg(l))
 		h.broadcast(MsgPlayer, h.playerMsg(p))
+		h.bringSpectators(p)
 	case MsgLobbyJoin:
 		id := r.u()
 		if err := r.done(); err != nil {
@@ -465,15 +473,17 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		switch {
 		case l == nil:
 			h.notice(p, "that lobby is gone")
-		case l == p.lobby:
+		case l == p.lobby && !p.watching:
 		case len(l.members) >= MaxLobbyMembers:
 			h.notice(p, "that lobby is full")
 		default:
+			h.stopWatching(p)
 			h.leaveLobby(p)
 			l.members = append(l.members, p)
 			p.lobby = l
 			h.broadcast(MsgLobby, lobbyMsg(l))
 			h.broadcast(MsgPlayer, h.playerMsg(p))
+			h.bringSpectators(p)
 		}
 	case MsgLobbyLeave:
 		if err := r.done(); err != nil {
@@ -482,6 +492,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		if p.lobby != nil {
 			h.leaveLobby(p)
 			h.broadcast(MsgPlayer, h.playerMsg(p))
+			h.bringSpectators(p)
 		}
 	case MsgLobbyMap:
 		mapname, mode, kind := r.str(64), r.s(), r.str(16)
@@ -547,7 +558,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		w.s(mode)
 		w.str(kind)
 		w.u(ms)
-		for _, q := range p.lobby.members {
+		for _, q := range p.lobby.everyone() {
 			if q != p {
 				h.send(q, MsgFinished, w.b)
 			}
@@ -572,13 +583,25 @@ func (h *Hub) leaveLobby(p *player) {
 		return
 	}
 	p.lobby = nil
-	for i, m := range l.members {
-		if m == p {
-			l.members = append(l.members[:i], l.members[i+1:]...)
-			break
+	if p.watching {
+		p.watching = false
+		l.specs = without(l.specs, p)
+		h.broadcast(MsgLobby, lobbyMsg(l))
+		return
+	}
+	l.members = without(l.members, p)
+	for _, s := range h.spectatorsOf(p) {
+		if s.lobby == l && s.watching {
+			s.lobby, s.watching = nil, false
+			l.specs = without(l.specs, s)
+			h.broadcast(MsgPlayer, h.playerMsg(s))
 		}
 	}
 	if len(l.members) == 0 {
+		for _, s := range l.specs {
+			s.lobby, s.watching = nil, false
+			h.broadcast(MsgPlayer, h.playerMsg(s))
+		}
 		delete(h.lobbies, l.id)
 		var w writer
 		w.u(l.id)
@@ -589,6 +612,19 @@ func (h *Hub) leaveLobby(p *player) {
 		l.host = l.members[0]
 	}
 	h.broadcast(MsgLobby, lobbyMsg(l))
+}
+
+func without(ps []*player, p *player) []*player {
+	for i, q := range ps {
+		if q == p {
+			return append(ps[:i], ps[i+1:]...)
+		}
+	}
+	return ps
+}
+
+func (l *lobby) everyone() []*player {
+	return append(append([]*player(nil), l.members...), l.specs...)
 }
 
 // relayPos passes a position sample on to the other lobby members on the same map and mode.
@@ -667,7 +703,7 @@ func (h *Hub) chat(p *player, scope int, text string) {
 			h.notice(p, "you aren't in a lobby")
 			return
 		}
-		to, lid = p.lobby.members, p.lobby.id
+		to, lid = p.lobby.everyone(), p.lobby.id
 	default:
 		return
 	}

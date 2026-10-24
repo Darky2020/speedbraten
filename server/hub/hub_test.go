@@ -196,6 +196,7 @@ type lobbyinfo struct {
 	mode     int64
 	members  []uint64
 	kind     string
+	specs    []uint64
 }
 
 func (c *client) expectLobby() lobbyinfo {
@@ -206,6 +207,9 @@ func (c *client) expectLobby() lobbyinfo {
 		l.members = append(l.members, m.r.u())
 	}
 	l.kind = m.r.str(16)
+	for n := m.r.u(); n > 0; n-- {
+		l.specs = append(l.specs, m.r.u())
+	}
 	if err := m.r.done(); err != nil {
 		c.t.Fatal(err)
 	}
@@ -785,4 +789,68 @@ func TestViewLimit(t *testing.T) {
 	if _, ok := b.next(MsgSpecData, 200*time.Millisecond); ok {
 		t.Fatal("a view over the limit was passed on")
 	}
+}
+
+// waitLobby reads LOBBY messages until one matches.
+func (c *client) waitLobby(ok func(lobbyinfo) bool) lobbyinfo {
+	c.t.Helper()
+	for {
+		if l := c.expectLobby(); ok(l) {
+			return l
+		}
+	}
+}
+
+func TestLobbySpectators(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	la := b.expectLobby()
+	b.mapmsg(MsgLobbyCreate, "nadefly", 4)
+	lb := a.waitLobby(func(l lobbyinfo) bool { return l.id != la.id })
+
+	// spectating alice takes bob out of his lobby and into hers as a spectator
+	var w writer
+	w.u(a.id)
+	b.send(MsgSpectate, w.b)
+	if m := a.expect(MsgLobbyGone); m.r.u() != lb.id {
+		t.Fatal("bob's own lobby wasn't closed")
+	}
+	l := a.waitLobby(func(l lobbyinfo) bool { return l.id == la.id })
+	if len(l.members) != 1 || len(l.specs) != 1 || l.specs[0] != b.id {
+		t.Fatalf("watched lobby %+v", l)
+	}
+
+	// spectators hear and talk in the lobby's chat, and see its finishes
+	b.chat(ChatLobby, "nice run")
+	if got := a.expectChat(); got.scope != ChatLobby || got.text != "nice run" {
+		t.Fatalf("alice got %+v", got)
+	}
+	b.expectChat()
+	w = writer{}
+	w.str("forge")
+	w.s(17)
+	w.str("flagrun")
+	w.u(12345)
+	a.send(MsgFinish, w.b)
+	b.expect(MsgFinished)
+
+	// the spectators move along when alice opens another lobby
+	a.mapmsg(MsgLobbyCreate, "ot", 17)
+	l = b.waitLobby(func(l lobbyinfo) bool { return l.mapname == "ot" && len(l.specs) == 1 })
+	if l.specs[0] != b.id || l.host != a.id {
+		t.Fatalf("moved lobby %+v", l)
+	}
+
+	// stopping leaves the lobby
+	w = writer{}
+	w.u(0)
+	b.send(MsgSpectate, w.b)
+	l = a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 0 })
+	if len(l.members) != 1 {
+		t.Fatalf("after stopping %+v", l)
+	}
+	b.chat(ChatLobby, "anyone?")
+	b.expectNotice("aren't in a lobby")
 }

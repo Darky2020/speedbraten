@@ -61,7 +61,7 @@ func (h *Hub) spectatorsOf(q *player) []*player {
 }
 
 func (h *Hub) startSpectating(p *player, id uint64) {
-	p.spec = nil
+	h.stopWatching(p)
 	if id == 0 {
 		return
 	}
@@ -75,6 +75,7 @@ func (h *Hub) startSpectating(p *player, id uint64) {
 		h.notice(p, q.name+" has too many spectators")
 	default:
 		p.spec = &spectate{target: q}
+		h.watch(p)
 		if q.view != nil {
 			h.specRun(p, q)
 			h.specData(p, q.view.id, 0, q.view.data)
@@ -89,7 +90,34 @@ func (h *Hub) endSpectators(q *player, why string) {
 		w.u(q.id)
 		w.str(why)
 		h.send(p, MsgSpecEnd, w.b)
-		p.spec = nil
+		h.stopWatching(p)
+	}
+}
+
+// watch puts a named spectator in its target's lobby, or in none while the target has none.
+func (h *Hub) watch(p *player) {
+	h.leaveLobby(p)
+	if l := p.spec.target.lobby; l != nil && p.name != "" {
+		l.specs = append(l.specs, p)
+		p.lobby, p.watching = l, true
+		h.broadcast(MsgLobby, lobbyMsg(l))
+	}
+	h.broadcast(MsgPlayer, h.playerMsg(p))
+}
+
+// stopWatching ends p's spectating and takes it out of the lobby it watched from.
+func (h *Hub) stopWatching(p *player) {
+	p.spec = nil
+	if p.watching {
+		h.leaveLobby(p)
+		h.broadcast(MsgPlayer, h.playerMsg(p))
+	}
+}
+
+// bringSpectators moves q's spectators along to q's lobby after q changed lobbies.
+func (h *Hub) bringSpectators(q *player) {
+	for _, s := range h.spectatorsOf(q) {
+		h.watch(s)
 	}
 }
 
