@@ -1006,15 +1006,29 @@ uint getmapcfgcrc() { return mapcfgcrc; }
 void clearmapcrc() { mapcrc = mapcfgcrc = 0; mapdatafiles.setsize(0); }
 const vector<mapdatafile> &getmapdatafiles() { return mapdatafiles; }
 
+// a map file's bytes as identified across platforms: a text file (cfg) with CR LF line ends read
+// as LF, so the copy a Windows install ships matches the others
+static char *loadmapfile(const char *name, size_t &len, bool text)
+{
+    char *buf = loadfile(path(name, true), &len, false);
+    if(!buf || !text) return buf;
+    size_t n = 0;
+    loopi(int(len)) if(buf[i] != '\r' || size_t(i+1) >= len || buf[i+1] != '\n') buf[n++] = buf[i];
+    len = n;
+    return buf;
+}
+
 static void addmapdatafile(int role, const char *name)
 {
     size_t len = 0;
-    char *buf = loadfile(path(name, true), &len, false);
+    char *buf = loadmapfile(name, len, role == 1);
     if(!buf) return;
     mapdatafile &f = mapdatafiles.add();
     f.role = role;
     f.size = uint(len);
+    // the path with '/' on every platform (path() turns them into '\' on Windows)
     copystring(f.path, name);
+    for(char *s = f.path; *s; s++) if(*s == '\\') *s = '/';
     blake3_hasher h;
     blake3_hasher_init(&h);
     blake3_hasher_update(&h, buf, len);
@@ -1025,7 +1039,7 @@ static void addmapdatafile(int role, const char *name)
 static uint filecrc(const char *name)
 {
     size_t len = 0;
-    char *buf = loadfile(path(name, true), &len, false);
+    char *buf = loadmapfile(name, len, true);
     if(!buf) return 0;
     uint crc = crc32(crc32(0, Z_NULL, 0), (const Bytef *)buf, len);
     delete[] buf;

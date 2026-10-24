@@ -801,6 +801,8 @@ namespace game
             mapdatafile &f = files.add();
             f.role = r.u8();
             r.str(f.path, sizeof(f.path));
+            // replays made on Windows before paths were stored with '/'
+            for(char *s = f.path; *s; s++) if(*s == '\\') *s = '/';
             f.size = uint(r.var());
             r.bytes(f.hash, sizeof(f.hash));
         }
