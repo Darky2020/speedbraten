@@ -397,12 +397,11 @@ namespace game
         hubsend(HM_CHAT, p.getbuf(), p.length());
     }
 
-    // say, away from a game server: to the lobby when others are in it, else to everyone
+    // say, away from a game server: to the lobby when in one, else to everyone
     bool hubchat(const char *text)
     {
         if(!hubready() || !hubmyname[0]) return false;
-        hublobby *l = mylobby();
-        sendchat(l && l->members.length() > 1 ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
+        sendchat(mylobby() ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
         return true;
     }
 
