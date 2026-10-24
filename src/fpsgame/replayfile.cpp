@@ -1181,11 +1181,23 @@ namespace game
             bool same = false;
             if(buf)
             {
-                blake3_hasher h;
-                blake3_hasher_init(&h);
-                blake3_hasher_update(&h, buf, len);
-                blake3_hasher_finalize(&h, hash, sizeof(hash));
-                same = len == f.size && !memcmp(hash, f.hash, sizeof(hash));
+                // a cfg (role 1) is recorded with CR LF read as LF; older replays
+                // carry the hash of the raw bytes, so either matches
+                loopj(f.role == 1 ? 2 : 1)
+                {
+                    if(j)
+                    {
+                        size_t n = 0;
+                        loopk(int(len)) if(buf[k] != '\r' || size_t(k+1) >= len || buf[k+1] != '\n') buf[n++] = buf[k];
+                        if(n == len) break;
+                        len = n;
+                    }
+                    blake3_hasher h;
+                    blake3_hasher_init(&h);
+                    blake3_hasher_update(&h, buf, len);
+                    blake3_hasher_finalize(&h, hash, sizeof(hash));
+                    if(len == f.size && !memcmp(hash, f.hash, sizeof(hash))) { same = true; break; }
+                }
                 delete[] buf;
             }
             if(!buf) v.missing++;
