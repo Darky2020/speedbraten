@@ -107,7 +107,11 @@ namespace game
 
     static const char *kindormode(const char *kind, int mode) { return kind[0] ? kind : server::modename(mode, "?"); }
 
-    static bool onlobbymap(const hublobby &l) { return !strcmp(l.map, clientmap) && l.mode == gamemode; }
+    // A lobby names the map its host's run started on: a campaign run that goes on to its next
+    // map stays the same lobby, and a member anywhere in that run is on it.
+    static const char *runmap() { const inputattempt *a = inputrunfirst(); return a && a->map[0] ? a->map : clientmap; }
+    static int runmode() { const inputattempt *a = inputrunfirst(); return a && a->map[0] ? a->mode : gamemode; }
+    static bool onlobbymap(const hublobby &l) { return !strcmp(l.map, runmap()) && l.mode == runmode(); }
 
     // loads a lobby's map with the rules its host plays it under, unless it is already loaded
     static void loadlobbymap(const hublobby &l)
@@ -183,8 +187,8 @@ namespace game
         if(!kind[0]) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
         bool same = l && onlobbymap(*l) && (l->host != hubmyid || !strcmp(l->kind, kind));
         if(same) return;
-        if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, clientmap, gamemode);
-        else mapmessage(HM_LOBBYCREATE, clientmap, gamemode);
+        if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, runmap(), runmode());
+        else mapmessage(HM_LOBBYCREATE, runmap(), runmode());
     }
 
     static void lobbychanged(const hublobby &before, const hublobby &now, bool wasmine)
@@ -625,7 +629,7 @@ namespace game
     ICOMMAND(hubcreatelobby, "", (),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
-        mapmessage(HM_LOBBYCREATE, clientmap, clientmap[0] ? gamemode : 0);
+        mapmessage(HM_LOBBYCREATE, runmap(), clientmap[0] ? runmode() : 0);
     });
     ICOMMAND(hubjoin, "i", (int *id),
     {
@@ -675,7 +679,7 @@ namespace game
     ICOMMAND(hubsetlobbymap, "", (),
     {
         if(!hubready() || !clientmap[0]) return;
-        mapmessage(HM_LOBBYMAP, clientmap, gamemode);
+        mapmessage(HM_LOBBYMAP, runmap(), runmode());
     });
     ICOMMAND(hubgo, "", (),
     {
