@@ -338,6 +338,7 @@ namespace game
     extern void spectatedata(uint run, int offset, const uchar *data, int len);
     extern void spectateend(const char *why);
     extern void spectatestop();
+    extern void spectatequit();
     extern void spectateupdate();
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);

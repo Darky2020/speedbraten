@@ -498,7 +498,14 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		if err := r.done(); err != nil {
 			return err
 		}
-		if p.lobby != nil {
+		switch {
+		case p.watching:
+			var w writer
+			w.u(p.spec.target.id)
+			w.str("you left the lobby")
+			h.send(p, MsgSpecEnd, w.b)
+			h.stopWatching(p)
+		case p.lobby != nil:
 			h.leaveLobby(p)
 			h.broadcast(MsgPlayer, h.playerMsg(p))
 			h.bringSpectators(p)

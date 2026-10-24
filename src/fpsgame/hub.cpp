@@ -42,6 +42,7 @@ namespace game
 
     static bool autolobbydue = true;
     static uint playalonglobby = 0;
+    static bool playalongreload = false; // load the lobby's map even if it is the one being replayed
     // a host map change waiting for the follower's run to end, and when a run last ran
     static bool followpending = false;
     static int lastrunning = -FOLLOWDELAY;
@@ -126,9 +127,9 @@ namespace game
     static bool onlobbymap(const hublobby &l) { return !strcmp(l.map, runmap()) && l.mode == runmode(); }
 
     // loads a lobby's map with the rules its host plays it under, unless it is already loaded
-    static void loadlobbymap(const hublobby &l)
+    static void loadlobbymap(const hublobby &l, bool force = false)
     {
-        if(onlobbymap(l)) return;
+        if(!force && onlobbymap(l)) return;
         server::forcenextflagrun(!strcmp(l.kind, "flagrun") ? 1 : 0);
         server::forcenextracerules(!strcmp(l.kind, "race") ? 1 : 0);
         changemap(l.map, l.mode);
@@ -359,7 +360,8 @@ namespace game
                     if(playalonglobby == l.id && hasmember(l, hubmyid))
                     {
                         playalonglobby = 0;
-                        if(l.map[0] && !remote) loadlobbymap(l);
+                        if(l.map[0] && !remote) loadlobbymap(l, playalongreload);
+                        playalongreload = false;
                     }
                     if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); old->specs.setsize(0); old->specs.put(l.specs.getbuf(), l.specs.length()); old->watched.setsize(0); old->watched.put(l.watched.getbuf(), l.watched.length()); }
                     else
@@ -608,9 +610,9 @@ namespace game
         g.text("map", COL_GRAY);
         loopv(rows)
         {
-            hubplayer *p = rows[i];
-            const char *where = p->state == HUBSTATE_MENU ? "menu" : !p->map[0] || !strcmp(p->map, l->map) ? "" : runlabel(p->map);
-            g.text(where[0] ? where : "-", where[0] ? COL_GRAY : rowcolor(p));
+            const hubplayer *p = rows[i];
+            bool menu = p->state == HUBSTATE_MENU || !p->map[0];
+            g.text(menu ? "menu" : runlabel(p->map), menu || strcmp(p->map, l->map) ? COL_GRAY : rowcolor(p));
         }
         g.poplist();
 
@@ -845,12 +847,18 @@ namespace game
         hubplayer *p = findplayer(uint(*id));
         if(!p || !p->lobby) { conoutf(CON_ERROR, "that player isn't playing a map"); return; }
         playalonglobby = p->lobby;
+        if(spectating()) { spectatequit(); playalongreload = true; }
         vector<uchar> b;
         sbr2::byteswriter w(b);
         w.var(p->lobby);
         hubsend(HM_LOBBYJOIN, b.getbuf(), b.length());
     });
-    ICOMMAND(hubleave, "", (), { if(hubready()) hubsend(HM_LOBBYLEAVE, NULL, 0); });
+    ICOMMAND(hubleave, "", (),
+    {
+        if(!hubready()) return;
+        hubsend(HM_LOBBYLEAVE, NULL, 0);
+        if(spectating()) { spectatestop(); autolobbydue = true; }
+    });
     // the host: make the map being played the lobby's map
     ICOMMAND(hubsetlobbymap, "", (),
     {
@@ -861,6 +869,7 @@ namespace game
     {
         hublobby *l = mylobby();
         if(!l || !l->map[0]) { conoutf(CON_ERROR, "you aren't in a lobby with a map"); return; }
+        if(spectating()) { conoutf(CON_ERROR, "stop spectating first"); return; }
         if(remote) { conoutf(CON_ERROR, "leave the game server first"); return; }
         loadlobbymap(*l);
     });

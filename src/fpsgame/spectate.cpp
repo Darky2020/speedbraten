@@ -108,6 +108,8 @@ namespace game
     }
 
     void spectatestop() { if(spectarget) spectatefinish(true); }
+    // stops without going back, for a map load that follows straight away
+    void spectatequit() { if(spectarget) spectatefinish(false); }
 
     // once per frame: plays what has arrived
     void spectateupdate()

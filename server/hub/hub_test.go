@@ -845,7 +845,24 @@ func TestLobbySpectators(t *testing.T) {
 		t.Fatalf("moved lobby %+v", l)
 	}
 
+	// leaving the lobby while spectating stops spectating too
+	b.send(MsgLobbyLeave, nil)
+	if m := b.expect(MsgSpecEnd); m.r.u() != a.id {
+		t.Fatal("specend for another player")
+	}
+	a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 0 })
+	f.h.mu.Lock()
+	still := f.h.players[b.id].spec != nil
+	f.h.mu.Unlock()
+	if still {
+		t.Fatal("still spectating after leaving the lobby")
+	}
+
 	// stopping leaves the lobby
+	w = writer{}
+	w.u(a.id)
+	b.send(MsgSpectate, w.b)
+	a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 1 })
 	w = writer{}
 	w.u(0)
 	b.send(MsgSpectate, w.b)
