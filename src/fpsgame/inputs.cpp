@@ -1279,6 +1279,25 @@ namespace game
         copystring(replaylifecheckresult, "chained");
         return true;
     }
+    // Plays a run that starts from a saved state on the map being replayed in place of the
+    // replay: its state is restored at the next tick, without loading the map.
+    bool inputreplayswitch(const inputrun &src)
+    {
+        if(!replaying || src.attempts.empty()) return false;
+        const inputattempt &n = *src.attempts[0];
+        if(n.snapshot.empty() || strcmp(n.map, replaycur().map) || n.mode != replaycur().mode) return false;
+        src.copyto(replaydata);
+        replayattempt = 0;
+        replaypos = replayhashpos = 0;
+        replaydesync = replaydesyncgroups = 0;
+        replayedticks = 0;
+        memset(lastreplayhash, 0, sizeof(lastreplayhash));
+        seedattempt(replaycur());
+        forcesettings(replaycur());
+        replaystartstate = true;
+        return true;
+    }
+
     bool inputrecordinglive() { return !replaying && !replaypending && !recordingoff; }
     // the replay file being watched, "" when none or not played from a file
     const char *inputwatchedfile() { return replaying || replaypending ? replayfilename : ""; }

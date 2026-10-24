@@ -14,6 +14,12 @@ namespace game
     static uint spectarget = 0, specrun = 0;
     static bool specstarted = false, specchained = false;
     static int specbytes = 0, specparsed = 0, specknown = 0;
+    // A new view on the map being played that starts from a saved state replaces the playing
+    // one in place once that one is played out, up to oldknown, without a map load.
+    static bool specswitch = false;
+    static int oldknown = 0;
+    static string specmap = "";
+    static int specmode = 0;
     static string specname = "";
     static string returnmap = "", returnkind = "";
     static int returnmode = 0;
@@ -24,17 +30,17 @@ namespace game
     const char *spectatingname() { return specname; }
 
     // the simulation waits for the file to catch up with playback
-    bool spectatehold() { return spectarget && specstarted && inputreplayneeds(specknown); }
+    bool spectatehold() { return spectarget && specstarted && inputreplayneeds(specswitch ? oldknown : specknown); }
 
     // percent of normal speed: fast while more than two segments behind
     int spectatespeed()
     {
         if(!spectarget || !specstarted) return 100;
-        return specknown - inputtick() > 2*VIEWSEGMENT ? CATCHUPSPEED : 100;
+        return (specswitch ? oldknown : specknown) - inputtick() > 2*VIEWSEGMENT ? CATCHUPSPEED : 100;
     }
 
     // seconds of play the spectator is behind the newest segment, for the HUD
-    float spectatebehind() { return spectarget && specstarted ? max(specknown - inputtick(), 0)*SIMTICK/1000.0f : 0; }
+    float spectatebehind() { return spectarget && specstarted ? max((specswitch ? oldknown : specknown) - inputtick(), 0)*SIMTICK/1000.0f : 0; }
 
     void spectatebegin(uint target, const char *name, const char *map, int mode, const char *kind)
     {
@@ -56,12 +62,17 @@ namespace game
         if(!spectarget) return;
         stream *f = openrawfile(path(specfile, true), "wb");
         if(f) delete f;
+        bool same = specstarted && inputreplayactive() && !strcmp(map, specmap) && mode == specmode;
+        if(same && !specswitch) oldknown = specknown;
+        specswitch = same;
         specrun = run;
         specbytes = specparsed = specknown = 0;
         specchained = chained && specstarted && inputreplayactive();
-        specstarted = false;
+        specstarted = specswitch;
+        copystring(specmap, map);
+        specmode = mode;
 
-        conoutf("\f2spectating %s on %s", specname, map);
+        if(!specswitch) conoutf("\f2spectating %s on %s", specname, runlabel(map));
     }
 
     void spectatedata(uint run, int offset, const uchar *data, int len)
@@ -77,7 +88,8 @@ namespace game
     static void spectatefinish(bool reload)
     {
         spectarget = specrun = 0;
-        specstarted = false;
+        specstarted = specswitch = false;
+        specmap[0] = '\0';
         specname[0] = '\0';
         if(!reload || remote) return;
         // back to the player's own map, or a fresh game on the watched one
@@ -101,13 +113,21 @@ namespace game
     void spectateupdate()
     {
         if(!spectarget || specbytes == specparsed) return;
+        if(specswitch && !inputreplayneeds(oldknown)) return;
         inputrun run;
         replayinfo info;
         int known = 0;
         if(!readreplayprefix(specfile, run, info, known)) return;
         specparsed = specbytes;
         specknown = known;
-        if(specstarted) { inputreplayextend(run, false, false); return; }
+        if(specswitch)
+        {
+            if(run.empty()) return;
+            specswitch = false;
+            if(inputreplayswitch(run)) { inputreplayextend(run, false, false); return; }
+            specstarted = false;
+        }
+        else if(specstarted) { inputreplayextend(run, false, false); return; }
         if(run.empty()) return;
         if(specchained && inputreplaycontinue(run)) {}
         else playinputrun(run, specfile);

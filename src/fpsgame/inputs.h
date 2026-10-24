@@ -348,6 +348,7 @@ namespace game
     extern int inputreplayattempts();
     extern void (*replaychainhook)();
     extern bool inputreplaycontinue(const inputrun &src);
+    extern bool inputreplayswitch(const inputrun &src);
     extern int inputreplayresult(int &ticks, uint hash[DETHASH_GROUPS]);
     extern int runtimerresult(bool &finished);
 }
