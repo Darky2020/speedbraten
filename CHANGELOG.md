@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.1alpha
+
+- Spectating a player puts you in their lobby: you see its chat and finishes, and talk to it.
+- In a lobby, the scoreboard lists its players with live run time, lobby best and PB, and its spectators.
+- Spectating no longer reloads the map when the player loads a state.
+- Lobbies say who joined, left or is spectating.
+- Replays recorded on Windows no longer warn about map files when played on Mac or Linux.
+
 ## v0.3.0alpha
 
 - Replays are written in a new format while you play. Older replays still play.
@@ -14,11 +22,6 @@
 - A slow or stalling connection no longer gets a witnessed run rejected.
 - Switching team during a flagrun no longer breaks the life's replay.
 - Leaving a campaign map no longer leaves its monsters behind.
-- Spectating a player puts you in their lobby: you see its chat and finishes, and talk to it.
-- In a lobby, the scoreboard lists its players with live run time, lobby best and PB, and its spectators.
-- Spectating no longer reloads the map when the player loads a state.
-- Lobbies say who joined, left or is spectating.
-- Replays recorded on Windows no longer warn about map files when played on Mac or Linux.
 
 ## v0.2.1
 
