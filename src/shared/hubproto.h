@@ -28,6 +28,8 @@
 //                new view: a replay file without a trailer, from a map start or a saved state
 //   VIEWDATA     var view id, var offset, bytes - the view's next bytes
 //   FINISH       str map, svar mode, str kind, var run time in ms (the client's own timing)
+//   RUNTIME      var running (0/1), var run time in ms so far - the run timer, while in a lobby:
+//                when it starts or stops, and once a second while it runs
 // hub -> client
 //   WELCOME      var your id, str your name ("" while you have none), str why the name you
 //                asked for was refused ("" if it wasn't)
@@ -50,6 +52,9 @@
 //                var the time it beat + 1 (0: the first verified time) - a witnessed PB or record
 //   FINISHED     var player id, str name, str map, svar mode, str kind, var run time in ms (a lobby
 //                member finished a run; not sent back to the one who finished)
+//   LOBBYSTAT    var player id, var running (0/1), var run time in ms, var lobby best ms + 1,
+//                var witnessed PB on the lobby's map ms + 1 (0: none) - a lobby member's numbers
+//                for the scoreboard, to everyone in the lobby
 
 #ifndef __HUBPROTO_H__
 #define __HUBPROTO_H__
@@ -57,8 +62,8 @@
 enum
 {
     HUBPROTO = 1,
-    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE, HM_VIEW, HM_VIEWDATA,
-    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND
+    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE, HM_VIEW, HM_VIEWDATA, HM_RUNTIME,
+    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
 enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };

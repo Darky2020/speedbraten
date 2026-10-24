@@ -854,3 +854,116 @@ func TestLobbySpectators(t *testing.T) {
 	b.chat(ChatLobby, "anyone?")
 	b.expectNotice("aren't in a lobby")
 }
+
+type statinfo struct {
+	id, running, ms, best, pb uint64
+}
+
+// expectStat reads LOBBYSTAT messages until one for that player.
+func (c *client) expectStat(id uint64) statinfo {
+	c.t.Helper()
+	for {
+		m := c.expect(MsgLobbyStat)
+		s := statinfo{m.r.u(), m.r.u(), m.r.u(), m.r.u(), m.r.u()}
+		if err := m.r.done(); err != nil {
+			c.t.Fatal(err)
+		}
+		if s.id == id {
+			return s
+		}
+	}
+}
+
+func TestLobbyStats(t *testing.T) {
+	f := newFixture(t)
+	wdb := filepath.Join(t.TempDir(), "witness.db")
+	w, err := sqlite.Create(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER)",
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE bests(map TEXT, runkind TEXT, mode INTEGER, installkey TEXT, runtimems INTEGER, run INTEGER, achieved INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ka := newKey()
+	pub := hex.EncodeToString(ka.Public)
+	if _, err := w.Exec("INSERT INTO sessions(installkey, installpub) VALUES('ik', ?)", pub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Exec("INSERT INTO bests VALUES('forge', 'flagrun', 17, 'ik', 15000, 1, 0)"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.h.OpenResults(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Close()
+	res.Poll()
+
+	a := f.connect(ka, "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	if s := a.expectStat(a.id); s.pb != 15001 || s.best != 0 {
+		t.Fatalf("on create %+v", s)
+	}
+	var rt writer
+	rt.u(1)
+	rt.u(4200)
+	a.send(MsgRunTime, rt.b)
+	if s := a.expectStat(a.id); s.running != 1 || s.ms != 4200 {
+		t.Fatalf("run time %+v", s)
+	}
+
+	// a joiner gets everyone's numbers
+	l := b.expectLobby()
+	var jw writer
+	jw.u(l.id)
+	b.send(MsgLobbyJoin, jw.b)
+	if s := b.expectStat(a.id); s.running != 1 || s.ms != 4200 || s.pb != 15001 {
+		t.Fatalf("joiner saw %+v", s)
+	}
+	if s := a.expectStat(b.id); s.pb != 0 {
+		t.Fatalf("bob's %+v", s)
+	}
+
+	finish := func(ms uint64) {
+		var fw writer
+		fw.str("forge")
+		fw.s(17)
+		fw.str("flagrun")
+		fw.u(ms)
+		a.send(MsgFinish, fw.b)
+	}
+	finish(14000)
+	if s := b.expectStat(a.id); s.best != 14001 {
+		t.Fatalf("lobby best %+v", s)
+	}
+	finish(14500)
+	finish(13000)
+	if s := b.expectStat(a.id); s.best != 13001 {
+		t.Fatalf("a slower finish changed the best, or a faster one didn't: %+v", s)
+	}
+
+	// a witnessed PB on the lobby's map
+	if _, err := w.Exec("INSERT INTO events(run, installpub, player, map, runkind, mode, runtimems, record, previous, created) VALUES(9, ?, 'alice', 'forge', 'flagrun', 17, 13000, 0, 15000, 0)", pub); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := res.Poll(); n != 1 || err != nil {
+		t.Fatalf("poll %d %v", n, err)
+	}
+	if s := b.expectStat(a.id); s.pb != 13001 {
+		t.Fatalf("pb after the result %+v", s)
+	}
+
+	// a new map starts the lobby bests over
+	a.mapmsg(MsgLobbyMap, "nadefly", 17)
+	if s := b.expectStat(a.id); s.best != 0 || s.pb != 0 {
+		t.Fatalf("after the map change %+v", s)
+	}
+}

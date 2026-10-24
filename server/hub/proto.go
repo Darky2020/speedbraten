@@ -23,6 +23,7 @@ const (
 	MsgSpectate    = 12
 	MsgView        = 13
 	MsgViewData    = 14
+	MsgRunTime     = 15
 
 	MsgWelcome   = 101
 	MsgWitness   = 102
@@ -38,6 +39,7 @@ const (
 	MsgSpecRun   = 112
 	MsgSpecData  = 113
 	MsgSpecEnd   = 114
+	MsgLobbyStat = 115
 
 	StateMenu    = 0
 	StatePlaying = 1

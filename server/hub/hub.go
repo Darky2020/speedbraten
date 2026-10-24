@@ -77,6 +77,7 @@ type player struct {
 	pos        bucket
 	spec       *spectate
 	view       *liveView
+	stat       runStat
 	out        chan []byte
 	closed     bool
 }
@@ -460,6 +461,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		p.lobby = l
 		h.broadcast(MsgLobby, lobbyMsg(l))
 		h.broadcast(MsgPlayer, h.playerMsg(p))
+		h.joinedStats(p, l)
 		h.bringSpectators(p)
 	case MsgLobbyJoin:
 		id := r.u()
@@ -483,6 +485,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			p.lobby = l
 			h.broadcast(MsgLobby, lobbyMsg(l))
 			h.broadcast(MsgPlayer, h.playerMsg(p))
+			h.statsTo(p, l)
+			h.joinedStats(p, l)
 			h.bringSpectators(p)
 		}
 	case MsgLobbyLeave:
@@ -506,6 +510,9 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		}
 		l.mapname, l.mode, l.kind = mapname, mode, kind
 		h.broadcast(MsgLobby, lobbyMsg(l))
+		for _, m := range l.members {
+			h.joinedStats(m, l)
+		}
 	case MsgChat:
 		scope, text := r.u(), r.str(4*MaxChat)
 		if err := r.done(); err != nil {
@@ -543,6 +550,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.viewStart(p, &r)
 	case MsgViewData:
 		return h.viewData(p, &r)
+	case MsgRunTime:
+		return h.runTime(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {
@@ -551,6 +560,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		if p.lobby == nil || p.name == "" {
 			return nil
 		}
+		h.finished(p, mapname, mode, kind, ms)
 		var w writer
 		w.u(p.id)
 		w.str(p.name)

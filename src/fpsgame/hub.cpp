@@ -20,6 +20,8 @@ namespace game
         uint id, lobby;
         int state, mode;
         string name, map, kind;
+        bool running;
+        int ms, best, pb, statat; // best, pb: -1 none; statat: totalmillis ms arrived at
     };
     struct hublobby
     {
@@ -229,6 +231,27 @@ namespace game
         loadlobbymap(*l);
     }
 
+    // the run timer for the lobby's scoreboard
+    static void sendruntime()
+    {
+        static bool sentrunning = false;
+        static int sentat = 0;
+        static uint sentlobby = 0;
+        hublobby *l = mylobby();
+        if(!l || !hasmember(*l, hubmyid) || inputreplayactive() || spectating()) { sentlobby = 0; return; }
+        bool running = false;
+        int ms = runtimerticks(running)*SIMTICK;
+        if(l->id == sentlobby && running == sentrunning && (!running || totalmillis - sentat < 1000)) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(running ? 1 : 0);
+        w.var(max(ms, 0));
+        if(!hubsend(HM_RUNTIME, p.getbuf(), p.length())) return;
+        sentrunning = running;
+        sentat = totalmillis;
+        sentlobby = l->id;
+    }
+
     static void hubmessages()
     {
         int type;
@@ -273,6 +296,9 @@ namespace game
                 {
                     hubplayer q;
                     q.id = uint(r.var());
+                    q.running = false;
+                    q.ms = q.statat = 0;
+                    q.best = q.pb = -1;
                     gettext(r, q.name, sizeof(q.name));
                     q.state = int(r.var());
                     gettext(r, q.map, sizeof(q.map));
@@ -281,7 +307,11 @@ namespace game
                     gettext(r, q.kind, sizeof(q.kind));
                     if(!r.ok) break;
                     hubplayer *old = findplayer(q.id);
-                    if(old) *old = q;
+                    if(old)
+                    {
+                        q.running = old->running; q.ms = old->ms; q.best = old->best; q.pb = old->pb; q.statat = old->statat;
+                        *old = q;
+                    }
                     else hubplayers.add(q);
                     break;
                 }
@@ -409,6 +439,16 @@ namespace game
                     conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", runlabel(map), kindormode(kind, mode), time, gain);
                     break;
                 }
+                case HM_LOBBYSTAT:
+                {
+                    uint id = uint(r.var());
+                    bool running = r.var() != 0;
+                    int ms = int(r.var()), best = int(r.var()) - 1, pb = int(r.var()) - 1;
+                    hubplayer *q = findplayer(id);
+                    if(!r.ok || !q) break;
+                    q->running = running; q->ms = ms; q->best = best; q->pb = pb; q->statat = totalmillis;
+                    break;
+                }
                 case HM_NOTICE:
                 {
                     char text[1024] = "";
@@ -498,11 +538,112 @@ namespace game
             autolobby();
             followupdate();
             sendpos();
+            sendruntime();
             spectateupdate();
         }
     }
 
     static bool hubready() { return hubstate() == WITNESS_OPEN && hubwelcomed; }
+
+    static bool betterbest(const hubplayer *a, const hubplayer *b)
+    {
+        if((a->best < 0) != (b->best < 0)) return b->best < 0;
+        return a->best < b->best;
+    }
+
+    // TAB while in a lobby: its players with their run numbers, then its spectators
+    bool hubscoreboard(g3d_gui &g)
+    {
+        if(remote || !hubready()) return false;
+        hublobby *l = mylobby();
+        if(!l) return false;
+        extern int highlightscore;
+        vector<hubplayer *> rows;
+        loopv(l->members) if(hubplayer *p = findplayer(l->members[i])) rows.add(p);
+        rows.sort(betterbest);
+
+        g.space(.25f);
+        g.titlef("%s's lobby", COL_WHITE, NULL, playername(l->host));
+        g.pushlist();
+        g.spring();
+        g.text(kindormode(l->kind, l->mode), COL_WHITE);
+        g.space(3);
+        g.text(runlabel(l->map), COL_WHITE);
+        g.spring();
+        g.poplist();
+        g.space(.75f);
+
+        #define rowcolor(p) (p->id == hubmyid && highlightscore ? COL_YELLOW : COL_WHITE)
+        #define rightjustified(b) { g.pushlist(); g.spring(); b; g.poplist(); }
+        g.pushlist();
+
+        g.pushlist();
+        g.text("name", COL_GRAY);
+        loopv(rows) g.textf("%s%s", rowcolor(rows[i]), NULL, rows[i]->name, rows[i]->id == l->host ? " \f4(host)" : "");
+        g.poplist();
+
+        g.space(2);
+        g.pushlist();
+        g.text("where", COL_GRAY);
+        loopv(rows)
+        {
+            hubplayer *p = rows[i];
+            const char *where = p->state == HUBSTATE_MENU ? "menu" : !p->map[0] || !strcmp(p->map, l->map) ? "" : runlabel(p->map);
+            g.text(where[0] ? where : "-", where[0] ? COL_GRAY : rowcolor(p));
+        }
+        g.poplist();
+
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("time", COL_GRAY));
+        loopv(rows)
+        {
+            hubplayer *p = rows[i];
+            bool running = p->running;
+            int ms = p->ms;
+            if(p->id == hubmyid && !spectating()) ms = runtimerticks(running)*SIMTICK;
+            else if(running) ms += totalmillis - p->statat;
+            if(running || ms > 0) rightjustified(g.text(formatruntime(ms), running ? rowcolor(p) : COL_GRAY))
+            else rightjustified(g.text("-", COL_GRAY))
+        }
+        g.poplist();
+
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("best", COL_GRAY));
+        loopv(rows) rightjustified(g.text(rows[i]->best >= 0 ? formatruntime(rows[i]->best) : "-", rowcolor(rows[i])));
+        g.poplist();
+
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("PB", COL_GRAY));
+        loopv(rows) rightjustified(g.text(rows[i]->pb >= 0 ? formatruntime(rows[i]->pb) : "-", rowcolor(rows[i])));
+        g.poplist();
+
+        g.poplist();
+
+        extern int showspectators;
+        if(showspectators && l->specs.length())
+        {
+            g.space(.75f);
+            g.textf("%d spectator%s", COL_GRAY, NULL, l->specs.length(), l->specs.length() != 1 ? "s" : "");
+            loopv(l->specs)
+            {
+                if((i%3) == 0) { g.pushlist(); g.text("", COL_WHITE, 0); }
+                hubplayer *p = findplayer(l->specs[i]);
+                if(p) g.text(p->name, rowcolor(p));
+                if(i+1 < l->specs.length() && (i+1)%3) g.space(1);
+                else g.poplist();
+            }
+        }
+        #undef rowcolor
+        #undef rightjustified
+        g.space(.25f);
+        return true;
+    }
 
     // the game being played goes to the hub for spectators: on a run map, not a replay
     bool hubstreaming() { return hubready() && !remote && !inputreplayactive() && runkind()[0]; }

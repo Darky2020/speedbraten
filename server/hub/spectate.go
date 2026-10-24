@@ -101,6 +101,7 @@ func (h *Hub) watch(p *player) {
 		l.specs = append(l.specs, p)
 		p.lobby, p.watching = l, true
 		h.broadcast(MsgLobby, lobbyMsg(l))
+		h.statsTo(p, l)
 	}
 	h.broadcast(MsgPlayer, h.playerMsg(p))
 }

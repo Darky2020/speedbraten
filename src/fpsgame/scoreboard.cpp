@@ -432,6 +432,7 @@ namespace game
     }
 
     extern int usep1xbratenmenus;
+    extern bool hubscoreboard(g3d_gui &g);
     namespace mod { extern void renderscoreboard(g3d_gui &g, bool firstpass); }
 
     struct scoreboardgui : g3d_callback
@@ -455,7 +456,8 @@ namespace game
         void gui(g3d_gui &g, bool firstpass)
         {
             g.start(menustart, 0.03f, NULL, false);
-            if(usep1xbratenmenus) mod::renderscoreboard(g, firstpass);
+            if(hubscoreboard(g)) {}
+            else if(usep1xbratenmenus) mod::renderscoreboard(g, firstpass);
             else renderscoreboard(g, firstpass);
             g.end();
         }
