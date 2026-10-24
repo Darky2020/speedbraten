@@ -58,7 +58,7 @@ namespace sbr2
         blake3_hasher_init(&run);
     }
 
-    writer::writer() : segments(0), zstream(NULL), finished(false)
+    writer::writer() : segments(0), level(19), zstream(NULL), finished(false)
     {
         running = new blake3_hasher;
         blake3_hasher_init((blake3_hasher *)running);
@@ -88,7 +88,7 @@ namespace sbr2
             if(!zstream)
             {
                 zstream = ZSTD_createCCtx();
-                ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_compressionLevel, 19);
+                ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_compressionLevel, level);
                 ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_windowLog, 21);
             }
             byteswriter(packed).var(len);

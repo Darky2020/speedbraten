@@ -120,6 +120,9 @@ namespace sbr2
         // writes END; returns the content hash
         const uchar *finish();
         uchar content[HASHSIZE];
+        // zstd level: 19 packs saved files tightest, but its context takes tens of MB and its
+        // first chunk several ms, too much for a stream started during play
+        int level;
     private:
         void *running, *zstream;
         bool finished;

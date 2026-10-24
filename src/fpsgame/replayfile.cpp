@@ -1958,7 +1958,9 @@ namespace game
     // witness watches it. A view is a replay file without a trailer that starts at a map start
     // or from a saved state (a loaded one, or a snapshot every minute), with segments of
     // HUBVIEWSEGMENT ticks in every mode so spectators are about a second behind.
-    enum { HUBVIEWSEGMENT = 200, HUBVIEWPIECE = 8192 };
+    // A view is started during play (every keyframe), so it compresses at a level whose context
+    // is quick to set up; the witness stream has to match the saved file's bytes and can't.
+    enum { HUBVIEWSEGMENT = 200, HUBVIEWPIECE = 8192, HUBVIEWLEVEL = 9 };
 
     struct hubview
     {
@@ -2003,6 +2005,7 @@ namespace game
         view->starttick = max(header.starttick, 0);
         view->data = &data;
         view->s.fixedsegment = HUBVIEWSEGMENT;
+        view->s.out.level = HUBVIEWLEVEL;
         inputrun first;
         header.copyto(first.add());
         fillreplayinfo(first, false, 0, view->info);
