@@ -1908,6 +1908,7 @@ namespace game
         for(int last = live->s.lastsegment(); live->s.seg <= last; ) live->s.writesegment(prev.ticks);
         live->s.beginattempt(live->attempts++, a, a, live->info.simversion);
         live->data = &a;
+        live->lasttick = max(a.starttick, 0);
         witnesssendbytes();
     }
 

@@ -472,7 +472,7 @@ namespace witness
         else if(!memcmp(ch.type, "ATTM", 4))
         {
             string map;
-            b.var();
+            int index = int(b.var());
             b.str(map, sizeof(map));
             b.u32(); b.u8(); b.u32();
             uint seed = b.u32();
@@ -480,6 +480,17 @@ namespace witness
             b.str(team, sizeof(team));
             b.svar(); b.var(); b.var();
             r.lastinput = int(b.var());
+            // The next map of a chained run counts its ticks from 0 again: its state hashes are
+            // its own, and its time is measured from now, without the map change's loading.
+            if(index > 0 && b.ok)
+            {
+                if(!checkcommitments(c, r, INT_MAX)) return;
+                r.stored.clear();
+                r.committedticks.setsize(0);
+                r.committedhashes.setsize(0);
+                r.t0 = nowus();
+                r.starttick = r.lastinput;
+            }
             int found = c.seeds.find(seed);
             if(!b.ok || found < 0) { r.seedsok = false; run("UPDATE runs SET seedsok = 0 WHERE id = ?", "i", r.row); }
             else if(!c.seedsused[found]) { c.seedsused[found] = true; run("UPDATE seeds SET used = ? WHERE session = ? AND seed = ?", "iii", (long long)(nowus()/1000), c.sessionrow, (long long)seed); sendseed(c); }
