@@ -180,7 +180,8 @@ namespace game
         bindtext(st, 13, replay);
         if(content) sqlite3_bind_blob(st, 14, content, sbr2::HASHSIZE, SQLITE_TRANSIENT);
         else sqlite3_bind_null(st, 14);
-        sqlite3_bind_int(st, 15, tellsassisted(run) ? 1 : 0);
+        // a campaign run started after the campaign's first map doesn't count for PBs
+        sqlite3_bind_int(st, 15, tellsassisted(run) || (run.attempts.length() && campaignmap(run.attempts[0]->map, NULL) > 0) ? 1 : 0);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);

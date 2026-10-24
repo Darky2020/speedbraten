@@ -10,6 +10,7 @@
 - The speedrun menu has a hub tab: see who is online, play along with others and chat.
 - Lobby members see each other finish, and verified PBs and records are announced to everyone.
 - See the other members of your lobby as ghosts, and spectate other players' runs from the hub tab.
+- Campaigns that go on from map to map are timed as one run; each map's exit is a split.
 
 ## v0.2.1
 

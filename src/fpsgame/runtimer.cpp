@@ -13,7 +13,8 @@
 namespace game
 {
     enum { RUNTIMER_NONE = 0, RUNTIMER_SP, RUNTIMER_FLAG, RUNTIMER_RACE };
-    enum { RUN_IDLE = 0, RUN_HOLDING, RUN_RUNNING, RUN_FINISHED };
+    // RUN_SPLIT: a campaign map's exit before the last map; the next map goes on from it
+    enum { RUN_IDLE = 0, RUN_HOLDING, RUN_RUNNING, RUN_FINISHED, RUN_SPLIT };
 
     static int runkind = RUNTIMER_NONE, runstate = RUN_IDLE;
     static bool liferan = false;  // the run of player1's current life started (flagrun/race)
@@ -37,8 +38,31 @@ namespace game
     static int runticks()
     {
         if(runstate < RUN_RUNNING) return 0;
-        return runbase + (runstate == RUN_FINISHED ? runend : inputtick()) - runstart;
+        return runbase + (runstate == RUN_FINISHED || runstate == RUN_SPLIT ? runend : inputtick()) - runstart;
     }
+
+    // Campaigns: maps whose exits load the next map of the list. A run is finished at the last
+    // map's exit; the exits before it are splits.
+    static const char * const campaigns[][5] =
+    {
+        { "mpsp6a", "mpsp6b", "mpsp6c", NULL },
+        { "mpsp9a", "mpsp9b", "mpsp9c", "mpsp10", NULL }
+    };
+
+    // the map's place in its campaign (-1 if it is in none) and the campaign's length
+    int campaignmap(const char *map, int *length)
+    {
+        loopi(sizeof(campaigns)/sizeof(campaigns[0])) for(int j = 0; campaigns[i][j]; j++) if(!strcmp(campaigns[i][j], map))
+        {
+            if(length) { int n = 0; while(campaigns[i][n]) n++; *length = n; }
+            return j;
+        }
+        return -1;
+    }
+
+    // the map start that follows a finished run starts a new run, even when a map script loads it
+    static bool finishedatmapstart = false;
+    bool runtimerfinishedbeforemap() { return finishedatmapstart; }
 
     const char *formatruntime(int ms)
     {
@@ -50,8 +74,9 @@ namespace game
     void runtimermapstart(int mode, bool local)
     {
         bool sp = local && m_check(mode, M_DMSP | M_CLASSICSP);
-        bool chained = sp && runkind == RUNTIMER_SP && runstate == RUN_RUNNING && mapchained(mode);
-        runbase = chained ? runbase + inputtick() - runstart : 0;
+        finishedatmapstart = runstate == RUN_FINISHED;
+        bool chained = sp && runkind == RUNTIMER_SP && (runstate == RUN_RUNNING || runstate == RUN_SPLIT) && mapchained(mode);
+        runbase = chained ? runbase + (runstate == RUN_SPLIT ? runend : inputtick()) - runstart : 0;
         runstart = runend = 0;
         runflag = -1;
         if(sp) { runkind = RUNTIMER_SP; runstate = RUN_RUNNING; }
@@ -71,7 +96,16 @@ namespace game
 
     void runtimerendsp()
     {
-        if(runkind == RUNTIMER_SP && runstate == RUN_RUNNING) finishrun();
+        if(runkind != RUNTIMER_SP || runstate != RUN_RUNNING) return;
+        int length = 0, pos = campaignmap(getclientmap(), &length);
+        if(pos >= 0 && pos < length-1)
+        {
+            runend = inputtick();
+            runstate = RUN_SPLIT;
+            conoutf(CON_GAMEINFO, "\f2%s done: %s (map %d of %d)", getclientmap(), formatruntime(runticks()*SIMTICK), pos+1, length);
+            return;
+        }
+        finishrun();
     }
 
     void runtimerflagtaken(fpsent *d, int flag, const vec &loc, float radius)

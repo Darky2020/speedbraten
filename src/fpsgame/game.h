@@ -1012,6 +1012,8 @@ namespace game
     extern void runtimertick();
     extern int runtimerticks(bool &running);
     extern bool runtimerfinished();
+    extern bool runtimerfinishedbeforemap();
+    extern int campaignmap(const char *map, int *length);
     extern const char *runtimerkindname();
     extern bool inputrecordinglive();
     extern int inputattemptindex();

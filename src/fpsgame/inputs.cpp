@@ -566,7 +566,7 @@ namespace game
     // A map change started by the map's own script during play continues a singleplayer run.
     bool mapchained(int mode)
     {
-        return insimtick && (identflags&IDF_OVERRIDDEN) && m_check(mode, M_DMSP | M_CLASSICSP);
+        return insimtick && (identflags&IDF_OVERRIDDEN) && m_check(mode, M_DMSP | M_CLASSICSP) && !runtimerfinishedbeforemap();
     }
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
@@ -1130,7 +1130,9 @@ namespace game
         else witnessstop("the map changed");
         seedgame();
         uint seed;
-        attemptwitnessed = !fixedgameseed && witnessseed(seed);
+        // a campaign run that starts after the campaign's first map is practice: no witness
+        const char *firstmap = chained && recording.attempts.length() ? recording.attempts[0]->map : name;
+        attemptwitnessed = !fixedgameseed && campaignmap(firstmap, NULL) <= 0 && witnessseed(seed);
         if(attemptwitnessed) { gameseed = seed; seedMT(gameseed); logoutf("game seed: %u (from the witness)", gameseed); }
         else if(feeding && feedseed && !strcmp(name, feedrun.attempts[0]->map)) { gameseed = feedrun.attempts[0]->seed; seedMT(gameseed); logoutf("game seed: %u (harnessfeed)", gameseed); }
         if(!chained && !recording.empty()) recording.moveto(previous);
