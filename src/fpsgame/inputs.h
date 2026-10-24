@@ -318,6 +318,18 @@ namespace game
     extern void sampleplayer(ghostsample &g, int tick);
     extern void lobbyghostsample(uint id, const char *name, const ghostsample &s);
     extern void lobbyghostsclear();
+    // spectating through the hub (spectate.cpp)
+    extern bool spectating();
+    extern uint spectatingid();
+    extern const char *spectatingname();
+    extern bool spectatehold();
+    extern float spectatebehind();
+    extern void spectatebegin(uint target, const char *name, const char *map, int mode, const char *kind);
+    extern void spectaterun(uint run, const char *map, int mode, bool chained);
+    extern void spectatedata(uint run, int offset, const uchar *data, int len);
+    extern void spectateend(const char *why);
+    extern void spectatestop();
+    extern void spectateupdate();
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern bool inputreplayactive();

@@ -62,6 +62,7 @@ namespace game
         playalonglobby = 0;
         followpending = false;
         lobbyghostsclear();
+        spectateend("lost the connection to the hub");
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -149,7 +150,7 @@ namespace game
     static void sendpos()
     {
         static int lastsent = 0;
-        if(totalmillis - lastsent < POSINTERVAL || remote || player1->state != CS_ALIVE || !runkind()[0]) return;
+        if(totalmillis - lastsent < POSINTERVAL || remote || inputreplayactive() || player1->state != CS_ALIVE || !runkind()[0]) return;
         hublobby *l = mylobby();
         if(!l || l->members.length() < 2) return;
         lastsent = totalmillis;
@@ -173,7 +174,7 @@ namespace game
     // lobby one follows keeps following it.
     static void autolobby()
     {
-        if(!autolobbydue || !hubmyname[0]) return;
+        if(!autolobbydue || !hubmyname[0] || inputreplayactive()) return;
         autolobbydue = false;
         hublobby *l = mylobby();
         const char *kind = runkind();
@@ -203,7 +204,7 @@ namespace game
         bool running = false;
         runtimerticks(running);
         if(running) lastrunning = totalmillis;
-        if(!followpending) return;
+        if(!followpending || inputreplayactive()) return;
         hublobby *l = mylobby();
         if(!l || l->host == hubmyid || !l->map[0] || remote || onlobbymap(*l)) { followpending = false; return; }
         if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
@@ -346,6 +347,32 @@ namespace game
                     if(r.ok && id != hubmyid && findplayer(id)) lobbyghostsample(id, playername(id), g);
                     break;
                 }
+                case HM_SPECRUN:
+                {
+                    uint target = uint(r.var()), run = uint(r.var());
+                    string map = "", kind = "";
+                    gettext(r, map, sizeof(map));
+                    int mode = int(r.svar());
+                    gettext(r, kind, sizeof(kind));
+                    bool chained = r.var() != 0;
+                    if(r.ok && target == spectatingid()) spectaterun(run, map, mode, chained);
+                    break;
+                }
+                case HM_SPECDATA:
+                {
+                    uint run = uint(r.var());
+                    int offset = int(r.var());
+                    if(r.ok) spectatedata(run, offset, r.p, r.left());
+                    break;
+                }
+                case HM_SPECEND:
+                {
+                    uint target = uint(r.var());
+                    string why = "";
+                    gettext(r, why, sizeof(why));
+                    if(r.ok && target == spectatingid()) spectateend(why);
+                    break;
+                }
                 case HM_RESULT:
                 {
                     string name = "", map = "", kind = "";
@@ -453,6 +480,7 @@ namespace game
             autolobby();
             followupdate();
             sendpos();
+            spectateupdate();
         }
     }
 
@@ -602,6 +630,28 @@ namespace game
         w.var(uint(*id));
         hubsend(HM_LOBBYJOIN, p.getbuf(), p.length());
     });
+    ICOMMAND(hubspectate, "i", (int *id),
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        if(remote) { conoutf(CON_ERROR, "leave the game server first"); return; }
+        hubplayer *p = findplayer(uint(*id));
+        if(!p || p->id == hubmyid) { conoutf(CON_ERROR, "no such player"); return; }
+        spectatebegin(p->id, p->name, clientmap, gamemode, runkind());
+        vector<uchar> b;
+        sbr2::byteswriter w(b);
+        w.var(p->id);
+        hubsend(HM_SPECTATE, b.getbuf(), b.length());
+        conoutf("\f2waiting for %s's run", p->name);
+    });
+    ICOMMAND(hubstopspectate, "", (),
+    {
+        if(!spectating()) return;
+        if(hubready()) { vector<uchar> b; sbr2::byteswriter w(b); w.var(0); hubsend(HM_SPECTATE, b.getbuf(), b.length()); }
+        spectatestop();
+    });
+    ICOMMAND(hubspectating, "", (), result(spectatingname()));
+    ICOMMAND(hubspectatebehind, "", (), { defformatstring(s, "%.1f", spectatebehind()); result(s); });
+
     // join the lobby the player is in and load its map
     ICOMMAND(hubplayalong, "i", (int *id),
     {

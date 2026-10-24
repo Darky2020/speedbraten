@@ -9,6 +9,7 @@
 - The replay browser marks runs a witness verified. Fewer witness messages in the console.
 - The speedrun menu has a hub tab: see who is online, play along with others and chat.
 - Lobby members see each other finish, and verified PBs and records are announced to everyone.
+- See the other members of your lobby as ghosts, and spectate other players' runs from the hub tab.
 
 ## v0.2.1
 

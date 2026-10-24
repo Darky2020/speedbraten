@@ -516,6 +516,8 @@ namespace witness
             run("UPDATE runs SET segments = ? WHERE id = ?", "ii", (long long)(index + 1), r.row);
             storeprints(r.row, r.prints);
             r.prints.setsize(0);
+            // the hub passes closed segments on to spectators from the file
+            if(r.file) r.file->flush();
             livemore(r);
         }
         else if(!memcmp(ch.type, "END ", 4))

@@ -260,6 +260,7 @@ namespace game
 
     bool holdsim()
     {
+        if(spectatehold()) return true;
         if(!holduntil) return false;
         if(totalmillis - holduntil < 0) return true;
         holduntil = 0;
