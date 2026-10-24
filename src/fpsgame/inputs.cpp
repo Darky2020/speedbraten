@@ -1310,6 +1310,16 @@ namespace game
         return run.attempts.length() ? run.attempts[0] : NULL;
     }
 
+    // the map and mode a finished single player run starts over on: its first map
+    const char *sprestartmap(int &mode)
+    {
+        if(spectating()) return NULL;
+        const inputattempt *a = inputrunfirst();
+        if(!a || !a->map[0]) return NULL;
+        mode = a->mode;
+        return a->map;
+    }
+
     // state loads in the run being played: for a flagrun or race life saved on its own, only
     // those since the life started, as in its replay
     int inputsplicecount()

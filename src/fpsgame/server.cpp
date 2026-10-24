@@ -2017,6 +2017,21 @@ namespace server
         if(isdedicatedserver()) logoutf("started %s on %s", modename(mode, "unknown mode"), smapname);
     }
 
+    // single player: the end of a run's intermission loads the run's first map again
+    static bool restartsp()
+    {
+#ifndef STANDALONE
+        if(!m_sp) return false;
+        int mode = gamemode;
+        const char *map = game::sprestartmap(mode);
+        if(!map || !map[0]) return false;
+        changemap(map, mode);
+        return true;
+#else
+        return false;
+#endif
+    }
+
     void rotatemap(bool next)
     {
         if(!maprotations.inrange(curmaprotation))
@@ -2465,7 +2480,7 @@ namespace server
                 if(demorecord) enddemorecord();
                 interm = -1;
                 if(managedgame) managedgameended();
-                else checkvotes(true);
+                else if(!restartsp()) checkvotes(true);
             }
         }
 

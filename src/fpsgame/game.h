@@ -1016,6 +1016,7 @@ namespace game
     extern bool runtimerfinishedbeforemap();
     extern int campaignmap(const char *map, int *length);
     extern const char *runlabel(const char *map);
+    extern const char *sprestartmap(int &mode);
     extern const char *runtimerkindname();
     extern bool inputrecordinglive();
     extern int inputattemptindex();
