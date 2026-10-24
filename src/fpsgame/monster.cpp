@@ -320,7 +320,8 @@ namespace game
         cleardynentcache();
     }
 
-    void clearmonsters()     // called after map start or when toggling edit mode to reset/spawn all monsters to initial state
+    // no monsters at all, as when a game ends
+    void dropmonsters()
     {
         removetrackedparticles();
         removetrackeddynlights();
@@ -333,6 +334,12 @@ namespace game
         remain = 0;
         nextmonster = mtimestart = 0;
         monsterhurt = false;
+        monsterhurtpos = vec(0, 0, 0);
+    }
+
+    void clearmonsters()     // called after map start or when toggling edit mode to reset/spawn all monsters to initial state
+    {
+        dropmonsters();
         if(m_dmsp)
         {
             nextmonster = mtimestart = lastmillis+10000;

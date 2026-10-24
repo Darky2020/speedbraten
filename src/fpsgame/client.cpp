@@ -1134,6 +1134,8 @@ namespace game
             nextmode = gamemode = INT_MAX;
             clientmap[0] = '\0';
         }
+        // the world stays loaded behind the menu; without this its monsters go on hunting
+        dropmonsters();
     }
 
     VARP(teamcolorchat, 0, 1, 1);

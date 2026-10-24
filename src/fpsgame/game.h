@@ -898,6 +898,7 @@ namespace game
     extern vector<monster *> monsters;
 
     extern void clearmonsters();
+    extern void dropmonsters();
     extern void removemonsters();
     extern void preloadmonsters();
     extern void stackmonster(monster *d, physent *o);
