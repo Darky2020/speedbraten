@@ -105,7 +105,15 @@ namespace game
 
     const char *hubrunkind() { return runkind(); }
 
-    static const char *kindormode(const char *kind, int mode) { return kind[0] ? kind : server::modename(mode, "?"); }
+    // "flagrun, effic ctf": a flagrun or race names its mode too, since each mode is its own record
+    static const char *kindormode(const char *kind, int mode)
+    {
+        static string buf;
+        if(!kind[0]) return server::modename(mode, "?");
+        if(strcmp(kind, "flagrun") && strcmp(kind, "race")) return kind;
+        formatstring(buf, "%s, %s", kind, server::modename(mode, "?"));
+        return buf;
+    }
 
     // A lobby names the map its host's run started on: a campaign run that goes on to its next
     // map stays the same lobby, and a member anywhere in that run is on it.
