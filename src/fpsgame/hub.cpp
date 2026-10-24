@@ -584,7 +584,7 @@ namespace game
 
         g.space(2);
         g.pushlist();
-        g.text("where", COL_GRAY);
+        g.text("map", COL_GRAY);
         loopv(rows)
         {
             hubplayer *p = rows[i];
