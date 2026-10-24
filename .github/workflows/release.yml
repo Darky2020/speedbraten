@@ -12,8 +12,8 @@ permissions:
 
 env:
   ZIG_VERSION: 0.15.1
-  RESIMDATA: resimdata-v2
-  RESIMDATA_SHA256: 16389af25b8a981e9bf79307c08642de58567bea59c9a1a3b626cf9e4ad7bce2
+  RESIMDATA: resimdata-v3
+  RESIMDATA_SHA256: ac12942774fc4b7a594ef7de9c3c94318fe7405e8366ced422dd6ad696bb4b79
 
 jobs:
   build-windows:
