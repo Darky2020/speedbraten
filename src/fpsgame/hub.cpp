@@ -295,6 +295,18 @@ namespace game
                     conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : "global", name, text);
                     break;
                 }
+                case HM_FINISHED:
+                {
+                    r.var();
+                    string name = "", map = "", kind = "";
+                    gettext(r, name, sizeof(name));
+                    gettext(r, map, sizeof(map));
+                    int mode = int(r.svar());
+                    gettext(r, kind, sizeof(kind));
+                    int ms = int(r.var());
+                    if(r.ok) conoutf(CON_GAMEINFO, "\f1[lobby] \f2%s finished %s (%s) in \f0%s", name, map, kindormode(kind, mode), formatruntime(ms));
+                    break;
+                }
                 case HM_NOTICE:
                 {
                     char text[1024] = "";
@@ -403,6 +415,18 @@ namespace game
         if(!hubready() || !hubmyname[0]) return false;
         sendchat(mylobby() ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
         return true;
+    }
+
+    void hubrunfinished(int runtime)
+    {
+        if(!hubready() || !mylobby()) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        puttext(w, clientmap);
+        w.svar(gamemode);
+        w.str(runkind());
+        w.var(max(runtime, 0));
+        hubsend(HM_FINISH, p.getbuf(), p.length());
     }
 
     ICOMMAND(hubsay, "C", (char *text), { if(hubready()) sendchat(HUBCHAT_GLOBAL, text); else conoutf(CON_ERROR, "not connected to the hub"); });

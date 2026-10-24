@@ -20,6 +20,7 @@
 //   LOBBYMAP     str map, svar mode, str kind (host only)
 //   CHAT         var scope (HUBCHAT_*), str text
 //   REPORT       var player id, str reason
+//   FINISH       str map, svar mode, str kind, var run time in ms (the client's own timing)
 // hub -> client
 //   WELCOME      var your id, str your name ("" while you have none), str why the name you
 //                asked for was refused ("" if it wasn't)
@@ -32,6 +33,8 @@
 //   LOBBYGONE    var id
 //   CHATFROM     var scope, var from id, str name, str text
 //   NOTICE       str text
+//   FINISHED     var player id, str name, str map, svar mode, str kind, var run time in ms (a lobby
+//                member finished a run; not sent back to the one who finished)
 
 #ifndef __HUBPROTO_H__
 #define __HUBPROTO_H__
@@ -39,8 +42,8 @@
 enum
 {
     HUBPROTO = 1,
-    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT,
-    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE
+    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH,
+    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
 enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };

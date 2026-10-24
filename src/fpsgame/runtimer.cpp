@@ -40,7 +40,7 @@ namespace game
         return runbase + (runstate == RUN_FINISHED ? runend : inputtick()) - runstart;
     }
 
-    static const char *formatruntime(int ms)
+    const char *formatruntime(int ms)
     {
         static string buf;
         formatstring(buf, "%d:%02d.%03d", ms/60000, (ms/1000)%60, ms%1000);
@@ -66,6 +66,7 @@ namespace game
         runstate = RUN_FINISHED;
         conoutf(CON_GAMEINFO, "\f2run time: %s", formatruntime(runticks()*SIMTICK));
         inputrunfinished(runticks()*SIMTICK);
+        hubrunfinished(runticks()*SIMTICK);
     }
 
     void runtimerendsp()

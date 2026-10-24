@@ -414,6 +414,36 @@ func TestChat(t *testing.T) {
 	}
 }
 
+func TestFinish(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	c := f.connect(newKey(), "3.3.3.3", "carol")
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	l := b.expectLobby()
+	var w writer
+	w.u(l.id)
+	b.send(MsgLobbyJoin, w.b)
+	a.expectLobby()
+	a.expectLobby()
+	w = writer{}
+	w.str("forge")
+	w.s(17)
+	w.str("flagrun")
+	w.u(12345)
+	a.send(MsgFinish, w.b)
+	m := b.expect(MsgFinished)
+	if id, name, mapname, mode, kind, ms := m.r.u(), m.r.str(64), m.r.str(64), m.r.s(), m.r.str(16), m.r.u(); id != a.id || name != "alice" || mapname != "forge" || mode != 17 || kind != "flagrun" || ms != 12345 {
+		t.Fatalf("finished: %d %q %q %d %q %d", id, name, mapname, mode, kind, ms)
+	}
+	if _, ok := a.next(MsgFinished, 200*time.Millisecond); ok {
+		t.Fatal("the finisher heard their own finish")
+	}
+	if _, ok := c.next(MsgFinished, 200*time.Millisecond); ok {
+		t.Fatal("a player outside the lobby heard the finish")
+	}
+}
+
 func TestTalkRate(t *testing.T) {
 	f := newFixture(t)
 	a := f.connect(newKey(), "1.1.1.1", "alice")
@@ -512,6 +542,11 @@ func TestLimits(t *testing.T) {
 
 	// a malformed message ends the connection
 	c := f.connect(newKey(), "7.7.7.7", "eve")
+	c.send(99, []byte("from a newer client"))
+	c.chat(ChatGlobal, "still here")
+	if got := c.expectChat(); got.text != "still here" {
+		t.Fatalf("after an unknown message: %+v", got)
+	}
 	c.send(MsgStatus, []byte{9})
 	c.expectClosed()
 }

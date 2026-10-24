@@ -18,6 +18,7 @@ const (
 	MsgLobbyMap    = 7
 	MsgChat        = 8
 	MsgReport      = 9
+	MsgFinish      = 10
 
 	MsgWelcome   = 101
 	MsgWitness   = 102
@@ -27,6 +28,7 @@ const (
 	MsgLobbyGone = 106
 	MsgChatFrom  = 107
 	MsgNotice    = 108
+	MsgFinished  = 109
 
 	StateMenu    = 0
 	StatePlaying = 1

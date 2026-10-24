@@ -995,6 +995,9 @@ namespace game
     extern void inputmapstart(const char *name, int mode);
     extern int inputtick();
     extern void inputrunfinished(int runtime);
+    // a run finished (hub.cpp): the lobby hears of it
+    extern void hubrunfinished(int runtime);
+    extern const char *formatruntime(int ms);
     extern void inputdisconnect();
     extern void snaprecorder(snapio &s);
     extern bool inputreplayfromstate(bool (*restore)());

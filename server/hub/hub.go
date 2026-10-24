@@ -512,8 +512,28 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			return err
 		}
 		h.notice(p, fmt.Sprintf("reported %s, thanks", q.name))
+	case MsgFinish:
+		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
+		if err := r.done(); err != nil {
+			return err
+		}
+		if p.lobby == nil || p.name == "" {
+			return nil
+		}
+		var w writer
+		w.u(p.id)
+		w.str(p.name)
+		w.str(mapname)
+		w.s(mode)
+		w.str(kind)
+		w.u(ms)
+		for _, q := range p.lobby.members {
+			if q != p {
+				h.send(q, MsgFinished, w.b)
+			}
+		}
 	default:
-		return fmt.Errorf("unknown message %d", typ)
+		// messages from newer clients are ignored
 	}
 	return nil
 }
