@@ -307,6 +307,24 @@ namespace game
                     if(r.ok) conoutf(CON_GAMEINFO, "\f1[lobby] \f2%s finished %s (%s) in \f0%s", name, map, kindormode(kind, mode), formatruntime(ms));
                     break;
                 }
+                case HM_RESULT:
+                {
+                    string name = "", map = "", kind = "";
+                    gettext(r, name, sizeof(name));
+                    gettext(r, map, sizeof(map));
+                    int mode = int(r.svar());
+                    gettext(r, kind, sizeof(kind));
+                    int ms = int(r.var());
+                    bool record = r.var() != 0;
+                    int beat = int(r.var()) - 1;
+                    if(!r.ok) break;
+                    string time, gain;
+                    copystring(time, formatruntime(ms));
+                    if(beat >= 0) formatstring(gain, "%s faster", formatruntime(beat - ms));
+                    else copystring(gain, "the first verified time");
+                    conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", map, kindormode(kind, mode), time, gain);
+                    break;
+                }
                 case HM_NOTICE:
                 {
                     char text[1024] = "";

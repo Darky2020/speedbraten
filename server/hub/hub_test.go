@@ -12,6 +12,7 @@ import (
 	"github.com/flynn/noise"
 
 	"speedbraten/server/noisechan"
+	"speedbraten/server/sqlite"
 )
 
 type clock struct {
@@ -567,4 +568,60 @@ func TestWitness(t *testing.T) {
 	}
 	check(a)
 	check(f.connect(newKey(), "2.2.2.2", "bob"))
+}
+
+func TestResults(t *testing.T) {
+	f := newFixture(t)
+	wdb := filepath.Join(t.TempDir(), "witness.db")
+	w, err := sqlite.Create(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if _, err := w.Exec("CREATE TABLE events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	add := func(run int, pub, player string, ms int, record int, previous int) {
+		if _, err := w.Exec("INSERT INTO events(run, installpub, player, map, runkind, mode, runtimems, record, previous, created) VALUES(?, ?, ?, 'forge', 'flagrun', 17, ?, ?, ?, 0)", run, pub, player, ms, record, previous); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(1, "old", "before", 20000, 1, -1)
+
+	ka := newKey()
+	a := f.connect(ka, "1.1.1.1", "alice")
+	res, err := f.h.OpenResults(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Close()
+	if n, err := res.Poll(); n != 0 || err != nil {
+		t.Fatalf("first poll announced history: %d %v", n, err)
+	}
+	add(2, hex.EncodeToString(ka.Public), "replayname", 12345, 1, 20000)
+	add(3, "unknown", "bob", 13001, 0, -1)
+	if n, err := res.Poll(); n != 2 || err != nil {
+		t.Fatalf("poll: %d %v", n, err)
+	}
+	read := func() (string, string, int64, string, uint64, uint64, uint64) {
+		m := a.expect(MsgResult)
+		return m.r.str(64), m.r.str(64), m.r.s(), m.r.str(16), m.r.u(), m.r.u(), m.r.u()
+	}
+	if name, mapname, mode, kind, ms, record, prev := read(); name != "alice" || mapname != "forge" || mode != 17 || kind != "flagrun" || ms != 12345 || record != 1 || prev != 20001 {
+		t.Fatalf("record: %q %q %d %q %d %d %d", name, mapname, mode, kind, ms, record, prev)
+	}
+	if name, _, _, _, ms, record, prev := read(); name != "bob" || ms != 13001 || record != 0 || prev != 0 {
+		t.Fatalf("pb: %q %d %d %d", name, ms, record, prev)
+	}
+
+	// a restarted hub goes on after the last event it announced
+	res2, err := f.h.OpenResults(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Close()
+	add(4, "unknown", "bob", 12000, 1, 12345)
+	if n, err := res2.Poll(); n != 1 || err != nil {
+		t.Fatalf("after a restart: %d %v", n, err)
+	}
 }

@@ -1,10 +1,12 @@
 // hub is the speedbraten hub server: names, presence, lobbies and chat (package hub).
 //
-//	hub -d <data dir> [-listen :28791] [-witness <host:port players use>] [-witnessask <host:port>] [-admins <file>]
+//	hub -d <data dir> [-listen :28791] [-witness <host:port players use>] [-witnessask <host:port>]
+//	    [-witnessdb <witness.db>] [-admins <file>]
 //
 // The data dir holds hub.key (the channel's static private key, made on first start) and
 // hub.db. With -witness, the hub asks that witness (or -witnessask, when it is reached by
-// another address from here) for its keys and hands address and keys to every player. The
+// another address from here) for its keys and hands address and keys to every player.
+// With -witnessdb (on the witness's machine) it announces PBs and records to everyone. The
 // admins file lists install keys (hex, one per line, # comments) allowed to #mute and #kick.
 package main
 
@@ -105,6 +107,7 @@ func main() {
 	witness := flag.String("witness", "", "the witness's address as players reach it, host:port")
 	ask := flag.String("witnessask", "", "where the hub reaches the witness, if not at -witness")
 	admins := flag.String("admins", "", "file of admin install keys")
+	witnessDB := flag.String("witnessdb", "", "the witness's witness.db, to announce PBs and records")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -129,6 +132,22 @@ func main() {
 			*ask = *witness
 		}
 		go watchWitness(h, *witness, *ask)
+	}
+	if *witnessDB != "" {
+		res, err := h.OpenResults(*witnessDB)
+		if err != nil {
+			log.Fatalf("-witnessdb: %v", err)
+		}
+		go func() {
+			for {
+				if n, err := res.Poll(); err != nil {
+					log.Printf("witness results: %v", err)
+				} else if n > 0 {
+					log.Printf("announced %d results", n)
+				}
+				time.Sleep(time.Second)
+			}
+		}()
 	}
 	go func() {
 		for {

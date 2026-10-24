@@ -178,7 +178,10 @@ namespace witness
             "CREATE TABLE IF NOT EXISTS flags(id INTEGER PRIMARY KEY, run INTEGER, kind TEXT, other INTEGER, matched INTEGER, total INTEGER, created INTEGER, reviewed INTEGER DEFAULT 0, note TEXT);") &&
             addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT") && addcolumn("runs", "judged INTEGER") && addcolumn("runs", "follows INTEGER") &&
             addcolumn("runs", "map TEXT") && addcolumn("runs", "player TEXT") && addcolumn("sessions", "host TEXT") &&
+            addcolumn("runs", "runkind TEXT") && addcolumn("runs", "mode INTEGER") && addcolumn("runs", "runtimems INTEGER") && addcolumn("sessions", "installpub TEXT") &&
             sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS installs(installkey TEXT PRIMARY KEY, host TEXT, firstseen INTEGER);"
+                "CREATE TABLE IF NOT EXISTS bests(map TEXT, runkind TEXT, mode INTEGER, installkey TEXT, runtimems INTEGER, run INTEGER, achieved INTEGER, PRIMARY KEY(map, runkind, mode, installkey));"
+                "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER);"
                 "CREATE INDEX IF NOT EXISTS runs_install ON runs(installkey, started);"
                 "CREATE INDEX IF NOT EXISTS runs_session ON runs(session);"
                 "CREATE INDEX IF NOT EXISTS sessions_host ON sessions(host);"
@@ -255,14 +258,41 @@ namespace witness
     }
 
     static void checkcopy(long long row);
+    static bool rowtext(const char *sql, long long row, int columns, char (*out)[MAXSTRLEN]);
+    // the game's mode numbers for single player campaign and DMSP
+    enum { MODE_SP = -3, MODE_DMSP = -2 };
 
-    // the map and the player's name, for the review dashboard
+    // the map, the player's name and the kind of run, for the review dashboard and the bests
     static void noteheader(long long row, const vector<uchar> &meta)
     {
         string map = "", player = "";
+        long long mode = 0, flagrun = 0, race = 0;
         sbr2::kvfind(meta, "map", NULL, map, sizeof(map));
         sbr2::kvfind(meta, "player", NULL, player, sizeof(player));
-        run("UPDATE runs SET map = ?, player = ? WHERE id = ?", "ssi", map, player, row);
+        sbr2::kvfind(meta, "mode", &mode);
+        sbr2::kvfind(meta, "flagrun", &flagrun);
+        sbr2::kvfind(meta, "race", &race);
+        const char *kind = race ? "race" : flagrun ? "flagrun" : mode == MODE_DMSP ? "dmsp" : mode == MODE_SP ? "campaign" : "";
+        run("UPDATE runs SET map = ?, player = ?, runkind = ?, mode = ? WHERE id = ?", "sssii", map, player, kind, mode, row);
+    }
+
+    // A valid run faster than the install's best on its map and kind is a PB, and faster than
+    // every install's best a record; each goes into events, which the hub reads.
+    // runtimems: 0 for a run that didn't finish
+    static void notebest(long long row, long long runtimems)
+    {
+        string r[5];
+        if(runtimems <= 0 || !rowtext("SELECT IFNULL(r.map, ''), IFNULL(r.runkind, ''), IFNULL(r.mode, 0), r.installkey, IFNULL(s.installpub, '') FROM runs r JOIN sessions s ON s.id = r.session WHERE r.id = ?", row, 5, r)) return;
+        if(!r[0][0] || !r[1][0] || scalar("SELECT COUNT(*) FROM events WHERE run = ?", "i", row)) return;
+        long long mode = atoll(r[2]);
+        long long pb = scalar("SELECT IFNULL(MIN(runtimems), -1) FROM bests WHERE map = ? AND runkind = ? AND mode = ? AND installkey = ?", "ssis", r[0], r[1], mode, r[3]);
+        long long record = scalar("SELECT IFNULL(MIN(runtimems), -1) FROM bests WHERE map = ? AND runkind = ? AND mode = ?", "ssi", r[0], r[1], mode);
+        if(pb >= 0 && runtimems >= pb) return;
+        bool isrecord = record < 0 || runtimems < record;
+        long long now = nowus()/1000;
+        run("INSERT OR REPLACE INTO bests(map, runkind, mode, installkey, runtimems, run, achieved) VALUES(?, ?, ?, ?, ?, ?, ?)", "ssisiii", r[0], r[1], mode, r[3], runtimems, row, now);
+        run("INSERT INTO events(run, installpub, player, map, runkind, mode, runtimems, record, previous, created) SELECT ?, ?, player, map, runkind, mode, ?, ?, ?, ? FROM runs WHERE id = ?", "isiiiii",
+            row, r[4], runtimems, (long long)(isrecord ? 1 : 0), isrecord ? record : pb, now, row);
     }
 
     struct witnessrun
@@ -662,7 +692,9 @@ namespace witness
         tohexstr(c.session, sizeof(c.session), sessionhex);
         string noncehex;
         tohexstr(c.nonce, sizeof(c.nonce), noncehex);
-        run("UPDATE sessions SET session = ?, nonce = ?, installkey = ?, build = ? WHERE id = ?", "ssssi", sessionhex, noncehex, c.installhex, c.build, c.sessionrow);
+        string installpub;
+        tohexstr(c.hs->remotestatic(), 32, installpub);
+        run("UPDATE sessions SET session = ?, nonce = ?, installkey = ?, build = ?, installpub = ? WHERE id = ?", "sssssi", sessionhex, noncehex, c.installhex, c.build, installpub, c.sessionrow);
         DELETEP(c.hs);
         c.open = true;
         conoutf("%s: session %s, player %s, %s", c.addressname, sessionhex, c.installhex, c.build);
@@ -792,13 +824,14 @@ namespace witness
         conoutf("run %lld: its aim matches run %lld (%d of %d fingerprints), flagged for review", row, other, matched, total);
     }
 
-    // -P: fingerprints and header for runs stored before the witness took them, then the copy check
+    // -P: fingerprints and header for runs stored before the witness took them, then the copy
+    // check; run times and bests from earlier valid verdicts, without announcing them
     static void backfillprints()
     {
         vector<long long> rows;
         vector<bool> needprints;
         sqlite3_stmt *st = NULL;
-        if(sqlite3_prepare_v2(db, "SELECT id, id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR id NOT IN (SELECT DISTINCT run FROM prints) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
+        if(sqlite3_prepare_v2(db, "SELECT id, id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR runkind IS NULL OR id NOT IN (SELECT DISTINCT run FROM prints) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
         while(sqlite3_step(st) == SQLITE_ROW) { rows.add(sqlite3_column_int64(st, 0)); needprints.add(sqlite3_column_int(st, 1) != 0); }
         sqlite3_finalize(st);
         loopv(rows)
@@ -826,6 +859,10 @@ namespace witness
         }
         loopv(rows) if(needprints[i]) checkcopy(rows[i]);
         conoutf("fingerprints and headers for %d earlier runs", rows.length());
+        run("UPDATE runs SET runtimems = CASE WHEN json_extract(resim, '$.finished') THEN json_extract(resim, '$.runtime_ms') ELSE 0 END WHERE runtimems IS NULL AND json_valid(resim)", "");
+        run("INSERT OR IGNORE INTO bests(map, runkind, mode, installkey, runtimems, run, achieved) "
+            "SELECT map, runkind, mode, installkey, MIN(runtimems), id, judged FROM runs WHERE verdict = 'valid' AND runtimems > 0 AND map != '' AND runkind != '' GROUP BY map, runkind, mode, installkey", "");
+        conoutf("bests: %lld", scalar("SELECT COUNT(*) FROM bests", ""));
     }
 
     static resimjob *findjob(pid_t pid)
@@ -1048,7 +1085,7 @@ namespace witness
         char json[8192] = "";
         stream *in = openrawfile(job.out, "rb");
         if(in) { size_t n = in->read(json, sizeof(json) - 1); json[n] = '\0'; delete in; }
-        string ok = "", desync = "", runtime = "", recorded = "", failed = "", missing = "", lifestart = "", ticks = "";
+        string ok = "", desync = "", runtime = "", recorded = "", failed = "", missing = "", lifestart = "", ticks = "", finished = "";
         bool read = jsonfield(json, "ok", ok, sizeof(ok)) && jsonfield(json, "rules_failed", failed, sizeof(failed));
         jsonfield(json, "desync_tick", desync, sizeof(desync));
         jsonfield(json, "runtime_ms", runtime, sizeof(runtime));
@@ -1056,6 +1093,8 @@ namespace witness
         jsonfield(json, "missing_files", missing, sizeof(missing));
         jsonfield(json, "lifestart", lifestart, sizeof(lifestart));
         jsonfield(json, "ticks", ticks, sizeof(ticks));
+        jsonfield(json, "finished", finished, sizeof(finished));
+        long long finishedms = !strcmp(finished, "true") ? atoi(runtime) : 0;
         string failednames = "";
         jsonfield(json, "failed", failednames, sizeof(failednames));
         string info[7];
@@ -1109,7 +1148,8 @@ namespace witness
         vector<uchar> payload;
         sig.write(payload);
         run("INSERT INTO signatures(run, scope, segment, recvus, payload) VALUES(?, ?, 0, ?, ?)", "iiib", row, (long long)sig.scope, (long long)sig.recvus, payload.getbuf(), payload.length());
-        run("UPDATE runs SET verdict = ?, reason = ?, resim = ?, judged = ? WHERE id = ?", "sssii", verdict, reason, json, (long long)(nowus()/1000), row);
+        run("UPDATE runs SET verdict = ?, reason = ?, resim = ?, judged = ?, runtimems = ? WHERE id = ?", "sssiii", verdict, reason, json, (long long)(nowus()/1000), finishedms, row);
+        if(!strcmp(verdict, "valid")) notebest(row, finishedms);
         string file[1];
         if(strcmp(verdict, "unverified") && rowtext("SELECT file FROM runs WHERE id = ?", row, 1, file))
         {

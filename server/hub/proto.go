@@ -29,6 +29,7 @@ const (
 	MsgChatFrom  = 107
 	MsgNotice    = 108
 	MsgFinished  = 109
+	MsgResult    = 110
 
 	StateMenu    = 0
 	StatePlaying = 1
