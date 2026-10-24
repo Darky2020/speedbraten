@@ -42,22 +42,29 @@ namespace game
     }
 
     // Campaigns: maps whose exits load the next map of the list. A run is finished at the last
-    // map's exit; the exits before it are splits.
-    static const char * const campaigns[][5] =
+    // map's exit; the exits before it are splits. The name is the single player menu's.
+    static const struct { const char *name, *maps[5]; } campaigns[] =
     {
-        { "mpsp6a", "mpsp6b", "mpsp6c", NULL },
-        { "mpsp9a", "mpsp9b", "mpsp9c", "mpsp10", NULL }
+        { "An Army Of One", { "mpsp6a", "mpsp6b", "mpsp6c", NULL } },
+        { "Private Stan Sauer", { "mpsp9a", "mpsp9b", "mpsp9c", "mpsp10", NULL } }
     };
 
     // the map's place in its campaign (-1 if it is in none) and the campaign's length
     int campaignmap(const char *map, int *length)
     {
-        loopi(sizeof(campaigns)/sizeof(campaigns[0])) for(int j = 0; campaigns[i][j]; j++) if(!strcmp(campaigns[i][j], map))
+        loopi(sizeof(campaigns)/sizeof(campaigns[0])) for(int j = 0; campaigns[i].maps[j]; j++) if(!strcmp(campaigns[i].maps[j], map))
         {
-            if(length) { int n = 0; while(campaigns[i][n]) n++; *length = n; }
+            if(length) { int n = 0; while(campaigns[i].maps[n]) n++; *length = n; }
             return j;
         }
         return -1;
+    }
+
+    // a run's name for people: the campaign's when the run starts on a campaign's first map
+    const char *runlabel(const char *map)
+    {
+        loopi(sizeof(campaigns)/sizeof(campaigns[0])) if(!strcmp(campaigns[i].maps[0], map)) return campaigns[i].name;
+        return map;
     }
 
     // the map start that follows a finished run starts a new run, even when a map script loads it

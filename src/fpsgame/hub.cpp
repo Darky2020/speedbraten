@@ -200,7 +200,7 @@ namespace game
         if(!now.map[0]) return;
         bool running = false;
         runtimerticks(running);
-        if(running) conoutf("\f2%s picked %s (%s): you follow when this run ends", playername(now.host), now.map, kindormode(now.kind, now.mode));
+        if(running) conoutf("\f2%s picked %s (%s): you follow when this run ends", playername(now.host), runlabel(now.map), kindormode(now.kind, now.mode));
         followpending = true;
     }
 
@@ -215,7 +215,7 @@ namespace game
         if(!l || l->host == hubmyid || !l->map[0] || remote || onlobbymap(*l)) { followpending = false; return; }
         if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
         followpending = false;
-        conoutf("\f2following %s to %s (%s)", playername(l->host), l->map, kindormode(l->kind, l->mode));
+        conoutf("\f2following %s to %s (%s)", playername(l->host), runlabel(l->map), kindormode(l->kind, l->mode));
         loadlobbymap(*l);
     }
 
@@ -336,7 +336,7 @@ namespace game
                     int mode = int(r.svar());
                     gettext(r, kind, sizeof(kind));
                     int ms = int(r.var());
-                    if(r.ok) conoutf(CON_GAMEINFO, "\f1[lobby] \f2%s finished %s (%s) in \f0%s", name, map, kindormode(kind, mode), formatruntime(ms));
+                    if(r.ok) conoutf(CON_GAMEINFO, "\f1[lobby] \f2%s finished %s (%s) in \f0%s", name, runlabel(map), kindormode(kind, mode), formatruntime(ms));
                     break;
                 }
                 case HM_POSFROM:
@@ -394,7 +394,7 @@ namespace game
                     copystring(time, formatruntime(ms));
                     if(beat >= 0) formatstring(gain, "%s faster", formatruntime(beat - ms));
                     else copystring(gain, "the first verified time");
-                    conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", map, kindormode(kind, mode), time, gain);
+                    conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", runlabel(map), kindormode(kind, mode), time, gain);
                     break;
                 }
                 case HM_NOTICE:
@@ -517,8 +517,8 @@ namespace game
         if(!hubready() || !mylobby()) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);
-        puttext(w, clientmap);
-        w.svar(gamemode);
+        puttext(w, runmap());
+        w.svar(runmode());
         w.str(runkind());
         w.var(max(runtime, 0));
         hubsend(HM_FINISH, p.getbuf(), p.length());
@@ -605,7 +605,7 @@ namespace game
         hublobby *l = findlobby(uint(*id));
         if(!l) { result(""); return; }
         if(!strcmp(field, "host")) result(playername(l->host));
-        else if(!strcmp(field, "map")) result(l->map);
+        else if(!strcmp(field, "map")) result(runlabel(l->map));
         else if(!strcmp(field, "mode")) result(server::modename(l->mode, ""));
         else if(!strcmp(field, "kind")) result(l->kind);
         else if(!strcmp(field, "count")) intret(l->members.length());
