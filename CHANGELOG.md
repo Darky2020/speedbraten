@@ -11,6 +11,7 @@
 - Lobby members see each other finish, and verified PBs and records are announced to everyone.
 - See the other members of your lobby as ghosts, and spectate other players' runs from the hub tab.
 - Campaigns that go on from map to map are timed as one run; each map's exit is a split.
+- A slow or stalling connection no longer gets a witnessed run rejected.
 
 ## v0.2.1
 

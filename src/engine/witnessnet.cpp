@@ -49,7 +49,7 @@ namespace witnessnet
 
     struct connection
     {
-        int state, started;
+        int state, started, holduntil; // holduntil: outgoing bytes wait until then (harnessnetstall)
         string host, error;
         int port;
         uchar serverkey[noise::KEYLEN];
@@ -63,7 +63,7 @@ namespace witnessnet
         vector<uchar> in, out;
         vector<received *> inbox;
 
-        connection() : state(IDLE), started(0), port(0), askkeys(false), learned(false), hub(false), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
+        connection() : state(IDLE), started(0), holduntil(0), port(0), askkeys(false), learned(false), hub(false), pending(NULL), sock(ENET_SOCKET_NULL), hs(NULL) { host[0] = error[0] = '\0'; }
         ~connection() { close(""); }
 
         void close(const char *why)
@@ -205,7 +205,7 @@ namespace witnessnet
                 if(state != HANDSHAKE) return;
             }
             if(state != HANDSHAKE && state != OPEN) return;
-            while(out.length())
+            while(out.length() && totalmillis - holduntil >= 0)
             {
                 ENetBuffer buf;
                 buf.data = out.getbuf();
@@ -428,6 +428,9 @@ namespace witnessnet
     }
     COMMAND(noiseinterop, "sisi");
 }
+
+// harness: holds what the client sends the witness for ms, as a stalled network would
+ICOMMAND(harnessnetstall, "i", (int *ms), witnessnet::witness.holduntil = totalmillis + max(*ms, 0));
 
 void witnessslice()
 {

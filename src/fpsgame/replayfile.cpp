@@ -1631,6 +1631,7 @@ namespace game
     static int witnesslaststate = WITNESS_IDLE;
     static int nextrunid = 1, witnessretry = 0;
     static vector<uint> witnessseeds;
+    static uint witnessbeat = 0; // the newest BEAT, returned in RUNSTART and TICK
     static string witnesstarget = "";
     struct awaitingsign { int runid; string file; };
     static vector<awaitingsign> awaitingsigns;
@@ -1659,6 +1660,7 @@ namespace game
                 r.bytes(skip, 40);
                 uint seed = r.u32();
                 witnessseeds.setsize(0);
+                witnessbeat = 0;
                 if(r.ok) witnessseeds.add(seed);
                 if(witnesslost) conoutf("\f0witness connected again");
                 else logoutf("witness connected");
@@ -1666,6 +1668,7 @@ namespace game
                 continue;
             }
             if(type == WM_SEED) { uint seed = r.u32(); if(r.ok) witnessseeds.add(seed); continue; }
+            if(type == WM_BEAT) { uint beat = uint(r.var()); if(r.ok) witnessbeat = beat; continue; }
             int runid = int(r.var());
             if(!r.ok) continue;
             if(type == WM_SIGN)
@@ -1896,6 +1899,7 @@ namespace game
         w.var(continues >= 0 ? WITNESSRUN_CHAIN : life ? WITNESSRUN_LIFE : WITNESSRUN_MAP);
         w.var(header.starttick);
         if(continues >= 0) w.var(continues);
+        w.var(witnessbeat);
         if(!witnesssend(WM_RUNSTART, p.getbuf(), p.length())) { DELETEP(live); return; }
         witnesssendbytes();
     }
@@ -1931,6 +1935,7 @@ namespace game
             w.var(live->runid);
             w.var(t);
             w.u32(combinedhash(h->groups, a.hashgroups));
+            w.var(witnessbeat);
             if(!witnesssend(WM_TICK, p.getbuf(), p.length())) { DELETEP(live); return; }
         }
     }

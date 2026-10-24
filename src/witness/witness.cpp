@@ -54,9 +54,12 @@ void fatal(const char *fmt, ...)
 namespace witness
 {
     enum { MAXCONNECTIONS = 256, MAXPERADDRESS = 4, HANDSHAKETIMEOUT = 10000 };
-    // a run's ticks may fall behind the witness's clock by up to LAG ms (network delay, frame
-    // hitches) and run ahead of it by up to LEAD ms
-    enum { LAG = 2000, LEAD = 500 };
+    // A run's ticks may fall behind the witness's clock by up to LAG ms (frame hitches) and run
+    // ahead of it by up to LEAD ms. With BEATs both are proven from the witness's own clock: a
+    // TICK returning beat b was played after b was sent, and the run started before its RUNSTART
+    // arrived, so network delay can't make a run look slow or fast. Clients without BEATs are
+    // measured by arrival times. BEATKEEP beats are remembered (64 s).
+    enum { LAG = 2000, LEAD = 500, BEATKEEP = 256 };
     // a run whose player gives no input for this many ticks (30 s) is no longer watched
     enum { AFKTICKS = 6000 };
     // the input event type of a setting change (INPUT_SETTING in fpsgame/game.h), which isn't the player's doing
@@ -313,10 +316,13 @@ namespace witness
         int lastinput; // tick of the player's last input event, or of the attempt's start
         long long follows; // the row of the run this one continues (the next run of a life), -1 if none
         bool ended;        // its END was taken
+        bool beats;        // the client returns BEATs: real time is proven from them
+        long long startlo, starthi; // the run (or its current map) started between these, -1 if unknown
+        uint lastbeat;     // the newest BEAT the client returned
         aimtrail trail;
         vector<unsigned long long> prints; // fingerprints not stored yet
 
-        witnessrun() : row(-1), runid(0), kind(0), starttick(0), maxlagms(0), violations(0), inpslo(0), segticks(0), t0(0), seedsok(true), done(false), seenchunks(0), bytes(0), file(NULL), livepid(0), lastinput(0), follows(-1), ended(false) { refused[0] = '\0'; }
+        witnessrun() : row(-1), runid(0), kind(0), starttick(0), maxlagms(0), violations(0), inpslo(0), segticks(0), t0(0), seedsok(true), done(false), seenchunks(0), bytes(0), file(NULL), livepid(0), lastinput(0), follows(-1), ended(false), beats(false), startlo(-1), starthi(-1), lastbeat(0) { refused[0] = '\0'; }
         ~witnessrun() { DELETEP(file); }
     };
 
@@ -336,8 +342,10 @@ namespace witness
         vector<uint> seeds;     // handed out, in order
         vector<bool> seedsused;
         vector<witnessrun *> runs;
+        uint beats;                     // BEATs sent; beat n was sent at beatsent[n % BEATKEEP]
+        long long beatsent[BEATKEEP];
 
-        client() : sock(ENET_SOCKET_NULL), connected(0), hs(NULL), open(false), closing(false), answered(false), sessionrow(-1) { addressname[0] = build[0] = installhex[0] = '\0'; }
+        client() : sock(ENET_SOCKET_NULL), connected(0), hs(NULL), open(false), closing(false), answered(false), sessionrow(-1), beats(0) { addressname[0] = build[0] = installhex[0] = '\0'; }
         ~client() { DELETEP(hs); runs.deletecontents(); if(sock != ENET_SOCKET_NULL) enet_socket_destroy(sock); }
     };
     static vector<client *> clients;
@@ -367,6 +375,22 @@ namespace witness
         c.seedsused.add(false);
         run("INSERT INTO seeds(session, seed, issued, used) VALUES(?, ?, ?, 0)", "iii", c.sessionrow, (long long)seed, (long long)(nowus()/1000));
         return seed;
+    }
+
+    // when the witness sent beat n, -1 if it never did or no longer remembers
+    static long long beatsentat(const client &c, uint n)
+    {
+        if(!n || n > c.beats || c.beats - n >= BEATKEEP) return -1;
+        return c.beatsent[n % BEATKEEP];
+    }
+
+    static void sendbeat(client &c)
+    {
+        c.beats++;
+        c.beatsent[c.beats % BEATKEEP] = (long long)nowus();
+        vector<uchar> p;
+        sbr2::byteswriter(p).var(c.beats);
+        sendmsg(c, WM_BEAT, p);
     }
 
     static void sendseed(client &c)
@@ -490,6 +514,8 @@ namespace witness
                 r.committedhashes.setsize(0);
                 r.t0 = nowus();
                 r.starttick = r.lastinput;
+                r.starthi = (long long)r.t0;
+                r.startlo = beatsentat(c, r.lastbeat);
             }
             int found = c.seeds.find(seed);
             if(!b.ok || found < 0) { r.seedsok = false; run("UPDATE runs SET seedsok = 0 WHERE id = ?", "i", r.row); }
@@ -592,6 +618,8 @@ namespace witness
                 if(r) { c.closing = true; return; }
                 loopv(c.runs) if(!c.runs[i]->done) closerun(*c.runs[i], "a new run started");
                 int kind = int(b.var()), starttick = int(b.var()), continues = kind == WITNESSRUN_CHAIN ? int(b.var()) : -1;
+                bool beats = b.left() > 0;
+                uint beat = beats ? uint(b.var()) : 0;
                 witnessrun *before = continues >= 0 ? findrun(c, continues) : NULL;
                 loopv(c.runs) if(c.runs[i]->runid > continues) before = NULL;
                 if(continues < 0) releaseidle(c.sessionrow);
@@ -601,6 +629,10 @@ namespace witness
                 r->kind = kind;
                 r->starttick = starttick;
                 r->t0 = nowus();
+                r->beats = beats;
+                r->starthi = (long long)r->t0;
+                r->startlo = beatsentat(c, beat);
+                r->lastbeat = beat;
                 defformatstring(dir, "%s/runs/%s", datadir, c.installhex);
                 mkdir(dir, 0755);
                 defformatstring(file, "%s/%lld-%d.sbr", dir, c.sessionrow, runid);
@@ -634,10 +666,27 @@ namespace witness
                 if(!r || r->done) return;
                 int tick = int(b.var());
                 uint hash = b.u32();
+                uint beat = b.left() > 0 ? uint(b.var()) : 0;
                 if(!b.ok) { c.closing = true; return; }
-                long long expected = (long long)r->t0 + (long long)(tick - r->starttick) * 5000, lag = ((long long)nowus() - expected) / 1000;
-                if(lag > LAG || lag < -LEAD) r->violations++;
-                r->maxlagms = max(r->maxlagms, int(lag));
+                long long now = (long long)nowus(), played = (long long)(tick - r->starttick) * 5000;
+                if(r->beats)
+                {
+                    if(beat > r->lastbeat) r->lastbeat = beat;
+                    long long after = beatsentat(c, beat);
+                    if(after >= 0)
+                    {
+                        long long slow = (after - r->starthi - played) / 1000;
+                        if(slow > LAG) r->violations++;
+                        r->maxlagms = max(r->maxlagms, int(slow));
+                    }
+                    if(r->startlo >= 0 && (played - (now - r->startlo)) / 1000 > LEAD) r->violations++;
+                }
+                else
+                {
+                    long long lag = (now - ((long long)r->t0 + played)) / 1000;
+                    if(lag > LAG || lag < -LEAD) r->violations++;
+                    r->maxlagms = max(r->maxlagms, int(lag));
+                }
                 uint *want = r->stored.access(tick);
                 if(want && *want != hash)
                 {
@@ -1328,8 +1377,16 @@ namespace witness
                 maxsock = max(maxsock, c.sock);
             }
             if(resimexe[0]) resimslice();
-            if(enet_socketset_select(maxsock, &readset, &writeset, resimjobs.length() || resimqueue.length() ? 100 : 1000) < 0) continue;
+            bool anyopen = false;
+            loopv(clients) if(clients[i]->open) anyopen = true;
+            if(enet_socketset_select(maxsock, &readset, &writeset, resimjobs.length() || resimqueue.length() ? 100 : anyopen ? WITNESSBEATMS : 1000) < 0) continue;
             int now = int(nowus() / 1000);
+            static int lastbeat = 0;
+            if(now - lastbeat >= WITNESSBEATMS)
+            {
+                lastbeat = now;
+                loopv(clients) if(clients[i]->open && !clients[i]->closing) sendbeat(*clients[i]);
+            }
             if(ENET_SOCKETSET_CHECK(readset, listener))
             {
                 ENetAddress from;
