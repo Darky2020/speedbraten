@@ -160,7 +160,12 @@ namespace game
     }
     ICOMMAND(team, "sN", (char *s, int *numargs),
     {
-        if(*numargs > 0) switchteam(s);
+        if(*numargs > 0)
+        {
+            // a team switch kills the player in a local game, so it is played at a tick boundary and recorded
+            defformatstring(cmd, "team %s", s);
+            if(!deferinput(INPUT_COMMAND, 0, cmd)) switchteam(s);
+        }
         else if(!*numargs) printteam();
         else result(player1->team);
     });

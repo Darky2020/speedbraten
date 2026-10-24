@@ -116,7 +116,7 @@ namespace game
     {
         "", "respawn", "respawnnow", "speedrunrespawn", "suicide", "taunt", "dropflag", "setspawnat", "clearspawnat",
         "nextweapon", "setweapon", "weapon", "cycleweapon", "addbot", "delbot", "botlimit", "botbalance",
-        "cleargui", "clearmapguis"
+        "cleargui", "clearmapguis", "team"
     };
 
     // arguments that can't run other commands or read variables
