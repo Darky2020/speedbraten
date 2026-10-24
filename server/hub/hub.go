@@ -314,6 +314,11 @@ func lobbyMsg(l *lobby) []byte {
 	w.u(uint64(len(l.specs)))
 	for _, s := range l.specs {
 		w.u(s.id)
+		if s.spec != nil {
+			w.u(s.spec.target.id)
+		} else {
+			w.u(0)
+		}
 	}
 	return w.b
 }

@@ -28,7 +28,7 @@ namespace game
         uint id, host;
         int mode;
         string map, kind;
-        vector<uint> members, specs;
+        vector<uint> members, specs, watched; // watched[i]: the member specs[i] spectates
     };
     static vector<hubplayer> hubplayers;
     static vector<hublobby> hublobbies;
@@ -252,6 +252,25 @@ namespace game
         sentlobby = l->id;
     }
 
+    // "joined the lobby" and the like, as a game server prints them, for the lobby one is in
+    static void lobbycomings(const hublobby &before, const hublobby &now)
+    {
+        bool mine = hasmember(before, hubmyid) || hasspec(before, hubmyid);
+        if(!mine || !(hasmember(now, hubmyid) || hasspec(now, hubmyid))) return;
+        loopv(now.members) if(now.members[i] != hubmyid && !hasmember(before, now.members[i]) && !hasspec(before, now.members[i]))
+            conoutf("\f1[lobby] \f0%s\f2 joined the lobby", playername(now.members[i]));
+        loopv(now.specs) if(now.specs[i] != hubmyid && !hasspec(before, now.specs[i]))
+        {
+            uint t = now.watched[i];
+            if(t == hubmyid) conoutf("\f1[lobby] \f0%s\f2 is spectating you", playername(now.specs[i]));
+            else conoutf("\f1[lobby] \f0%s\f2 is spectating %s", playername(now.specs[i]), playername(t));
+        }
+        loopv(before.members) if(before.members[i] != hubmyid && !hasmember(now, before.members[i]) && !hasspec(now, before.members[i]))
+            conoutf("\f1[lobby] \f0%s\f2 left the lobby", playername(before.members[i]));
+        loopv(before.specs) if(before.specs[i] != hubmyid && !hasspec(now, before.specs[i]))
+            conoutf("\f1[lobby] \f0%s\f2 %s", playername(before.specs[i]), hasmember(now, before.specs[i]) ? "joined the lobby" : "stopped spectating");
+    }
+
     static void hubmessages()
     {
         int type;
@@ -331,23 +350,25 @@ namespace game
                     int n = int(r.var());
                     for(int i = 0; i < n && r.ok && i < 256; i++) l.members.add(uint(r.var()));
                     gettext(r, l.kind, sizeof(l.kind));
-                    if(r.left()) { int n = int(r.var()); for(int i = 0; i < n && r.ok && i < 256; i++) l.specs.add(uint(r.var())); }
+                    if(r.left()) { int n = int(r.var()); for(int i = 0; i < n && r.ok && i < 256; i++) { l.specs.add(uint(r.var())); l.watched.add(uint(r.var())); } }
                     if(!r.ok) break;
                     hublobby *old = findlobby(l.id);
                     bool wasmine = old && hasmember(*old, hubmyid);
+                    if(old && hubwelcomed) lobbycomings(*old, l);
                     if(hubwelcomed && playalonglobby != l.id) lobbychanged(old ? *old : l, l, wasmine);
                     if(playalonglobby == l.id && hasmember(l, hubmyid))
                     {
                         playalonglobby = 0;
                         if(l.map[0] && !remote) loadlobbymap(l);
                     }
-                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); old->specs.setsize(0); old->specs.put(l.specs.getbuf(), l.specs.length()); }
+                    if(old) { old->host = l.host; old->mode = l.mode; copystring(old->map, l.map); copystring(old->kind, l.kind); old->members.setsize(0); old->members.put(l.members.getbuf(), l.members.length()); old->specs.setsize(0); old->specs.put(l.specs.getbuf(), l.specs.length()); old->watched.setsize(0); old->watched.put(l.watched.getbuf(), l.watched.length()); }
                     else
                     {
                         hublobby &added = hublobbies.add();
                         added.id = l.id; added.host = l.host; added.mode = l.mode; copystring(added.map, l.map); copystring(added.kind, l.kind);
                         added.members.put(l.members.getbuf(), l.members.length());
                         added.specs.put(l.specs.getbuf(), l.specs.length());
+                        added.watched.put(l.watched.getbuf(), l.watched.length());
                     }
                     break;
                 }

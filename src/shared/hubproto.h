@@ -38,8 +38,8 @@
 //                (new or changed)
 //   GONE         var id
 //   LOBBY        var id, var host id, str map, svar mode, var count, count x var member id,
-//                str kind, var count, count x var spectator id (players spectating a member; they
-//                hear the lobby's chat and finishes)
+//                str kind, var count, count x (var spectator id, var id of the member it spectates)
+//                (spectators hear the lobby's chat and finishes)
 //   LOBBYGONE    var id
 //   CHATFROM     var scope, var from id, str name, str text
 //   NOTICE       str text

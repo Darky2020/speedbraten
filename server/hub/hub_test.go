@@ -197,6 +197,7 @@ type lobbyinfo struct {
 	members  []uint64
 	kind     string
 	specs    []uint64
+	watched  []uint64
 }
 
 func (c *client) expectLobby() lobbyinfo {
@@ -209,6 +210,7 @@ func (c *client) expectLobby() lobbyinfo {
 	l.kind = m.r.str(16)
 	for n := m.r.u(); n > 0; n-- {
 		l.specs = append(l.specs, m.r.u())
+		l.watched = append(l.watched, m.r.u())
 	}
 	if err := m.r.done(); err != nil {
 		c.t.Fatal(err)
@@ -818,7 +820,7 @@ func TestLobbySpectators(t *testing.T) {
 		t.Fatal("bob's own lobby wasn't closed")
 	}
 	l := a.waitLobby(func(l lobbyinfo) bool { return l.id == la.id })
-	if len(l.members) != 1 || len(l.specs) != 1 || l.specs[0] != b.id {
+	if len(l.members) != 1 || len(l.specs) != 1 || l.specs[0] != b.id || l.watched[0] != a.id {
 		t.Fatalf("watched lobby %+v", l)
 	}
 
