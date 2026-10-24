@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.2alpha
+
+- A spectator can play along with the player they watch, and leaving the lobby stops spectating.
+- The lobby scoreboard shows every player's map.
+- The witness and hub tabs fit on one page.
+- Runs on maps whose cfg has Windows line endings (crnsp1, skrsp1, level9) verify again.
+
 ## v0.3.1alpha
 
 - Spectating a player puts you in their lobby: you see its chat and finishes, and talk to it.
