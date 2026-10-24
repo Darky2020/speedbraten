@@ -96,7 +96,7 @@ func watchWitness(h *hub.Hub, advertised, ask string) {
 		if known {
 			time.Sleep(10 * time.Minute)
 		} else {
-			time.Sleep(time.Minute)
+			time.Sleep(10 * time.Second)
 		}
 	}
 }
