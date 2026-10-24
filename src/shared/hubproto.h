@@ -22,6 +22,7 @@
 //   REPORT       var player id, str reason
 //   POS          svar x, svar y, svar z (1/16 units), var yaw, var pitch (0-65535 over the circle /
 //                -90..90 degrees), var ghost flags (fpsgame/inputs.h ghostsample) - 20 a second
+//   SPECTATE     var player id (0: stop)
 //   FINISH       str map, svar mode, str kind, var run time in ms (the client's own timing)
 // hub -> client
 //   WELCOME      var your id, str your name ("" while you have none), str why the name you
@@ -36,6 +37,10 @@
 //   CHATFROM     var scope, var from id, str name, str text
 //   NOTICE       str text
 //   POSFROM      var player id, then a POS payload (a lobby member on the same map and mode)
+//   SPECRUN      var player id, var run, str map, svar mode, str kind, var chained (1: the run goes on
+//                from the one before it in the same life) - the spectated player's newest run
+//   SPECDATA     var run, var offset, bytes - whole segments of that run's replay file, in order
+//   SPECEND      var player id, str why - spectating stopped
 //   RESULT       str name, str map, svar mode, str kind, var run time in ms, var record (1) or PB (0),
 //                var the time it beat + 1 (0: the first verified time) - a witnessed PB or record
 //   FINISHED     var player id, str name, str map, svar mode, str kind, var run time in ms (a lobby
@@ -47,8 +52,8 @@
 enum
 {
     HUBPROTO = 1,
-    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS,
-    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM
+    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE,
+    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
 enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };

@@ -19,6 +19,7 @@ import (
 	"github.com/flynn/noise"
 
 	"speedbraten/server/noisechan"
+	"speedbraten/server/sqlite"
 )
 
 // Limits; a variable so tests can lower them.
@@ -56,6 +57,7 @@ type Hub struct {
 	byAddr    map[string]int
 	lobbies   map[uint64]*lobby
 	witness   []byte
+	wdb       *sqlite.DB // the witness's database, for results and spectating
 }
 
 type player struct {
@@ -71,6 +73,7 @@ type player struct {
 	mutedUntil int64
 	msgs, talk bucket
 	pos        bucket
+	spec       *spectate
 	out        chan []byte
 	closed     bool
 }
@@ -516,6 +519,12 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			return err
 		}
 		h.notice(p, fmt.Sprintf("reported %s, thanks", q.name))
+	case MsgSpectate:
+		id := r.u()
+		if err := r.done(); err != nil {
+			return err
+		}
+		h.startSpectating(p, id)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {

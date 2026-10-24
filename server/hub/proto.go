@@ -20,6 +20,7 @@ const (
 	MsgReport      = 9
 	MsgFinish      = 10
 	MsgPos         = 11
+	MsgSpectate    = 12
 
 	MsgWelcome   = 101
 	MsgWitness   = 102
@@ -32,6 +33,9 @@ const (
 	MsgFinished  = 109
 	MsgResult    = 110
 	MsgPosFrom   = 111
+	MsgSpecRun   = 112
+	MsgSpecData  = 113
+	MsgSpecEnd   = 114
 
 	StateMenu    = 0
 	StatePlaying = 1

@@ -1,7 +1,9 @@
 package hub
 
 import (
+	"bytes"
 	"encoding/hex"
+	"os"
 	"net"
 	"path/filepath"
 	"strings"
@@ -689,5 +691,136 @@ func TestResults(t *testing.T) {
 	add(4, "unknown", "bob", 12000, 1, 12345)
 	if n, err := res2.Poll(); n != 1 || err != nil {
 		t.Fatalf("after a restart: %d %v", n, err)
+	}
+}
+
+func TestSegmentsEnd(t *testing.T) {
+	b, err := os.ReadFile("../../tests/gold/forge_flagrun.sbr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cut := segmentsEnd(b)
+	end := bytes.LastIndex(b, []byte("END "))
+	if cut == 0 || cut > end || cut < len(b)/2 {
+		t.Fatalf("cut %d, END at %d, file %d", cut, end, len(b))
+	}
+	if bytes.LastIndex(b[:cut], []byte("SEGE")) < 0 {
+		t.Fatal("no SEGE before the cut")
+	}
+	last := 0
+	for k := 0; k <= len(b); k += 97 {
+		c := segmentsEnd(b[:k])
+		if c < last || c > k || c > cut {
+			t.Fatalf("prefix %d: cut %d after %d", k, c, last)
+		}
+		last = c
+	}
+	if segmentsEnd(b[:cut]) != cut || segmentsEnd(b[:cut-1]) >= cut {
+		t.Fatal("a whole last segment must count, a partial one not")
+	}
+	if segmentsEnd([]byte("SBR1....")) != 0 || segmentsEnd(nil) != 0 {
+		t.Fatal("not an SBR2 file")
+	}
+}
+
+func TestSpectate(t *testing.T) {
+	gold, err := os.ReadFile("../../tests/gold/forge_flagrun.sbr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t)
+	dir := t.TempDir()
+	wdb := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, session INTEGER, kind INTEGER, file TEXT, map TEXT, mode INTEGER, runkind TEXT)",
+		"CREATE TABLE events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ka := newKey()
+	a := f.connect(ka, "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	res, err := f.h.OpenResults(wdb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Close()
+	if _, err := w.Exec("INSERT INTO sessions(id, installpub) VALUES(1, ?)", hex.EncodeToString(ka.Public)); err != nil {
+		t.Fatal(err)
+	}
+	run1 := filepath.Join(dir, "1.sbr")
+	if _, err := w.Exec("INSERT INTO runs(id, session, kind, file, map, mode, runkind) VALUES(7, 1, 1, ?, 'forge', 17, 'flagrun')", run1); err != nil {
+		t.Fatal(err)
+	}
+	cut := segmentsEnd(gold)
+	half := segmentsEnd(gold[:cut/2])
+	if err := os.WriteFile(run1, gold[:cut/2], 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var sw writer
+	sw.u(a.id)
+	b.send(MsgSpectate, sw.b)
+	time.Sleep(100 * time.Millisecond)
+	f.h.SpectateSlice()
+	m := b.expect(MsgSpecRun)
+	if id, row, mapname, mode, kind, chained := m.r.u(), m.r.u(), m.r.str(64), m.r.s(), m.r.str(16), m.r.u(); id != a.id || row != 7 || mapname != "forge" || mode != 17 || kind != "flagrun" || chained != 0 {
+		t.Fatalf("specrun %d %d %q %d %q %d", id, row, mapname, mode, kind, chained)
+	}
+	var got []byte
+	collect := func(upto int) {
+		t.Helper()
+		for len(got) < upto {
+			m := b.expect(MsgSpecData)
+			row, off := m.r.u(), m.r.u()
+			if row != 7 || int(off) != len(got) {
+				t.Fatalf("specdata run %d offset %d, have %d", row, off, len(got))
+			}
+			got = append(got, m.r.b...)
+		}
+	}
+	collect(half)
+	if !bytes.Equal(got, gold[:half]) {
+		t.Fatal("first part differs")
+	}
+	// the whole file, trailer included, is on disk; only the segments are passed on
+	if err := os.WriteFile(run1, gold, 0644); err != nil {
+		t.Fatal(err)
+	}
+	f.h.SpectateSlice()
+	collect(cut)
+	if !bytes.Equal(got, gold[:cut]) {
+		t.Fatal("segments differ")
+	}
+	f.h.SpectateSlice()
+	if _, ok := b.next(MsgSpecData, 200*time.Millisecond); ok {
+		t.Fatal("bytes past the last segment were sent")
+	}
+
+	// the next run of the player
+	run2 := filepath.Join(dir, "2.sbr")
+	os.WriteFile(run2, gold, 0644)
+	w.Exec("INSERT INTO runs(id, session, kind, file, map, mode, runkind) VALUES(8, 1, 2, ?, 'forge', 17, 'flagrun')", run2)
+	f.h.SpectateSlice()
+	m = b.expect(MsgSpecRun)
+	if _, row := m.r.u(), m.r.u(); row != 8 {
+		t.Fatalf("next run %d", row)
+	}
+
+	// the player leaves
+	a.conn.Close()
+	time.Sleep(200 * time.Millisecond)
+	f.h.SpectateSlice()
+	m = b.expect(MsgSpecEnd)
+	if id := m.r.u(); id != a.id {
+		t.Fatalf("specend %d", id)
 	}
 }

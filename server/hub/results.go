@@ -21,6 +21,9 @@ func (h *Hub) OpenResults(witnessDB string) (*Results, error) {
 		return nil, err
 	}
 	r := &Results{h: h, db: db, last: -1}
+	h.mu.Lock()
+	h.wdb = db
+	h.mu.Unlock()
 	if _, err := h.st.db.Exec("CREATE TABLE IF NOT EXISTS announced (id INTEGER)"); err != nil {
 		return nil, err
 	}

@@ -6,7 +6,8 @@
 // The data dir holds hub.key (the channel's static private key, made on first start) and
 // hub.db. With -witness, the hub asks that witness (or -witnessask, when it is reached by
 // another address from here) for its keys and hands address and keys to every player.
-// With -witnessdb (on the witness's machine) it announces PBs and records to everyone. The
+// With -witnessdb (on the witness's machine) it announces PBs and records to everyone and lets
+// players spectate each other's witnessed runs. The
 // admins file lists install keys (hex, one per line, # comments) allowed to #mute and #kick.
 package main
 
@@ -148,6 +149,7 @@ func main() {
 				time.Sleep(time.Second)
 			}
 		}()
+		go h.SpectateLoop(200 * time.Millisecond)
 	}
 	go func() {
 		for {
