@@ -7,6 +7,7 @@
 #include "replayio.h"
 #include "blake3.h"
 #include "witnessproto.h"
+#include "hubproto.h"
 
 namespace game
 {
@@ -264,8 +265,11 @@ namespace game
         vector<const char *> binds;
         const inputattempt *data;
         int skip, seg, ev, hs, sp, tm, rw;
+        int fixedsegment; // ticks per segment whatever the mode; 0: segmentticks()
 
-        sbr2stream() : data(NULL), skip(-1), seg(0), ev(0), hs(0), sp(0), tm(0), rw(0) {}
+        sbr2stream() : data(NULL), skip(-1), seg(0), ev(0), hs(0), sp(0), tm(0), rw(0), fixedsegment(0) {}
+
+        int ticksper(const inputattempt &a) const { return fixedsegment ? fixedsegment : segmentticks(a); }
 
         void meta(const inputrun &run, const replayinfo &info)
         {
@@ -326,10 +330,10 @@ namespace game
             if(hs < d.hashes.length()) first = min(first, d.hashes[hs].tick);
             if(sp < d.splices.length()) first = min(first, d.splices[sp].tick);
             if(rw < d.raw.length()) first = min(first, d.raw[rw].tick);
-            seg = max(first, 0) / segmentticks(d);
+            seg = max(first, 0) / ticksper(d);
         }
 
-        int segmentend() const { return (seg + 1) * segmentticks(*data); }
+        int segmentend() const { return (seg + 1) * ticksper(*data); }
 
         // the last segment holds the attempt's last tick, event, hash or raw event
         int lastsegment() const
@@ -340,7 +344,7 @@ namespace game
             if(a.hashes.length()) last = max(last, a.hashes[a.hashes.length()-1].tick);
             if(a.splices.length()) last = max(last, a.splices[a.splices.length()-1].tick);
             if(a.raw.length()) last = max(last, a.raw[a.raw.length()-1].tick);
-            return last / segmentticks(a);
+            return last / ticksper(a);
         }
 
         // The next segment. Besides every REPLAYHASHSTEP-th hash it keeps the hash of endtick,
@@ -348,7 +352,7 @@ namespace game
         void writesegment(int endtick)
         {
             const inputattempt &a = *data;
-            int segticks = segmentticks(a), lo = seg*segticks, hi = lo + segticks;
+            int segticks = ticksper(a), lo = seg*segticks, hi = lo + segticks;
             vector<uchar> p;
             sbr2::byteswriter w(p);
             int n = 0;
@@ -1928,6 +1932,90 @@ namespace game
             w.u32(combinedhash(h->groups, a.hashgroups));
             if(!witnesssend(WM_TICK, p.getbuf(), p.length())) { DELETEP(live); return; }
         }
+    }
+
+    // The spectator stream: the game being played, sent to the hub as views whether or not a
+    // witness watches it. A view is a replay file without a trailer that starts at a map start
+    // or from a saved state (a loaded one, or a snapshot every minute), with segments of
+    // HUBVIEWSEGMENT ticks in every mode so spectators are about a second behind.
+    enum { HUBVIEWSEGMENT = 200, HUBVIEWPIECE = 8192 };
+
+    struct hubview
+    {
+        int id, attempts, sent, starttick;
+        sbr2stream s;
+        replayinfo info;
+        const inputattempt *data;
+
+        hubview() : id(0), attempts(0), sent(0), starttick(0), data(NULL) {}
+    };
+    static hubview *view = NULL;
+    static int nextviewid = 1;
+
+    static void hubviewsend()
+    {
+        const vector<uchar> &out = view->s.out.out;
+        while(view->sent < out.length())
+        {
+            int n = min(out.length() - view->sent, int(HUBVIEWPIECE));
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(view->id);
+            w.var(view->sent);
+            w.bytes(out.getbuf() + view->sent, n);
+            if(!hubsend(HM_VIEWDATA, p.getbuf(), p.length())) { DELETEP(view); return; }
+            view->sent += n;
+        }
+    }
+
+    bool hubviewing() { return view != NULL; }
+    int hubviewstart() { return view ? view->starttick : 0; }
+    void hubviewstop() { DELETEP(view); }
+
+    // header: the attempt as the view starts it (a map start, or a saved state at skiptick)
+    void hubviewbegin(const inputattempt &header, const inputattempt &data, int skiptick)
+    {
+        DELETEP(view);
+        if(!hubstreaming()) return;
+        view = new hubview;
+        view->id = nextviewid++;
+        view->attempts = 1;
+        view->starttick = max(header.starttick, 0);
+        view->data = &data;
+        view->s.fixedsegment = HUBVIEWSEGMENT;
+        inputrun first;
+        header.copyto(first.add());
+        fillreplayinfo(first, false, 0, view->info);
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(view->id);
+        w.str(header.map);
+        w.svar(header.mode);
+        w.str(hubrunkind());
+        if(!hubsend(HM_VIEW, p.getbuf(), p.length())) { DELETEP(view); return; }
+        view->s.meta(first, view->info);
+        view->s.beginattempt(0, header, data, view->info.simversion, skiptick);
+        hubviewsend();
+    }
+
+    // the next map of a chained run goes on in the same view
+    void hubviewnextattempt(const inputattempt &a)
+    {
+        if(!view) return;
+        const inputattempt &prev = *view->data;
+        for(int last = view->s.lastsegment(); view->s.seg <= last; ) view->s.writesegment(prev.ticks);
+        view->s.beginattempt(view->attempts++, a, a, view->info.simversion);
+        view->data = &a;
+        hubviewsend();
+    }
+
+    // once per frame while recording: the segments closed since
+    void hubviewframe(int curtick)
+    {
+        if(!view) return;
+        if(!hubstreaming()) { DELETEP(view); return; }
+        while(curtick >= view->s.segmentend()) view->s.writesegment(-1);
+        hubviewsend();
     }
 
     static void sendstop(const char *reason)

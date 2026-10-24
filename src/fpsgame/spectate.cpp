@@ -8,11 +8,12 @@
 
 namespace game
 {
-    enum { CATCHUPSPEED = 1000 };
+    // views from the hub have segments of this many ticks in every mode
+    enum { CATCHUPSPEED = 1000, VIEWSEGMENT = 200 };
 
     static uint spectarget = 0, specrun = 0;
     static bool specstarted = false, specchained = false;
-    static int specbytes = 0, specparsed = 0, specknown = 0, specsegment = 200;
+    static int specbytes = 0, specparsed = 0, specknown = 0;
     static string specname = "";
     static string returnmap = "", returnkind = "";
     static int returnmode = 0;
@@ -29,7 +30,7 @@ namespace game
     int spectatespeed()
     {
         if(!spectarget || !specstarted) return 100;
-        return specknown - inputtick() > 2*specsegment ? CATCHUPSPEED : 100;
+        return specknown - inputtick() > 2*VIEWSEGMENT ? CATCHUPSPEED : 100;
     }
 
     // seconds of play the spectator is behind the newest segment, for the HUD
@@ -59,7 +60,7 @@ namespace game
         specbytes = specparsed = specknown = 0;
         specchained = chained && specstarted && inputreplayactive();
         specstarted = false;
-        specsegment = m_check(mode, M_DMSP | M_CLASSICSP) ? 1000 : 200;
+
         conoutf("\f2spectating %s on %s", specname, map);
     }
 

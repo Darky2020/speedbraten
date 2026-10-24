@@ -276,6 +276,15 @@ namespace game
     extern void witnessdrop(const char *reason);
     extern void witnessnextattempt(const inputattempt &a);
     extern void witnessframe(int curtick);
+    // the spectator stream to the hub (replayfile.cpp; hub.cpp says when it is wanted)
+    extern bool hubstreaming();
+    extern const char *hubrunkind();
+    extern bool hubviewing();
+    extern int hubviewstart();
+    extern void hubviewstop();
+    extern void hubviewbegin(const inputattempt &header, const inputattempt &data, int skiptick);
+    extern void hubviewnextattempt(const inputattempt &a);
+    extern void hubviewframe(int curtick);
     extern void witnessstop(const char *reason);
     extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);

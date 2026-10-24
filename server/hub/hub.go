@@ -57,7 +57,8 @@ type Hub struct {
 	byAddr    map[string]int
 	lobbies   map[uint64]*lobby
 	witness   []byte
-	wdb       *sqlite.DB // the witness's database, for results and spectating
+	wdb       *sqlite.DB // the witness's database, for results
+	maxView   int
 }
 
 type player struct {
@@ -74,6 +75,7 @@ type player struct {
 	msgs, talk bucket
 	pos        bucket
 	spec       *spectate
+	view       *liveView
 	out        chan []byte
 	closed     bool
 }
@@ -118,7 +120,7 @@ func New(cfg Config) (*Hub, error) {
 		return nil, err
 	}
 	reply := append([]byte("SBRH\x01"), cfg.Key.Public...)
-	return &Hub{cfg: cfg, st: st, keyReply: reply, players: map[uint64]*player{}, byKey: map[string]*player{}, byAddr: map[string]int{}, lobbies: map[uint64]*lobby{}}, nil
+	return &Hub{cfg: cfg, st: st, keyReply: reply, maxView: MaxView, players: map[uint64]*player{}, byKey: map[string]*player{}, byAddr: map[string]int{}, lobbies: map[uint64]*lobby{}}, nil
 }
 
 func (h *Hub) Close() { h.st.db.Close() }
@@ -349,6 +351,7 @@ func (h *Hub) leave(p *player) {
 		return
 	}
 	h.leaveLobby(p)
+	h.endSpectators(p, p.name+" left")
 	delete(h.players, p.id)
 	if h.byKey[p.key] == p {
 		delete(h.byKey, p.key)
@@ -525,6 +528,10 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			return err
 		}
 		h.startSpectating(p, id)
+	case MsgView:
+		return h.viewStart(p, &r)
+	case MsgViewData:
+		return h.viewData(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {

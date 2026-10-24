@@ -21,6 +21,8 @@ const (
 	MsgFinish      = 10
 	MsgPos         = 11
 	MsgSpectate    = 12
+	MsgView        = 13
+	MsgViewData    = 14
 
 	MsgWelcome   = 101
 	MsgWitness   = 102

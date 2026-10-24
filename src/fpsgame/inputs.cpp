@@ -269,6 +269,8 @@ namespace game
 
     // A live load keeps the keys the player holds now: the state's movement and attack belong
     // to the moment it was saved, and the keys pressed then are not held any more.
+    static void hubviewfrom(const statestart &st);
+
     static bool loadlivestate(statestart &st, int kind)
     {
         fpsent &d = *player1;
@@ -276,9 +278,10 @@ namespace game
         schar move = d.move, strafe = d.strafe, vertical = d.vertical;
         bool jumping = d.jumping, attacking = d.attacking;
         if(!replaying && !recordingoff) witnessstop("a state was loaded");
+        hubviewstop();
         chainpending = false;
         if(!restorestate(st.state)) return false;
-        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); }
+        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); }
         // back to the life the state was taken in, which may have ended since
         if(st.life && onchain(st.life->branch, st.life->tick, st.branch, st.tick)) lifestart = st.life;
         else if(lifestart && !onchain(lifestart->branch, lifestart->tick, st.branch, st.tick)) lifestart = NULL;
@@ -405,6 +408,31 @@ namespace game
         readsettings(st->settings);
         autostates.add(st);
         while(autostates.length() > autostatecount) delete autostates.remove(0);
+    }
+
+    // a spectator view from a saved state of the current attempt
+    static void hubviewfrom(const statestart &st)
+    {
+        if(replaying || recordingoff || recording.attempts.empty()) return;
+        inputattempt header;
+        lifeheader(header, recording.last(), st);
+        hubviewbegin(header, recording.last(), st.tick);
+    }
+
+    // A new spectator view from a snapshot of now: every HUBKEYFRAMETICKS, so a late spectator
+    // catches up through at most that, and when streaming becomes wanted mid-attempt.
+    enum { HUBKEYFRAMETICKS = 12000 };
+    static void hubkeyframe()
+    {
+        if(replaying || recordingoff || curtick <= 1 || recording.attempts.empty()) return;
+        if(hubviewing() ? curtick - hubviewstart() < HUBKEYFRAMETICKS : curtick % 200 || !hubstreaming()) return;
+        statestart st;
+        if(!takesnapshot(st.state)) return;
+        st.tick = curtick;
+        st.branch = curbranch;
+        st.date = uint(time(NULL));
+        readsettings(st.settings);
+        hubviewfrom(st);
     }
 
     // loads the newest automatic state that lies at least a quarter interval back
@@ -851,6 +879,7 @@ namespace game
         runstateops();
         snapcycletick();
         takeautostate();
+        hubkeyframe();
         if(replaying && replaychainhook && replayattempt == replaydata.attempts.length()-1 && curtick+1 > replaycur().ticks) replaychainhook();
         curtick++;
         tickhash h;
@@ -928,6 +957,8 @@ namespace game
                 else witnessnextattempt(rec);
             }
             else witnesslife();
+            if(recording.attempts.length() == 1 || !hubviewing()) hubviewbegin(rec, rec, -1);
+            else hubviewnextattempt(rec);
         }
         recordsettingchanges(rec);
         feedevents();
@@ -1050,7 +1081,7 @@ namespace game
     void inputmapstart(const char *name, int mode)
     {
         bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
-        if(!chained || replaypending) saveunfinishedrun();
+        if(!chained || replaypending) { saveunfinishedrun(); hubviewstop(); }
         lifestart = NULL;
         lives.deletecontents();
         lifepending = lifesaved = chainpending = false;
@@ -1180,6 +1211,7 @@ namespace game
         else { t.speedmin = min(t.speedmin, speed); t.speedmax = max(t.speedmax, speed); }
         t.fixedframe = max(t.fixedframe, fixedframe);
         witnessframe(curtick);
+        hubviewframe(curtick);
     }
 
     void playinputrun(const inputrun &src, const char *file)

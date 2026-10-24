@@ -103,6 +103,8 @@ namespace game
         return "";
     }
 
+    const char *hubrunkind() { return runkind(); }
+
     static const char *kindormode(const char *kind, int mode) { return kind[0] ? kind : server::modename(mode, "?"); }
 
     static bool onlobbymap(const hublobby &l) { return !strcmp(l.map, clientmap) && l.mode == gamemode; }
@@ -485,6 +487,9 @@ namespace game
     }
 
     static bool hubready() { return hubstate() == WITNESS_OPEN && hubwelcomed; }
+
+    // the game being played goes to the hub for spectators: on a run map, not a replay
+    bool hubstreaming() { return hubready() && !remote && !inputreplayactive() && runkind()[0]; }
 
     static void sendchat(int scope, const char *text)
     {
