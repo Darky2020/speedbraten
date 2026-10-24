@@ -19,6 +19,7 @@ const (
 	MsgChat        = 8
 	MsgReport      = 9
 	MsgFinish      = 10
+	MsgPos         = 11
 
 	MsgWelcome   = 101
 	MsgWitness   = 102
@@ -30,6 +31,7 @@ const (
 	MsgNotice    = 108
 	MsgFinished  = 109
 	MsgResult    = 110
+	MsgPosFrom   = 111
 
 	StateMenu    = 0
 	StatePlaying = 1

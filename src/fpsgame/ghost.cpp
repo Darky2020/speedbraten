@@ -27,15 +27,9 @@ namespace game
         loopv(live) if(run.attempts.inrange(livemaps[i])) run.attempts[livemaps[i]]->trace.add(live[i]);
     }
 
-    static void recordsample()
+    void sampleplayer(ghostsample &g, int tick)
     {
-        bool running;
-        int t = runtimerticks(running);
-        if(!running || player1->state != CS_ALIVE || t % SAMPLETICKS) return;
-        // a state load or a new run moves the clock back
-        while(live.length() && live.last().tick >= t) { live.pop(); livemaps.pop(); }
-        ghostsample &g = live.add();
-        g.tick = t;
+        g.tick = tick;
         g.o = player1->o;
         g.yaw = player1->yaw;
         g.pitch = player1->pitch;
@@ -43,6 +37,16 @@ namespace game
                   (player1->inwater ? ghostsample::INWATER : 0) | (player1->timeinair > 100 ? ghostsample::INAIR : 0) |
                   (player1->lastaction > lastmillis - SAMPLETICKS*SIMTICK ? ghostsample::ATTACK : 0) |
                   (player1->gunselect << ghostsample::GUNSHIFT);
+    }
+
+    static void recordsample()
+    {
+        bool running;
+        int t = runtimerticks(running);
+        if(!running || player1->state != CS_ALIVE || t % SAMPLETICKS) return;
+        // a state load or a new run moves the clock back
+        while(live.length() && live.last().tick >= t) { live.pop(); livemaps.pop(); }
+        sampleplayer(live.add(), t);
         livemaps.add(inputattemptindex());
     }
 
@@ -234,15 +238,12 @@ namespace game
 
     static fpsent *ghostent = NULL;
 
-    void renderghost(bool mainpass)
+    // draws a ghost sample on d; false if the camera is too close to see it
+    static bool drawghost(fpsent &d, const ghostsample &g, float maxalpha, const char *label, int labelcolour, bool mainpass)
     {
-        ghostsample g;
-        if(!currentghost(g)) return;
         // fades out as the camera gets inside it
-        float alpha = ghostalpha * clamp((camera1->o.dist(g.o) - GHOSTHIDEDIST) / GHOSTFADEDIST, 0.0f, 1.0f);
-        if(alpha <= 0) return;
-        if(!ghostent) ghostent = new fpsent;
-        fpsent &d = *ghostent;
+        float alpha = maxalpha * clamp((camera1->o.dist(g.o) - GHOSTHIDEDIST) / GHOSTFADEDIST, 0.0f, 1.0f);
+        if(alpha <= 0) return false;
         // a map start or a state load moves the clock back; animation blending from timestamps
         // in the future would extrapolate the mesh
         if(lastmillis < d.lastrendered || lastmillis < d.lastaction)
@@ -265,7 +266,86 @@ namespace game
         d.lastpain = 0;
         d.armour = 0;
         renderplayer(&d, getplayermodelinfo(player1), 0, alpha, mainpass);
-        if(mainpass) particle_textcopy(d.abovehead(), ghostlabel, PART_TEXT, 1, 0x80FFFF, 2.0f);
+        if(mainpass && label[0]) particle_textcopy(d.abovehead(), label, PART_TEXT, 1, labelcolour, 2.0f);
+        return true;
+    }
+
+    // Lobby ghosts: the other lobby members on this map where they are now, from the samples the
+    // hub passes on, drawn LOBBYGHOSTDELAY ms behind the newest so they move smoothly.
+    VARP(lobbyghosts, 0, 1, 1);
+    FVARP(lobbyghostalpha, 0.1f, 0.4f, 1);
+    enum { LOBBYGHOSTDELAY = 100, LOBBYGHOSTTIMEOUT = 1000, LOBBYGHOSTKEEP = 16 };
+
+    struct lobbyghost
+    {
+        uint id;
+        string name;
+        vector<ghostsample> got; // tick holds the totalmillis it arrived at
+        fpsent *ent;
+
+        lobbyghost() : id(0), ent(NULL) { name[0] = '\0'; }
+        ~lobbyghost() { DELETEP(ent); }
+    };
+    static vector<lobbyghost *> lobbyghostlist;
+
+    void lobbyghostsample(uint id, const char *name, const ghostsample &s)
+    {
+        lobbyghost *l = NULL;
+        loopv(lobbyghostlist) if(lobbyghostlist[i]->id == id) { l = lobbyghostlist[i]; break; }
+        if(!l) { l = lobbyghostlist.add(new lobbyghost); l->id = id; }
+        copystring(l->name, name);
+        ghostsample &g = l->got.add(s);
+        g.tick = totalmillis;
+        while(l->got.length() > LOBBYGHOSTKEEP) l->got.remove(0);
+    }
+
+    void lobbyghostsclear() { lobbyghostlist.deletecontents(); }
+    ICOMMAND(lobbyghostcount, "", (), intret(lobbyghostlist.length()));
+    ICOMMAND(lobbyghostpos, "i", (int *n), { if(lobbyghostlist.inrange(*n) && lobbyghostlist[*n]->got.length()) { const vec &o = lobbyghostlist[*n]->got.last().o; defformatstring(s, "%.1f %.1f %.1f", o.x, o.y, o.z); result(s); } });
+
+    // where a lobby ghost is drawn now, interpolated
+    static bool lobbyghostat(const lobbyghost &l, ghostsample &out)
+    {
+        int t = totalmillis - LOBBYGHOSTDELAY;
+        const vector<ghostsample> &got = l.got;
+        if(got.empty()) return false;
+        int i = 0;
+        while(i + 1 < got.length() && got[i+1].tick <= t) i++;
+        out = got[i];
+        if(i + 1 < got.length() && got[i].tick < t)
+        {
+            const ghostsample &next = got[i+1];
+            float f = clamp(float(t - got[i].tick) / max(next.tick - got[i].tick, 1), 0.0f, 1.0f);
+            out.o.lerp(got[i].o, next.o, f);
+            float dyaw = next.yaw - got[i].yaw;
+            if(dyaw > 180) dyaw -= 360; else if(dyaw < -180) dyaw += 360;
+            out.yaw = got[i].yaw + dyaw*f;
+            out.pitch = got[i].pitch + (next.pitch - got[i].pitch)*f;
+        }
+        return true;
+    }
+
+    static void renderlobbyghosts(bool mainpass)
+    {
+        loopvrev(lobbyghostlist) if(totalmillis - lobbyghostlist[i]->got.last().tick > LOBBYGHOSTTIMEOUT) delete lobbyghostlist.remove(i);
+        if(!lobbyghosts || !connected) return;
+        loopv(lobbyghostlist)
+        {
+            lobbyghost &l = *lobbyghostlist[i];
+            ghostsample g;
+            if(!lobbyghostat(l, g)) continue;
+            if(!l.ent) l.ent = new fpsent;
+            drawghost(*l.ent, g, lobbyghostalpha, l.name, 0xFFC040, mainpass);
+        }
+    }
+
+    void renderghost(bool mainpass)
+    {
+        renderlobbyghosts(mainpass);
+        ghostsample g;
+        if(!currentghost(g)) return;
+        if(!ghostent) ghostent = new fpsent;
+        drawghost(*ghostent, g, ghostalpha, ghostlabel, 0x80FFFF, mainpass);
     }
 
     static const char *replaykindof(const replayinfo &info) { return info.race ? "race" : info.flagrun ? "flagrun" : "sp"; }

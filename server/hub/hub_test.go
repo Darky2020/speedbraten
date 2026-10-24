@@ -445,6 +445,72 @@ func TestFinish(t *testing.T) {
 	}
 }
 
+func (c *client) status(mapname string, mode int64) {
+	var w writer
+	w.u(StatePlaying)
+	w.str(mapname)
+	w.s(mode)
+	w.str("flagrun")
+	c.send(MsgStatus, w.b)
+}
+
+func TestPos(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	c := f.connect(newKey(), "3.3.3.3", "carol")
+	a.status("forge", 17)
+	b.status("forge", 17)
+	c.status("akroseum", 17)
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	l := b.expectLobby()
+	for _, x := range []*client{b, c} {
+		var w writer
+		w.u(l.id)
+		x.send(MsgLobbyJoin, w.b)
+	}
+	for {
+		if got := a.expectLobby(); len(got.members) == 3 {
+			break
+		}
+	}
+	var w writer
+	for _, v := range []uint64{100, 200, 300, 4000, 5000, 9} {
+		w.u(v)
+	}
+	sample := w.b
+	a.send(MsgPos, sample)
+	m := b.expect(MsgPosFrom)
+	if id := m.r.u(); id != a.id || string(m.r.b) != string(sample) {
+		t.Fatalf("posfrom %d %x", id, m.r.b)
+	}
+	if _, ok := c.next(MsgPosFrom, 200*time.Millisecond); ok {
+		t.Fatal("a member on another map got the sample")
+	}
+	if _, ok := a.next(MsgPosFrom, 100*time.Millisecond); ok {
+		t.Fatal("the sender got its own sample")
+	}
+
+	// a flood is cut to the rate, and the sender stays connected
+	for i := 0; i < 200; i++ {
+		a.send(MsgPos, sample)
+	}
+	a.chat(ChatGlobal, "still here")
+	if got := a.expectChat(); got.text != "still here" {
+		t.Fatalf("after the flood: %+v", got)
+	}
+	n := 0
+	for {
+		if _, ok := b.next(MsgPosFrom, 200*time.Millisecond); !ok {
+			break
+		}
+		n++
+	}
+	if n < 40 || n > int(PosBurst)+5 {
+		t.Fatalf("%d of 200 flooded samples passed", n)
+	}
+}
+
 func TestTalkRate(t *testing.T) {
 	f := newFixture(t)
 	a := f.connect(newKey(), "1.1.1.1", "alice")

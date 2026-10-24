@@ -314,6 +314,10 @@ namespace game
     extern const inputattempt *inputrunfirst();
     extern const char *inputwatchedfile();
     extern void ghostattach(inputrun &run);
+    // player1 as a ghost sample at tick; lobby members' samples from the hub (hub.cpp)
+    extern void sampleplayer(ghostsample &g, int tick);
+    extern void lobbyghostsample(uint id, const char *name, const ghostsample &s);
+    extern void lobbyghostsclear();
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern bool inputreplayactive();

@@ -32,6 +32,7 @@ var (
 	HandshakeTimeout     = 10 * time.Second
 	MsgRate, MsgBurst    = 30.0, 60.0
 	TalkRate, TalkBurst  = 0.5, 5.0
+	PosRate, PosBurst    = 25.0, 50.0
 )
 
 type Config struct {
@@ -69,6 +70,7 @@ type player struct {
 	admin      bool
 	mutedUntil int64
 	msgs, talk bucket
+	pos        bucket
 	out        chan []byte
 	closed     bool
 }
@@ -191,7 +193,9 @@ func (h *Hub) Serve(c net.Conn, addr string) {
 			break
 		}
 		h.mu.Lock()
-		if !p.msgs.take(h.cfg.Now(), MsgRate, MsgBurst) {
+		if typ == MsgPos {
+			h.relayPos(p, msg)
+		} else if !p.msgs.take(h.cfg.Now(), MsgRate, MsgBurst) {
 			h.kick(p, "too many messages")
 		} else if err := h.handle(p, typ, msg); err != nil {
 			h.cfg.Logf("%s %s: %v", addr, key[:16], err)
@@ -569,6 +573,29 @@ func (h *Hub) leaveLobby(p *player) {
 		l.host = l.members[0]
 	}
 	h.broadcast(MsgLobby, lobbyMsg(l))
+}
+
+// relayPos passes a position sample on to the other lobby members on the same map and mode.
+// Samples over the rate, malformed ones and ones from outside a lobby are dropped.
+func (h *Hub) relayPos(p *player, msg []byte) {
+	if p.lobby == nil || p.name == "" || len(msg) > 48 || !p.pos.take(h.cfg.Now(), PosRate, PosBurst) {
+		return
+	}
+	r := reader{b: msg}
+	for i := 0; i < 6; i++ {
+		r.u()
+	}
+	if r.done() != nil {
+		return
+	}
+	var w writer
+	w.u(p.id)
+	w.bytes(msg)
+	for _, q := range p.lobby.members {
+		if q != p && q.mapname == p.mapname && q.mode == p.mode && q.state != StateMenu {
+			h.send(q, MsgPosFrom, w.b)
+		}
+	}
 }
 
 // cleanText keeps valid UTF-8 without control characters (colour codes included), trims

@@ -13,7 +13,7 @@ namespace game
     VARP(hubport, 1, HUBPORT, 65535);
     SVARP(hubkey, ""); // the hub's channel public key, 64 hex digits
     SVARP(hubkeyfor, ""); // the "host:port" hubkey was learned from
-    enum { HUBRETRY = 10000, FOLLOWDELAY = 1500 };
+    enum { HUBRETRY = 10000, FOLLOWDELAY = 1500, POSINTERVAL = 50 };
 
     struct hubplayer
     {
@@ -61,6 +61,7 @@ namespace game
         autolobbydue = true;
         playalonglobby = 0;
         followpending = false;
+        lobbyghostsclear();
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -131,6 +132,7 @@ namespace game
         copystring(hubsentmap, clientmap);
         copystring(hubsentkind, kind);
         autolobbydue = true;
+        lobbyghostsclear();
     }
 
     static void mapmessage(int type, const char *map, int mode)
@@ -141,6 +143,29 @@ namespace game
         w.svar(mode);
         w.str(runkind());
         hubsend(type, p.getbuf(), p.length());
+    }
+
+    // player1's position for the other lobby members' ghosts, while others are there to see it
+    static void sendpos()
+    {
+        static int lastsent = 0;
+        if(totalmillis - lastsent < POSINTERVAL || remote || player1->state != CS_ALIVE || !runkind()[0]) return;
+        hublobby *l = mylobby();
+        if(!l || l->members.length() < 2) return;
+        lastsent = totalmillis;
+        ghostsample g;
+        sampleplayer(g, 0);
+        float yaw = fmodf(g.yaw, 360);
+        if(yaw < 0) yaw += 360;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.svar(int(roundf(g.o.x*16)));
+        w.svar(int(roundf(g.o.y*16)));
+        w.svar(int(roundf(g.o.z*16)));
+        w.var(uint(yaw/360*65536) & 0xFFFF);
+        w.var(uint(clamp((g.pitch + 90)/180, 0.0f, 1.0f)*65535));
+        w.var(uint(g.flags));
+        hubsend(HM_POS, p.getbuf(), p.length());
     }
 
     // A race, flagrun or campaign map opens a lobby with the player as host, or moves the
@@ -307,6 +332,20 @@ namespace game
                     if(r.ok) conoutf(CON_GAMEINFO, "\f1[lobby] \f2%s finished %s (%s) in \f0%s", name, map, kindormode(kind, mode), formatruntime(ms));
                     break;
                 }
+                case HM_POSFROM:
+                {
+                    uint id = uint(r.var());
+                    ghostsample g;
+                    g.tick = 0;
+                    g.o.x = r.svar()/16.0f;
+                    g.o.y = r.svar()/16.0f;
+                    g.o.z = r.svar()/16.0f;
+                    g.yaw = r.var()*360.0f/65536;
+                    g.pitch = r.var()*180.0f/65535 - 90;
+                    g.flags = int(r.var());
+                    if(r.ok && id != hubmyid && findplayer(id)) lobbyghostsample(id, playername(id), g);
+                    break;
+                }
                 case HM_RESULT:
                 {
                     string name = "", map = "", kind = "";
@@ -413,6 +452,7 @@ namespace game
             sendstatus();
             autolobby();
             followupdate();
+            sendpos();
         }
     }
 
