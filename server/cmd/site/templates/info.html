@@ -1,0 +1,35 @@
+{{template "top" .}}
+<div class="prose">
+<h1>About speedbraten</h1>
+<p class="sub">a speedrunning client for Cube 2: Sauerbraten</p>
+
+<div class="card"><div class="body">
+<p><b>speedbraten</b> is a Sauerbraten client built for speedrunning: flagruns, races and the singleplayer campaigns. It times every run, records it as a replay you can watch and race as a ghost, and can have your runs witnessed so they count on these leaderboards.</p>
+<p><a href="https://github.com/Darky2020/speedbraten/releases/latest"><b>Download the latest release</b></a> for Windows, macOS or Linux. Unpack it into (or next to) a Sauerbraten 2020 install and start <code>speedbraten</code>.</p>
+</div></div>
+
+<h2>Getting on the boards</h2>
+<ol>
+<li>Open the <b>speedrun</b> menu, go to the <b>hub</b> tab and enter the hub's address: <code>{{.Hub}}</code>. The hub names the witness, so nothing else needs setting up.</li>
+<li>Load a flagrun, race or singleplayer map and play. While you play, your run streams to the <b>witness</b>, which signs it as it arrives.</li>
+<li>When the run ends, the witness re-simulates it from your inputs. A valid run shows up here within seconds; the console tells you the verdict.</li>
+</ol>
+<p>Only runs played in one go count: loading a saved state makes a run segmented (it still saves and stays useful for practice, but isn't witnessed). Game speed, pauses and changed physics settings aren't allowed.</p>
+
+<h2>The three kinds of runs</h2>
+<ul>
+<li><span class="badge b-race">RACE</span> race maps with racing server rules, timed from the spawn to the finish.</li>
+<li><span class="badge b-ctf">CTF</span> <span class="badge b-ictf">ICTF</span> <span class="badge b-ectf">ECTF</span> flagruns: take the enemy flag and score it, in ctf, insta ctf or effic ctf; each mode has its own board.</li>
+<li><span class="badge b-sp">SP</span> singleplayer: a map from its first tick to its exit; a campaign (An Army Of One, Private Stan Sauer) is one run across all its maps, with splits.</li>
+</ul>
+
+<h2>Replays and ghosts</h2>
+<p>Every entry has its replay, signed by the witness. Open it in the client's replay browser to watch it, or pick it as your ghost to race against. <code>replayverify &lt;file&gt;</code> checks a replay's signatures and rules.</p>
+
+<h2>Playing together</h2>
+<p>The hub shows who is online. A race, flagrun or campaign map opens your lobby: others can play along with you, see you as a ghost, spectate your run live and chat. Press TAB in a lobby to see everyone's times.</p>
+
+<h2>Fair play</h2>
+<p>The witness re-plays every run exactly as it was played, so impossible inputs, speed changes or edited files are caught. Runs whose aim matches another player's are reviewed by hand. Runs and players can be removed from the boards.</p>
+</div>
+{{template "bottom" .}}

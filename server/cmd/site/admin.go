@@ -191,7 +191,7 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		v := url.Values{"player": {f.Player}, "map": {f.Map}, "verdict": {f.Verdict}, "before": {list[len(list)-1].ID}}
 		more = "/admin/runs?" + v.Encode()
 	}
-	render(w, runsAdmin, "admin_runs.html", map[string]any{"Title": "Runs", "Admin": true, "Token": a.token, "F": f, "Runs": list, "More": more,
+	render(w, runsAdmin, "admin_runs.html", map[string]any{"Title": "Runs", "Tab": "runs", "Admin": true, "Token": a.token, "F": f, "Runs": list, "More": more,
 		"Verdicts": []string{"", "valid", "rejected", "unverified", "none"}})
 }
 
@@ -245,7 +245,7 @@ func (a *admin) flags(w http.ResponseWriter, r *http.Request) {
 			list = append(list, f)
 		}
 	}
-	render(w, flagsAdmin, "admin_flags.html", map[string]any{"Title": "Copy flags", "Admin": true, "Token": a.token, "Flags": append(list, done...), "Open": open})
+	render(w, flagsAdmin, "admin_flags.html", map[string]any{"Title": "Copy flags", "Tab": "flags", "Admin": true, "Token": a.token, "Flags": append(list, done...), "Open": open})
 }
 
 type bannedRow struct {
@@ -270,7 +270,7 @@ func (a *admin) moderation(w http.ResponseWriter, r *http.Request) {
 	for _, n := range banned {
 		ban = append(ban, bannedRow{ID: n.ID, Name: a.store.Name(n.ID), Note: n.Note, At: n.At.UTC().Format("2006-01-02 15:04")})
 	}
-	render(w, moderationAdmin, "admin_moderation.html", map[string]any{"Title": "Moderation", "Admin": true, "Token": a.token, "Removed": rem, "Banned": ban})
+	render(w, moderationAdmin, "admin_moderation.html", map[string]any{"Title": "Moderation", "Tab": "moderation", "Admin": true, "Token": a.token, "Removed": rem, "Banned": ban})
 }
 
 func (a *admin) file(w http.ResponseWriter, r *http.Request) {

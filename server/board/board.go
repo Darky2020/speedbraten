@@ -39,12 +39,13 @@ type Board struct {
 
 // Record is a time that was the best on its board when it was set.
 type Record struct {
-	Key  Key
-	Run  int64
-	Name string
-	MS   int64
-	Prev int64 // the time it beat, -1 for the first time on the board
-	When time.Time
+	Key     Key
+	Run     int64
+	Install string
+	Name    string
+	MS      int64
+	Prev    int64 // the time it beat, -1 for the first time on the board
+	When    time.Time
 }
 
 // Place is an install's entry on one board, for its player page.
@@ -64,6 +65,7 @@ type Store struct {
 	names   map[string]string
 	listed  map[int64]bool
 	records []Record
+	runs    []validRun // the runs that count, in the order they were judged
 }
 
 // Open reads witness.db and hub.db (hubDB may be "") and keeps moderation in site.db, making it if
@@ -181,9 +183,9 @@ func (s *Store) load() error {
 			prev = -1
 		}
 		best[v.key] = v.ms
-		records = append(records, Record{Key: v.key, Run: v.run, Name: names[v.install], MS: v.ms, Prev: prev, When: time.UnixMilli(v.when)})
+		records = append(records, Record{Key: v.key, Run: v.run, Install: v.install, Name: names[v.install], MS: v.ms, Prev: prev, When: time.UnixMilli(v.when)})
 	}
-	s.boards, s.names, s.listed, s.records, s.built = boards, names, listed, records, time.Now()
+	s.boards, s.names, s.listed, s.records, s.runs, s.built = boards, names, listed, records, runs, time.Now()
 	return nil
 }
 

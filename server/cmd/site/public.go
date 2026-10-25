@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,13 +20,66 @@ import (
 //go:embed templates
 var templateFS embed.FS
 
+type badgeInfo struct{ Class, Text string }
+
+func badgeOf(k board.Key) badgeInfo {
+	switch {
+	case k.Kind == "race":
+		return badgeInfo{"b-race", "RACE"}
+	case k.Kind == "campaign" || k.Kind == "dmsp":
+		return badgeInfo{"b-sp", "SP"}
+	case k.Mode == 11:
+		return badgeInfo{"b-ctf", "CTF"}
+	case k.Mode == 12:
+		return badgeInfo{"b-ictf", "ICTF"}
+	case k.Mode == 17:
+		return badgeInfo{"b-ectf", "ECTF"}
+	}
+	return badgeInfo{"b-other", strings.ToUpper(board.ModeName(k.Mode))}
+}
+
+func ago(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h ago", int(d.Hours()))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+	}
+	return t.UTC().Format("2 Jan 2006")
+}
+
+func age(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h", int(d.Hours()))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("%.1f years", d.Hours()/24/365)
+}
+
+func mapURL(k board.Key) string {
+	return "/map?" + url.Values{"map": {k.Map}, "kind": {k.Kind}, "mode": {strconv.Itoa(k.Mode)}}.Encode()
+}
+
 var funcs = template.FuncMap{
-	"runtime": board.Time,
-	"gap":     func(ms, best int64) string { return board.Time(ms - best) },
-	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02") },
-	"boardURL": func(k board.Key) string {
-		return "/board?" + url.Values{"map": {k.Map}, "kind": {k.Kind}, "mode": {strconv.Itoa(k.Mode)}}.Encode()
-	},
+	"runtime":   board.Time,
+	"gap":       func(a, b int64) string { return board.Time(a - b) },
+	"date":      func(t time.Time) string { return t.UTC().Format("2006-01-02") },
+	"ago":       ago,
+	"age":       age,
+	"inc":       func(i int) int { return i + 1 },
+	"badge":     badgeOf,
+	"modeName":  func(k board.Key) string { return board.ModeName(k.Mode) },
+	"mapURL":    mapURL,
+	"boardURL":  mapURL,
+	"mapImage":  func(m string) string { return "/mapimg/" + url.PathEscape(m) },
 	"playerURL": func(install string) string { return "/player?id=" + url.QueryEscape(install) },
 }
 
@@ -37,30 +92,48 @@ func page(files ...string) *template.Template {
 }
 
 var (
-	homePage    = page("home.html")
-	boardPage   = page("board.html")
-	playerPage  = page("player.html")
-	recordsPage = page("records.html")
+	homePage     = page("home.html")
+	racesPage    = page("races.html")
+	flagrunsPage = page("flagruns.html")
+	spPage       = page("singleplayer.html")
+	mapPage      = page("map.html")
+	playerPage   = page("player.html")
+	infoPage     = page("info.html")
+	recordsPage  = page("records.html")
 )
 
 type site struct {
-	store *board.Store
-	mux   *http.ServeMux
+	store    *board.Store
+	mux      *http.ServeMux
+	shots    string // dir of chosen map pictures, <map>.png or .jpg
+	previews string // the game's packages/base, for <map>.jpg previews
+	hubAddr  string
 }
 
 func newSite(store *board.Store) *site {
-	s := &site{store: store, mux: http.NewServeMux()}
+	s := &site{store: store, mux: http.NewServeMux(), hubAddr: "141.95.67.191"}
 	s.mux.HandleFunc("/", s.home)
-	s.mux.HandleFunc("/board", s.board)
+	s.mux.HandleFunc("/races", s.races)
+	s.mux.HandleFunc("/flagruns", s.flagruns)
+	s.mux.HandleFunc("/singleplayer", s.singleplayer)
+	s.mux.HandleFunc("/map", s.mapBoard)
+	s.mux.HandleFunc("/board", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/map?"+r.URL.RawQuery, http.StatusMovedPermanently)
+	})
 	s.mux.HandleFunc("/player", s.player)
 	s.mux.HandleFunc("/records", s.records)
+	s.mux.HandleFunc("/info", s.info)
 	s.mux.HandleFunc("/replay", s.replay)
+	s.mux.HandleFunc("/mapimg/", s.mapImage)
 	return s
 }
 
 func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
-func render(w http.ResponseWriter, t *template.Template, name string, data any) {
+func render(w http.ResponseWriter, t *template.Template, name string, data map[string]any) {
+	if _, ok := data["Admin"]; !ok {
+		data["Admin"] = false
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("%s: %v", name, err)
@@ -77,36 +150,152 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	boards, err := s.store.Boards()
+	st, err := s.store.Stats()
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	records, err := s.store.Records(15)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Boards": boards, "Records": records})
+	recent, _ := s.store.RecentRuns(12)
+	records, _ := s.store.Records(8)
+	holders, _ := s.store.TopHolders(8)
+	oldest, _ := s.store.OldestRecords(8)
+	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
+		"Records": records, "Holders": holders, "Oldest": oldest})
 }
 
 func (s *site) records(w http.ResponseWriter, r *http.Request) {
-	records, err := s.store.Records(200)
+	records, err := s.store.Records(300)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	render(w, recordsPage, "recordspage", map[string]any{"Title": "Records", "Records": records})
+	render(w, recordsPage, "recordspage", map[string]any{"Title": "Records", "Tab": "home", "Records": records})
 }
 
-func (s *site) board(w http.ResponseWriter, r *http.Request) {
+func (s *site) boardsOf(kinds ...string) ([]*board.Board, error) {
+	all, err := s.store.Boards()
+	var out []*board.Board
+	for _, b := range all {
+		for _, k := range kinds {
+			if b.Key.Kind == k {
+				out = append(out, b)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Key.Map != out[j].Key.Map {
+			return out[i].Key.Map < out[j].Key.Map
+		}
+		return out[i].Key.Mode < out[j].Key.Mode
+	})
+	return out, err
+}
+
+func (s *site) races(w http.ResponseWriter, r *http.Request) {
+	boards, err := s.boardsOf("race")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	render(w, racesPage, "races.html", map[string]any{"Title": "Races", "Tab": "races", "Boards": boards})
+}
+
+type flagrunCell struct {
+	Key   board.Key
+	Entry *board.Entry
+}
+
+type flagrunRow struct {
+	Key   board.Key // the row's map, for its picture and first board
+	Cells []flagrunCell
+}
+
+// flagrunModes are the columns of the flagruns table: ctf, insta ctf, effic ctf.
+var flagrunModes = []int{11, 12, 17}
+
+func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
+	boards, err := s.boardsOf("flagrun")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	modes := append([]int(nil), flagrunModes...)
+	for _, b := range boards {
+		known := false
+		for _, m := range modes {
+			known = known || m == b.Key.Mode
+		}
+		if !known {
+			modes = append(modes, b.Key.Mode)
+		}
+	}
+	byMap := map[string]map[int]*board.Board{}
+	var maps []string
+	for _, b := range boards {
+		if byMap[b.Key.Map] == nil {
+			byMap[b.Key.Map] = map[int]*board.Board{}
+			maps = append(maps, b.Key.Map)
+		}
+		byMap[b.Key.Map][b.Key.Mode] = b
+	}
+	var rows []flagrunRow
+	for _, m := range maps {
+		row := flagrunRow{}
+		for _, mode := range modes {
+			c := flagrunCell{Key: board.Key{Map: m, Kind: "flagrun", Mode: mode}}
+			if b := byMap[m][mode]; b != nil {
+				c.Entry = &b.Entries[0]
+				if row.Key.Map == "" {
+					row.Key = b.Key
+				}
+			}
+			row.Cells = append(row.Cells, c)
+		}
+		rows = append(rows, row)
+	}
+	var cols []board.Key
+	for _, m := range modes {
+		cols = append(cols, board.Key{Kind: "flagrun", Mode: m})
+	}
+	render(w, flagrunsPage, "flagruns.html", map[string]any{"Title": "Flagruns", "Tab": "flagruns", "Rows": rows, "Modes": cols})
+}
+
+func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
+	boards, err := s.boardsOf("campaign")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	var campaigns, maps []*board.Board
+	for _, b := range boards {
+		if b.Key.MapLabel() != b.Key.Map {
+			campaigns = append(campaigns, b)
+		} else {
+			maps = append(maps, b)
+		}
+	}
+	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": campaigns, "Maps": maps})
+}
+
+func tabOf(k board.Key) string {
+	switch k.Kind {
+	case "race":
+		return "races"
+	case "flagrun":
+		return "flagruns"
+	}
+	return "sp"
+}
+
+func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	mode, err := strconv.Atoi(q.Get("mode"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	b, err := s.store.Board(board.Key{Map: q.Get("map"), Kind: q.Get("kind"), Mode: mode})
+	k := board.Key{Map: q.Get("map"), Kind: q.Get("kind"), Mode: mode}
+	b, err := s.store.Board(k)
 	if err != nil {
 		fail(w, err)
 		return
@@ -115,7 +304,26 @@ func (s *site) board(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	render(w, boardPage, "board.html", map[string]any{"Title": b.Key.MapLabel() + " (" + b.Key.KindLabel() + ")", "Board": b})
+	// the same map's other boards of this kind, for the mode tabs
+	siblings, _ := s.boardsOf(k.Kind)
+	var others []board.Key
+	for _, o := range siblings {
+		if o.Key.Map == k.Map {
+			others = append(others, o.Key)
+		}
+	}
+	history, _ := s.store.History(k)
+	newest := make([]board.Record, len(history))
+	for i, h := range history {
+		newest[len(history)-1-i] = h
+	}
+	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
+		"History": history, "HistoryNewest": newest, "Graph": recordGraph(history)})
+}
+
+type placeRow struct {
+	board.Place
+	Best int64
 }
 
 func (s *site) player(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +337,23 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	render(w, playerPage, "player.html", map[string]any{"Title": name, "Name": name, "Places": places})
+	var rows []placeRow
+	records := 0
+	for _, p := range places {
+		best := p.Entry.MS
+		if b, _ := s.store.Board(p.Key); b != nil {
+			best = b.Entries[0].MS
+		}
+		if p.Entry.Rank == 1 {
+			records++
+		}
+		rows = append(rows, placeRow{Place: p, Best: best})
+	}
+	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": records})
+}
+
+func (s *site) info(w http.ResponseWriter, r *http.Request) {
+	render(w, infoPage, "info.html", map[string]any{"Title": "About", "Tab": "info", "Hub": s.hubAddr})
 }
 
 // replay sends a board entry's signed replay; runs that aren't on a board aren't public.
@@ -175,4 +399,32 @@ func safeName(s string) string {
 		}
 		return '_'
 	}, s)
+}
+
+const placeholderSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect width="320" height="180" fill="#d1d5db"/><path d="M0 180 L110 90 L170 140 L230 70 L320 150 L320 180 Z" fill="#9ca3af"/></svg>`
+
+// mapImage serves a map's picture: a chosen view if there is one, else the game's preview, else a
+// placeholder.
+func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/mapimg/")
+	if name == "" || safeName(name) != name {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	var candidates []string
+	if s.shots != "" {
+		candidates = append(candidates, filepath.Join(s.shots, name+".jpg"), filepath.Join(s.shots, name+".png"))
+	}
+	if s.previews != "" {
+		candidates = append(candidates, filepath.Join(s.previews, name+".jpg"))
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			http.ServeFile(w, r, p)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	fmt.Fprint(w, placeholderSVG)
 }

@@ -50,6 +50,9 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8792", "address to serve HTTP on")
 	passfile := flag.String("pass", "", "the dashboard's password hash (site setpass); no dashboard without it")
 	rejudgeDir := flag.String("rejudgedir", "", "the witness's <data dir>/rejudge, for re-judging runs from the dashboard")
+	shots := flag.String("mapshots", "", "pictures of maps chosen by hand: <map>.jpg or <map>.png")
+	previews := flag.String("mappreviews", "", "the game's packages/base, whose <map>.jpg previews stand in for maps without a picture")
+	hubAddr := flag.String("hubaddr", "141.95.67.191", "the hub's address as the info page gives it")
 	flag.Parse()
 	if *witnessDB == "" {
 		log.Fatal("-witnessdb is needed")
@@ -60,6 +63,7 @@ func main() {
 	}
 	defer store.Close()
 	s := newSite(store)
+	s.shots, s.previews, s.hubAddr = *shots, *previews, *hubAddr
 	if *passfile != "" {
 		hash, err := os.ReadFile(*passfile)
 		if err != nil {

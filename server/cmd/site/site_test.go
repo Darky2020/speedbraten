@@ -77,7 +77,7 @@ func TestPublicPages(t *testing.T) {
 	s := newSite(store)
 
 	code, body := get(t, s, "/")
-	for _, want := range []string{"forge", "flagrun, effic ctf", "An Army Of One", "alice", "0:09.000", "6:09.260"} {
+	for _, want := range []string{"Recently submitted runs", "Oldest standing records", "Top record holders", "forge", "ECTF", "An Army Of One", "alice", "0:09.000", "6:09.260"} {
 		if code != 200 || !strings.Contains(body, want) {
 			t.Fatalf("home %d lacks %q", code, want)
 		}
@@ -86,22 +86,53 @@ func TestPublicPages(t *testing.T) {
 		t.Fatal("a player name isn't escaped")
 	}
 
-	code, body = get(t, s, "/board?map=forge&kind=flagrun&mode=17")
-	if code != 200 || !strings.Contains(body, "+0:00.500") || strings.Contains(body, "0:08.000") {
-		t.Fatalf("board %d: gap missing or the rejected run shown", code)
+	// the tabs: flagruns has the forge row with the effic ctf record, singleplayer the campaign
+	if code, body = get(t, s, "/flagruns"); code != 200 || !strings.Contains(body, "0:09.000") || !strings.Contains(body, "ICTF") {
+		t.Fatalf("flagruns %d", code)
 	}
-	if code, _ = get(t, s, "/board?map=forge&kind=flagrun&mode=11"); code != 404 {
+	if code, body = get(t, s, "/singleplayer"); code != 200 || !strings.Contains(body, "An Army Of One") || strings.Contains(body, "0:09.000") {
+		t.Fatalf("singleplayer %d", code)
+	}
+	if code, body = get(t, s, "/races"); code != 200 || !strings.Contains(body, "No witnessed races yet") {
+		t.Fatalf("races %d", code)
+	}
+
+	code, body = get(t, s, "/map?map=forge&kind=flagrun&mode=17")
+	if code != 200 || !strings.Contains(body, "+0:00.500") || strings.Contains(body, "0:08.000") || !strings.Contains(body, "<svg class=\"graph\"") {
+		t.Fatalf("map page %d: gap or graph missing, or the rejected run shown", code)
+	}
+	if code, _ = get(t, s, "/map?map=forge&kind=flagrun&mode=11"); code != 404 {
 		t.Fatalf("an empty board: %d", code)
+	}
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/board?map=forge&kind=flagrun&mode=17", nil))
+	if rec.Code != http.StatusMovedPermanently || !strings.HasPrefix(rec.Header().Get("Location"), "/map?") {
+		t.Fatalf("old board link: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 
 	code, body = get(t, s, "/player?id=kb")
-	if code != 200 || !strings.Contains(body, "2 boards") || !strings.Contains(body, "&lt;script&gt;bob") {
+	if code != 200 || !strings.Contains(body, "on 2 boards") || !strings.Contains(body, "&lt;script&gt;bob") {
 		t.Fatalf("player %d", code)
 	}
-
-	code, body = get(t, s, "/records")
-	if code != 200 || !strings.Contains(body, "first") {
+	if code, body = get(t, s, "/records"); code != 200 || !strings.Contains(body, "first") {
 		t.Fatalf("records %d", code)
+	}
+	if code, body = get(t, s, "/info"); code != 200 || !strings.Contains(body, "141.95.67.191") {
+		t.Fatalf("info %d", code)
+	}
+
+	// pictures: a placeholder when there is none, the game's preview when there is
+	if code, body = get(t, s, "/mapimg/forge"); code != 200 || !strings.HasPrefix(body, "<svg") {
+		t.Fatalf("placeholder picture %d", code)
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "forge.jpg"), []byte("JPEG"), 0644)
+	s.previews = dir
+	if code, body = get(t, s, "/mapimg/forge"); code != 200 || body != "JPEG" {
+		t.Fatalf("preview picture %d %q", code, body)
+	}
+	if code, _ = get(t, s, "/mapimg/..%2Fsecret"); code != 404 {
+		t.Fatalf("a path outside the picture folders: %d", code)
 	}
 }
 

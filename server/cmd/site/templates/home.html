@@ -1,12 +1,33 @@
 {{template "top" .}}
-<h1>Leaderboards</h1>
-<p class="sub">{{len .Boards}} boards · witnessed runs only</p>
-<div class="card"><table>
-<tr><th>map</th><th class="num">players</th><th>#1</th><th class="num">time</th></tr>
-{{range .Boards}}<tr><td><a href="{{boardURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td class="num">{{len .Entries}}</td>
-{{with index .Entries 0}}<td><a href="{{playerURL .Install}}">{{.Name}}</a></td><td class="num">{{runtime .MS}}</td>{{end}}</tr>
-{{else}}<tr><td colspan="4" class="dim">No witnessed runs yet.</td></tr>{{end}}
+<div class="tiles">
+<div class="tile"><div class="k">witnessed runs</div><div class="v">{{.Stats.Runs}}</div></div>
+<div class="tile"><div class="k">players</div><div class="v">{{.Stats.Players}}</div></div>
+<div class="tile"><div class="k">boards</div><div class="v">{{.Stats.Boards}}</div></div>
+<div class="tile"><div class="k">last run</div><div class="v">{{if .Stats.Runs}}{{ago .Stats.Last}}{{else}}—{{end}}</div></div>
+</div>
+<div class="cols">
+<div>
+<div class="card"><header><h2>Recently submitted runs</h2></header><div class="scroll"><table>
+<tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="wide">when</th></tr>
+{{range .Recent}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td>
+<td class="num time">{{if .Record}}<span class="rank1" title="a record">★ </span>{{end}}{{runtime .MS}}</td><td class="dim small wide">{{ago .When}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No witnessed runs yet.</td></tr>{{end}}
+</table></div></div>
+<div class="card"><header><h2>Newest records</h2><a class="more" href="/records">all records →</a></header><div class="scroll"><table>
+<tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="num wide">improved</th><th class="wide">when</th></tr>
+{{template "recordrows" .Records}}</table></div></div>
+</div>
+<div>
+<div class="card"><header><h2>Top record holders</h2></header><table>
+<tr><th>#</th><th>player</th><th class="num">records</th></tr>
+{{range $i, $h := .Holders}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{$h.Name}}</a></td><td class="num">{{$h.Records}}</td></tr>
+{{else}}<tr><td colspan="3" class="dim">Nobody yet.</td></tr>{{end}}
 </table></div>
-<h2>Latest records</h2>
-{{template "records" .Records}}
+<div class="card"><header><h2>Oldest standing records</h2></header><table>
+<tr><th>map</th><th>player</th><th class="num">time</th><th class="num">age</th></tr>
+{{range .Oldest}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Entry.Install}}">{{.Entry.Name}}</a></td><td class="num time">{{runtime .Entry.MS}}</td><td class="num dim small">{{age .Entry.When}}</td></tr>
+{{else}}<tr><td colspan="4" class="dim">No records yet.</td></tr>{{end}}
+</table></div>
+</div>
+</div>
 {{template "bottom" .}}

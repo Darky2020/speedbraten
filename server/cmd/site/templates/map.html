@@ -1,0 +1,19 @@
+{{template "top" .}}
+<div class="banner" style="background-image: url('{{mapImage .Board.Key.Map}}')"><div class="t"><h1>{{.Board.Key.MapLabel}}</h1>
+<p>{{template "badge" .Board.Key}} {{len .Board.Entries}} players{{if ne .Board.Key.MapLabel .Board.Key.Map}} · starts on {{.Board.Key.Map}}{{end}}</p></div></div>
+{{if gt (len .Others) 1}}<div class="modes">{{range .Others}}<a href="{{mapURL .}}"{{if eq . $.Board.Key}} class="on"{{end}}>{{modeName .}}</a>{{end}}</div>{{end}}
+<div class="cols">
+<div class="card scroll"><header><h2>Leaderboard</h2></header><table>
+<tr><th class="num">#</th><th>player</th><th class="num">time</th><th class="num wide">gap</th><th class="wide">date</th><th></th></tr>
+{{$best := (index .Board.Entries 0).MS}}
+{{range .Board.Entries}}<tr><td class="num{{if eq .Rank 1}} rank1{{end}}">{{.Rank}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td><td class="num time">{{runtime .MS}}</td>
+<td class="num dim small wide">{{if gt .Rank 1}}+{{gap .MS $best}}{{end}}</td><td class="dim small wide">{{date .When}}</td><td><a class="small" href="/replay?run={{.Run}}">replay</a></td></tr>{{end}}
+</table></div>
+<div>
+<div class="card"><header><h2>Record history</h2><span class="dim small">{{len .History}} records</span></header><div class="body">{{.Graph}}</div></div>
+<div class="card"><table><tr><th>when</th><th>player</th><th class="num">time</th></tr>
+{{range .HistoryNewest}}<tr><td class="dim small">{{date .When}}</td><td>{{.Name}}</td><td class="num time">{{runtime .MS}}</td></tr>{{end}}
+</table></div>
+</div>
+</div>
+{{template "bottom" .}}

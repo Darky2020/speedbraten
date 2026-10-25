@@ -1,6 +1,7 @@
-{{define "records"}}<div class="card"><table>
-<tr><th class="wide">when</th><th>map</th><th>player</th><th class="num">time</th><th class="num wide">beat</th></tr>
-{{range .}}<tr><td class="dim wide">{{date .When}}</td><td><a href="{{boardURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td>{{.Name}}</td><td class="num">{{runtime .MS}}</td><td class="num dim wide">{{if ge .Prev 0}}{{runtime .Prev}}{{else}}first{{end}}</td></tr>
-{{else}}<tr><td colspan="5" class="dim">No records yet.</td></tr>{{end}}
-</table></div>{{end}}
-{{define "recordspage"}}{{template "top" .}}<h1>Records</h1><p class="sub">every time a board's best was beaten, newest first</p>{{template "records" .Records}}{{template "bottom" .}}{{end}}
+{{define "recordrows"}}{{range .}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td>{{if .Install}}<a href="{{playerURL .Install}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</td><td class="num time">{{runtime .MS}}</td><td class="num dim small wide">{{if ge .Prev 0}}−{{gap .Prev .MS}}{{else}}first{{end}}</td><td class="dim small wide">{{ago .When}}</td></tr>
+{{else}}<tr><td colspan="6" class="dim">No records yet.</td></tr>{{end}}{{end}}
+{{define "recordspage"}}{{template "top" .}}
+<h1>Records</h1><p class="sub">every time a board's best was beaten, newest first</p>
+<div class="card scroll"><table><tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="num wide">improved</th><th class="wide">when</th></tr>
+{{template "recordrows" .Records}}</table></div>
+{{template "bottom" .}}{{end}}
