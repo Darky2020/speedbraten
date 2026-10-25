@@ -12,9 +12,12 @@
 <ol>
 <li>Open the <b>speedrun</b> menu, go to the <b>hub</b> tab and enter the hub's address: <code>{{.Hub}}</code>. The hub names the witness, so nothing else needs setting up.</li>
 <li>Load a flagrun, race or singleplayer map and play. While you play, your run streams to the <b>witness</b>, which signs it as it arrives.</li>
-<li>When the run ends, the witness re-simulates it from your inputs. A valid run shows up here within seconds; the console tells you the verdict.</li>
+<li>When the run ends, the witness checks it. A valid run shows up here within seconds; the console tells you the verdict.</li>
 </ol>
 <p>Only runs played in one go count: loading a saved state makes a run segmented (it still saves and stays useful for practice, but isn't witnessed). Game speed, pauses and changed physics settings aren't allowed.</p>
+
+<h2>Fair timing</h2>
+<p>speedbraten's game simulation is deterministic: it runs at a fixed rate, and the same inputs give exactly the same run on every computer. Your frame rate, hardware or connection don't change your time, so every time on these boards was set under the same rules.</p>
 
 <h2>The three kinds of runs</h2>
 <ul>
@@ -29,7 +32,13 @@
 <h2>Playing together</h2>
 <p>The hub shows who is online. A race, flagrun or campaign map opens your lobby: others can play along with you, see you as a ghost, spectate your run live and chat. Press TAB in a lobby to see everyone's times.</p>
 
-<h2>Fair play</h2>
-<p>The witness re-plays every run exactly as it was played, so impossible inputs, speed changes or edited files are caught. Runs whose aim matches another player's are reviewed by hand. Runs and players can be removed from the boards.</p>
+<h2>Respect other players</h2>
+<ul>
+<li>Play your own runs. Don't submit someone else's run or route as yours, and don't share an install with other people.</li>
+<li>Be kind in chat and lobbies: congratulate, help newer players, and keep it friendly.</li>
+<li>Found a new route or trick? Sharing it is welcome, and so is letting its finder show it first.</li>
+<li>If you find a bug that makes runs faster than they should be, report it instead of using it.</li>
+</ul>
+<p>Runs that break the rules, and the players who submit them, are removed from the boards.</p>
 </div>
 {{template "bottom" .}}

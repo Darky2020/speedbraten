@@ -70,7 +70,7 @@ button:hover { border-color: var(--accent); }
 {{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav></div></div>
 <main>{{end}}
 {{define "bottom"}}</main>
-<footer>Every time here was streamed to the witness while it was played, re-simulated and signed. · <a href="/info">How it works</a></footer>
+<footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a></footer>
 </body></html>{{end}}
 
 {{define "badge"}}{{$b := badge .}}<span class="badge {{$b.Class}}">{{$b.Text}}</span>{{end}}
