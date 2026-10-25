@@ -85,7 +85,7 @@ var funcs = template.FuncMap{
 }
 
 func page(files ...string) *template.Template {
-	paths := []string{"templates/layout.html", "templates/records.html"}
+	paths := []string{"templates/layout.html", "templates/records.html", "templates/panels.html"}
 	for _, f := range files {
 		paths = append(paths, "templates/"+f)
 	}
@@ -161,10 +161,10 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 	holders, _ := s.store.TopHolders(8)
 	oldest, _ := s.store.OldestRecords(8)
 	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
-		"Records": records, "Holders": holders, "Oldest": oldest})
+		"Records": records, "Holders": holders, "Oldest": oldest, "More": "/records"})
 }
 
-var recordModes = []option{{"", "all modes"}, {"race", "race"}, {"ctf", "ctf"}, {"ictf", "insta ctf"}, {"ectf", "effic ctf"}, {"sp", "singleplayer"}}
+var recordModes = []option{{"", "all modes"}, {"race", "race"}, {"flagrun", "all flagruns"}, {"ctf", "ctf"}, {"ictf", "insta ctf"}, {"ectf", "effic ctf"}, {"sp", "singleplayer"}}
 var recordSorts = []option{{"newest", "newest first"}, {"oldest", "oldest first"}, {"improved", "biggest improvement"}, {"map", "map A–Z"}}
 
 func (s *site) records(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +176,7 @@ func (s *site) records(w http.ResponseWriter, r *http.Request) {
 	f := newFilter(r, recordSorts, recordModes)
 	var records []board.Record
 	for _, rec := range all {
-		if f.matches(rec.Key, rec.Name) && (f.Mode == "" || modeOf(rec.Key) == f.Mode) {
+		if f.matches(rec.Key, rec.Name) && (f.Mode == "" || modeOf(rec.Key) == f.Mode || f.Mode == "flagrun" && rec.Key.Kind == "flagrun") {
 			records = append(records, rec)
 		}
 	}
@@ -232,7 +232,9 @@ func (s *site) races(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := newFilter(r, boardSorts, nil)
-	render(w, racesPage, "races.html", map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(boards, f), "F": f, "Path": "/races"})
+	data := map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(boards, f), "F": f, "Path": "/races"}
+	s.addCategory(data, boards, "race")
+	render(w, racesPage, "races.html", data)
 }
 
 type flagrunCell struct {
@@ -317,7 +319,9 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 		}
 		return a.Key.Map < b.Key.Map
 	})
-	render(w, flagrunsPage, "flagruns.html", map[string]any{"Title": "Flagruns", "Tab": "flagruns", "Rows": shown, "Modes": cols, "F": f, "Path": "/flagruns"})
+	data := map[string]any{"Title": "Flagruns", "Tab": "flagruns", "Rows": shown, "Modes": cols, "F": f, "Path": "/flagruns"}
+	s.addCategory(data, boards, "flagrun")
+	render(w, flagrunsPage, "flagruns.html", data)
 }
 
 var flagrunSorts = []option{{"map", "map A–Z"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"records", "most modes set"}}
@@ -350,7 +354,9 @@ func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := newFilter(r, boardSorts, nil)
-	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": filterBoards(boards, f), "F": f, "Path": "/singleplayer"})
+	data := map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": filterBoards(boards, f), "F": f, "Path": "/singleplayer"}
+	s.addCategory(data, boards, "campaign")
+	render(w, spPage, "singleplayer.html", data)
 }
 
 func tabOf(k board.Key) string {
@@ -511,4 +517,54 @@ func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/svg+xml")
 	fmt.Fprint(w, placeholderSVG)
+}
+
+// categoryPanel is how many rows each of a category page's side lists has.
+const categoryPanel = 8
+
+// addCategory adds a category page's newest records, recent runs, top record holders and oldest
+// standing records, all of the boards of one kind.
+func (s *site) addCategory(data map[string]any, boards []*board.Board, kind string) {
+	all, _ := s.store.Records(100000)
+	var records []board.Record
+	for _, r := range all {
+		if r.Key.Kind == kind && len(records) < categoryPanel {
+			records = append(records, r)
+		}
+	}
+	runs, _ := s.store.RecentRuns(100000)
+	var recent []board.Run
+	for _, r := range runs {
+		if r.Key.Kind == kind && len(recent) < categoryPanel {
+			recent = append(recent, r)
+		}
+	}
+	counts, names := map[string]int{}, map[string]string{}
+	var oldest []board.Standing
+	for _, b := range boards {
+		e := b.Entries[0]
+		counts[e.Install]++
+		names[e.Install] = e.Name
+		oldest = append(oldest, board.Standing{Key: b.Key, Entry: e})
+	}
+	var holders []board.Holder
+	for k, c := range counts {
+		holders = append(holders, board.Holder{Install: k, Name: names[k], Records: c})
+	}
+	sort.Slice(holders, func(i, j int) bool {
+		return holders[i].Records > holders[j].Records || holders[i].Records == holders[j].Records && holders[i].Name < holders[j].Name
+	})
+	sort.Slice(oldest, func(i, j int) bool { return oldest[i].Entry.When.Before(oldest[j].Entry.When) })
+	if len(holders) > categoryPanel {
+		holders = holders[:categoryPanel]
+	}
+	if len(oldest) > categoryPanel {
+		oldest = oldest[:categoryPanel]
+	}
+	more := map[string]string{"race": "race", "flagrun": "flagrun", "campaign": "sp"}[kind]
+	data["Records"], data["Recent"], data["Holders"], data["Oldest"] = records, recent, holders, oldest
+	data["More"] = "/records"
+	if more != "" {
+		data["More"] = "/records?mode=" + more
+	}
 }

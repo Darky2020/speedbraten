@@ -97,7 +97,21 @@ func TestPublicPages(t *testing.T) {
 		t.Fatalf("races %d", code)
 	}
 
-	// search, filter and sort
+	// each category page has its own newest records, recent runs, holders and oldest records
+	_, body = get(t, s, "/flagruns")
+	for _, want := range []string{"Newest records", "Recently submitted runs", "Top record holders", "Oldest standing records", `href="/records?mode=flagrun"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("flagruns page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "6:09.260") {
+		t.Fatal("a campaign record on the flagruns page")
+	}
+	if _, body = get(t, s, "/records?mode=flagrun"); !strings.Contains(body, "0:09.000") || strings.Contains(body, "6:09.260") {
+		t.Fatal("the all-flagruns records filter")
+	}
+
+		// search, filter and sort
 	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
 		t.Fatal("search by a holder's name, any case, doesn't find forge")
 	}
@@ -117,7 +131,6 @@ func TestPublicPages(t *testing.T) {
 	if _, body = get(t, s, "/records?sort=bogus&mode=bogus"); !strings.Contains(body, "6:09.260") {
 		t.Fatal("unknown sort and mode values fall back to the defaults")
 	}
-
 
 	code, body = get(t, s, "/map?map=forge&kind=flagrun&mode=17")
 	if code != 200 || !strings.Contains(body, `slower">+0:00.500`) || strings.Contains(body, "0:08.000") || !strings.Contains(body, "<svg class=\"graph\"") {

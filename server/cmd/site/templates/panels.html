@@ -1,0 +1,27 @@
+{{define "recentcard"}}<div class="card"><header><h2>Recently submitted runs</h2></header><div class="scroll"><table>
+<tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="wide">when</th></tr>
+{{range .}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td>
+<td class="num time">{{if .Record}}<span class="rank1" title="a record">★ </span>{{end}}{{runtime .MS}}</td><td class="dim small wide">{{ago .When}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No runs yet.</td></tr>{{end}}
+</table></div></div>{{end}}
+
+{{define "newestcard"}}<div class="card"><header><h2>Newest records</h2><a class="more" href="{{.More}}">all records →</a></header><div class="scroll"><table>
+<tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="num wide">improved</th><th class="wide">when</th></tr>
+{{template "recordrows" .Records}}</table></div></div>{{end}}
+
+{{define "holderscard"}}<div class="card"><header><h2>Top record holders</h2></header><table>
+<tr><th>#</th><th>player</th><th class="num">records</th></tr>
+{{range $i, $h := .}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{$h.Name}}</a></td><td class="num">{{$h.Records}}</td></tr>
+{{else}}<tr><td colspan="3" class="dim">Nobody yet.</td></tr>{{end}}
+</table></div>{{end}}
+
+{{define "oldestcard"}}<div class="card"><header><h2>Oldest standing records</h2></header><table>
+<tr><th>map</th><th>player</th><th class="num">time</th><th class="num">age</th></tr>
+{{range .}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Entry.Install}}">{{.Entry.Name}}</a></td><td class="num time">{{runtime .Entry.MS}}</td><td class="num dim small">{{age .Entry.When}}</td></tr>
+{{else}}<tr><td colspan="4" class="dim">No records yet.</td></tr>{{end}}
+</table></div>{{end}}
+
+{{define "category"}}<div class="cols2">
+<div>{{template "newestcard" .}}{{template "recentcard" .Recent}}</div>
+<div>{{template "holderscard" .Holders}}{{template "oldestcard" .Oldest}}</div>
+</div>{{end}}

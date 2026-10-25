@@ -7,4 +7,5 @@
 <td><a href="{{playerURL $e.Install}}">{{$e.Name}}</a></td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td></tr>
 {{else}}<tr><td colspan="6" class="dim">No races{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
+{{template "category" .}}
 {{template "bottom" .}}

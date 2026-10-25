@@ -7,4 +7,5 @@
 {{range .Cells}}<td>{{if .Entry}}<a class="time" href="{{mapURL .Key}}">{{runtime .Entry.MS}}</a><div class="kind"><a class="dim" href="{{playerURL .Entry.Install}}">{{.Entry.Name}}</a></div>{{else}}<a class="faint" href="{{mapURL .Key}}" title="no runs yet">—</a>{{end}}</td>{{end}}</tr>
 {{else}}<tr><td colspan="4" class="dim">No flagruns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
+{{template "category" .}}
 {{template "bottom" .}}
