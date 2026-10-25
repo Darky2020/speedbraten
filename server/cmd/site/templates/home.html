@@ -5,8 +5,6 @@
 <div class="tile"><div class="k">maps</div><div class="v">{{.Stats.Maps}}</div></div>
 <div class="tile"><div class="k">last run</div><div class="v">{{if .Stats.Runs}}{{ago .Stats.Last}}{{else}}—{{end}}</div></div>
 </div>
-<div class="cols2">
-<div>{{template "recentcard" .Recent}}{{template "holderscard" .Holders}}</div>
-<div>{{template "oldestcard" .}}</div>
-</div>
+{{template "recentoldest" .}}
+{{template "holderscard" .Holders}}
 {{template "bottom" .}}

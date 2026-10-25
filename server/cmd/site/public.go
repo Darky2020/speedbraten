@@ -158,7 +158,7 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 	}
 	recent, _ := s.store.RecentRuns(recentRuns)
 	holders, _ := s.store.TopHolders(8)
-	oldest, _ := s.store.OldestRecords(8)
+	oldest, _ := s.store.OldestRecords(recentRuns)
 	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
 		"Holders": holders, "Oldest": oldest, "More": "/records"})
 }
@@ -540,8 +540,8 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 	}
 	holders := topHolders(boards, categoryPanel)
 	sort.Slice(oldest, func(i, j int) bool { return oldest[i].Entry.When.Before(oldest[j].Entry.When) })
-	if len(oldest) > categoryPanel {
-		oldest = oldest[:categoryPanel]
+	if len(oldest) > recentRuns {
+		oldest = oldest[:recentRuns]
 	}
 	if kind == "flagrun" {
 		type modeHolders struct {
