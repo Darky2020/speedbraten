@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3alpha
+
+- When spectating ends, you stay on the map you were watching instead of going back.
+
 ## v0.3.2alpha
 
 - A spectator can play along with the player they watch, and leaving the lobby stops spectating.

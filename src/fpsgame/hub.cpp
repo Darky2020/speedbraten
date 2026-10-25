@@ -426,7 +426,7 @@ namespace game
                     int mode = int(r.svar());
                     gettext(r, kind, sizeof(kind));
                     bool chained = r.var() != 0;
-                    if(r.ok && target == spectatingid()) spectaterun(run, map, mode, chained);
+                    if(r.ok && target == spectatingid()) spectaterun(run, map, mode, kind, chained);
                     break;
                 }
                 case HM_SPECDATA:

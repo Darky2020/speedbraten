@@ -334,7 +334,7 @@ namespace game
     extern bool spectatehold();
     extern float spectatebehind();
     extern void spectatebegin(uint target, const char *name, const char *map, int mode, const char *kind);
-    extern void spectaterun(uint run, const char *map, int mode, bool chained);
+    extern void spectaterun(uint run, const char *map, int mode, const char *kind, bool chained);
     extern void spectatedata(uint run, int offset, const uchar *data, int len);
     extern void spectateend(const char *why);
     extern void spectatestop();

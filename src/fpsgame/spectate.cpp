@@ -18,7 +18,7 @@ namespace game
     // one in place once that one is played out, up to oldknown, without a map load.
     static bool specswitch = false;
     static int oldknown = 0;
-    static string specmap = "";
+    static string specmap = "", speckind = "";
     static int specmode = 0;
     static string specname = "";
     static string returnmap = "", returnkind = "";
@@ -57,7 +57,7 @@ namespace game
     }
 
     // a new run of the spectated player: the file starts over
-    void spectaterun(uint run, const char *map, int mode, bool chained)
+    void spectaterun(uint run, const char *map, int mode, const char *kind, bool chained)
     {
         if(!spectarget) return;
         stream *f = openrawfile(path(specfile, true), "wb");
@@ -70,6 +70,7 @@ namespace game
         specchained = chained && specstarted && inputreplayactive();
         specstarted = specswitch;
         copystring(specmap, map);
+        copystring(speckind, kind);
         specmode = mode;
 
         if(!specswitch) conoutf("\f2spectating %s on %s", specname, runlabel(map));
@@ -89,10 +90,11 @@ namespace game
     {
         spectarget = specrun = 0;
         specstarted = specswitch = false;
-        specmap[0] = '\0';
         specname[0] = '\0';
+        // a fresh game on the map that was being watched, else back to the player's own map
+        if(specmap[0]) { copystring(returnmap, specmap); returnmode = specmode; copystring(returnkind, speckind); }
+        specmap[0] = '\0';
         if(!reload || remote) return;
-        // back to the player's own map, or a fresh game on the watched one
         if(!returnmap[0]) { copystring(returnmap, clientmap); returnmode = gamemode; returnkind[0] = '\0'; }
         if(!returnmap[0]) return;
         server::forcenextflagrun(!strcmp(returnkind, "flagrun") ? 1 : 0);
