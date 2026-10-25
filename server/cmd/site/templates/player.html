@@ -2,7 +2,7 @@
 <h1>{{.Name}}</h1>
 <div class="tiles">
 <div class="tile"><div class="k">records</div><div class="v">{{.Records}}</div></div>
-<div class="tile"><div class="k">podiums</div><div class="v">{{.Podiums}}</div><div class="small dim"><span class="rank1">{{index .Medals 1}} gold</span> · {{index .Medals 2}} silver · {{index .Medals 3}} bronze</div></div>
+<div class="tile"><div class="k">podiums</div><div class="v">{{.Podiums}}</div><div class="small dim"><span class="rank1">{{index .Medals 1}} gold</span> · <span class="silver">{{index .Medals 2}} silver</span> · <span class="bronze">{{index .Medals 3}} bronze</span></div></div>
 <div class="tile"><div class="k">runs</div><div class="v">{{.Runs}}</div><div class="small dim">on {{.Maps}} maps</div></div>
 <div class="tile"><div class="k">playing since</div><div class="v">{{if .Runs}}{{date .Since}}{{else}}—{{end}}</div></div>
 </div>

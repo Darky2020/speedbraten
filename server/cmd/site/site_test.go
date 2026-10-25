@@ -166,7 +166,7 @@ func TestPublicPages(t *testing.T) {
 		t.Fatalf("player %d", code)
 	}
 	// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
-	for _, want := range []string{"Map completion", `<div class="bar-num">1 / 1</div>`, "1 gold</span> · 1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
+	for _, want := range []string{"Map completion", `<div class="bar-num">1 / 1</div>`, "1 gold</span> · <span class=\"silver\">1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("player stats lack %q", want)
 		}
