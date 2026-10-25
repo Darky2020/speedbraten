@@ -30,6 +30,7 @@ namespace game
     MOD(VARP, replayseekstep, 1, 5, 60);
     MOD(VARP, replayfastspeed, 2, 4, 20); // while space is held
     MOD(VARP, replayviewhud, 0, 1, 1);
+    MOD(VARP, replayviewkeys, 0, 1, 1); // the line of keys under it
     static bool replayviewing = false, replayviewpaused = false, replayviewfast = false;
     static int replayfastrest = 0; // game time owed to the fast-forward, below one tick
     static inputrun replayviewrun;
@@ -797,7 +798,7 @@ namespace game
         flushhudmatrix();
         int y = int(h*0.78f/scale) - lh;
         draw_text(line, int(w/2.0f/scale - lw/2.0f), y, 255, 255, 255, 230);
-        draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
+        if(replayviewkeys) draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
         pophudmatrix();
     }
 
