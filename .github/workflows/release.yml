@@ -16,44 +16,80 @@ env:
   RESIMDATA_SHA256: ac12942774fc4b7a594ef7de9c3c94318fe7405e8366ced422dd6ad696bb4b79
 
 jobs:
-  build-windows:
+  # plain Sauerbraten's source for the vanilla builds (ports/vanilla), exported once
+  vanilla-src:
     runs-on: ubuntu-24.04
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y subversion
+      - run: svn export -q -r 6880 svn://svn.code.sf.net/p/sauerbraten/code/src src
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-src
+          path: src
+
+  build-windows:
+    needs: vanilla-src
+    strategy:
+      matrix:
+        base: [p1xbraten, vanilla]
+    runs-on: ubuntu-24.04
+    env:
+      VANILLA_SRC: ${{ github.workspace }}/vanilla-src
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
-      - run: sed -i "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
-      - run: bash tools/clientbuild.sh x86_64-windows-gnu out
+      - uses: actions/download-artifact@v4
+        if: matrix.base == 'vanilla'
+        with:
+          name: vanilla-src
+          path: vanilla-src
+      - run: bash tools/basebuild.sh ${{ matrix.base }} x86_64-windows-gnu out "${GITHUB_REF_NAME}"
       - uses: actions/upload-artifact@v4
         with:
-          name: client-windows-x86_64
+          name: client-windows-x86_64${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
           path: out/speedbraten_*
 
   build-linux:
+    needs: vanilla-src
     strategy:
       matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm]
+        base: [p1xbraten, vanilla]
         include:
           - { os: ubuntu-22.04,     arch: x86_64 }
           - { os: ubuntu-22.04-arm, arch: aarch64 }
     runs-on: ${{ matrix.os }}
+    env:
+      VANILLA_SRC: ${{ github.workspace }}/vanilla-src
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
           version: ${{ env.ZIG_VERSION }}
       - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev zlib1g-dev
-      - run: sed -i "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
-      - run: bash tools/clientbuild.sh ${{ matrix.arch }}-linux-gnu out
+      - uses: actions/download-artifact@v4
+        if: matrix.base == 'vanilla'
+        with:
+          name: vanilla-src
+          path: vanilla-src
+      - run: bash tools/basebuild.sh ${{ matrix.base }} ${{ matrix.arch }}-linux-gnu out "${GITHUB_REF_NAME}"
       - name: glibc requirement
         run: objdump -T out/speedbraten_* | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - uses: actions/upload-artifact@v4
         with:
-          name: client-linux-${{ matrix.arch }}
+          name: client-linux-${{ matrix.arch }}${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
           path: out/speedbraten_*
 
   build-macos:
+    needs: vanilla-src
+    strategy:
+      matrix:
+        base: [p1xbraten, vanilla]
     runs-on: macos-15
+    env:
+      VANILLA_SRC: ${{ github.workspace }}/vanilla-src
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
@@ -73,9 +109,13 @@ jobs:
             hdiutil detach "$m" > /dev/null
           done
           mkdir -p out; tar cf out/Frameworks.tar -C sauerbraten.app/Contents Frameworks
-      - run: sed -i '' "s|<git-dev>|${GITHUB_REF_NAME}|" src/p1xbraten/version.cpp
-      - run: bash tools/clientbuild.sh aarch64-macos out
-      - run: bash tools/clientbuild.sh x86_64-macos out
+      - uses: actions/download-artifact@v4
+        if: matrix.base == 'vanilla'
+        with:
+          name: vanilla-src
+          path: vanilla-src
+      - run: bash tools/basebuild.sh ${{ matrix.base }} aarch64-macos out "${GITHUB_REF_NAME}"
+      - run: bash tools/basebuild.sh ${{ matrix.base }} x86_64-macos out "${GITHUB_REF_NAME}"
       - name: universal binary
         run: |
           lipo -create out/speedbraten_aarch64_client out/speedbraten_x86_64_client -output out/speedbraten_universal
@@ -83,7 +123,7 @@ jobs:
           rm out/speedbraten_aarch64_client out/speedbraten_x86_64_client
       - uses: actions/upload-artifact@v4
         with:
-          name: client-macos-universal
+          name: client-macos-universal${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
           path: out
 
   golds:
@@ -97,6 +137,11 @@ jobs:
           - { os: ubuntu-22.04-arm, artifact: client-linux-aarch64 }
           - { os: macos-15,         artifact: client-macos-universal }
           - { os: macos-15-intel,   artifact: client-macos-universal }
+          - { os: windows-2022,     artifact: client-windows-x86_64-vanilla }
+          - { os: ubuntu-22.04,     artifact: client-linux-x86_64-vanilla }
+          - { os: ubuntu-22.04-arm, artifact: client-linux-aarch64-vanilla }
+          - { os: macos-15,         artifact: client-macos-universal-vanilla }
+          - { os: macos-15-intel,   artifact: client-macos-universal-vanilla }
     runs-on: ${{ matrix.os }}
     defaults:
       run:

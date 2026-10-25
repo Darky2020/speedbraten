@@ -1,0 +1,3637 @@
+--- a/engine/3dgui.cpp
++++ b/engine/3dgui.cpp
+@@ -1280,6 +1280,12 @@
+ void g3d_resetcursor()
+ {
+     cursorx = cursory = 0.5f;
++}
++
++void g3d_setcursor(float x, float y)
++{
++    cursorx = clamp(x, 0.0f, 1.0f);
++    cursory = clamp(y, 0.0f, 1.0f);
+ }
+ 
+ FVARP(guisens, 1e-3f, 1, 1e3f);
+@@ -1287,6 +1293,8 @@
+ bool g3d_movecursor(int dx, int dy)
+ {
+     if(!guis2d.length() || !hascursor) return false;
++    extern bool mapguiontop();
++    if(game::inputlocked() && mapguiontop()) return true;
+     const float CURSORSCALE = 500.0f;
+     cursorx = max(0.0f, min(1.0f, cursorx+guisens*dx*(screenh/(screenw*CURSORSCALE))));
+     cursory = max(0.0f, min(1.0f, cursory+guisens*dy/CURSORSCALE));
+--- a/engine/command.cpp
++++ b/engine/command.cpp
+@@ -194,17 +194,24 @@
+ static bool initedidents = false;
+ static vector<ident> *identinits = NULL;
+ 
++ident *lastaddedident; // set in addident()
++
++int setmodidentflag() {
++    if(lastaddedident) { lastaddedident->flags |= IDF_MOD; }
++    return 0;
++}
++
+ static inline ident *addident(const ident &id)
+ {
+     if(!initedidents)
+     {
+         if(!identinits) identinits = new vector<ident>;
+-        identinits->add(id);
++        lastaddedident = &(identinits->add(id));
+         return NULL;
+     }
+     ident &def = idents.access(id.name, id);
+     def.index = identmap.length();
+-    return identmap.add(&def);
++    return lastaddedident = identmap.add(&def);
+ }
+ 
+ static bool initidents()
+@@ -2499,7 +2506,7 @@
+     loopv(ids)
+     {
+         ident &id = *ids[i];
+-        if(id.flags&IDF_PERSIST) switch(id.type)
++        if(id.flags&IDF_PERSIST && !(id.flags&IDF_MOD)) switch(id.type)
+         {
+             case ID_VAR: f->printf("%s %d\n", escapeid(id), *id.storage.i); break;
+             case ID_FVAR: f->printf("%s %s\n", escapeid(id), floatstr(*id.storage.f)); break;
+@@ -2525,7 +2532,22 @@
+     f->printf("\n");
+     writecompletions(f);
+     delete f;
++    f = openutf8file(path(game::modconfig(), true), "w");
++    if(!f) return;
++    f->printf("// automatically written on exit, DO NOT MODIFY\n\n");
++    loopv(ids)
++    {
++        ident &id = *ids[i];
++        if(id.flags&IDF_PERSIST && id.flags&IDF_MOD) switch(id.type)
++        {
++            case ID_VAR: f->printf("%s %d\n", escapeid(id), *id.storage.i); break;
++            case ID_FVAR: f->printf("%s %s\n", escapeid(id), floatstr(*id.storage.f)); break;
++            case ID_SVAR: f->printf("%s %s\n", escapeid(id), escapestring(*id.storage.s)); break;
+ }
++    }
++    f->printf("\n");
++    delete f;
++}
+ 
+ COMMAND(writecfg, "s");
+ #endif
+@@ -3267,13 +3289,13 @@
+ ICOMMAND(mod, "ii", (int *a, int *b), intret(*b ? *a % *b : 0));
+ ICOMMAND(divf, "ff", (float *a, float *b), floatret(*b ? *a / *b : 0));
+ ICOMMAND(modf, "ff", (float *a, float *b), floatret(*b ? fmod(*a, *b) : 0));
+-ICOMMAND(sin, "f", (float *a), floatret(sin(*a*RAD)));
+-ICOMMAND(cos, "f", (float *a), floatret(cos(*a*RAD)));
+-ICOMMAND(tan, "f", (float *a), floatret(tan(*a*RAD)));
+-ICOMMAND(asin, "f", (float *a), floatret(asin(*a)/RAD));
+-ICOMMAND(acos, "f", (float *a), floatret(acos(*a)/RAD));
+-ICOMMAND(atan, "f", (float *a), floatret(atan(*a)/RAD));
+-ICOMMAND(atan2, "ff", (float *y, float *x), floatret(atan2(*y, *x)/RAD));
++ICOMMAND(sin, "f", (float *a), floatret(detsin(*a*RAD)));
++ICOMMAND(cos, "f", (float *a), floatret(detcos(*a*RAD)));
++ICOMMAND(tan, "f", (float *a), floatret(dettan(*a*RAD)));
++ICOMMAND(asin, "f", (float *a), floatret(detasin(*a)/RAD));
++ICOMMAND(acos, "f", (float *a), floatret(detacos(*a)/RAD));
++ICOMMAND(atan, "f", (float *a), floatret(detatan(*a)/RAD));
++ICOMMAND(atan2, "ff", (float *y, float *x), floatret(detatan2(*y, *x)/RAD));
+ ICOMMAND(sqrt, "f", (float *a), floatret(sqrt(*a)));
+ ICOMMAND(pow, "ff", (float *a, float *b), floatret(pow(*a, *b)));
+ ICOMMAND(loge, "f", (float *a), floatret(log(*a)));
+@@ -3492,6 +3514,20 @@
+ };
+ vector<sleepcmd> sleepcmds;
+ 
++// only map-script sleeps are part of the game; the player's own scripts are outside input
++void hashsleeps(uint &h)
++{
++    loopv(sleepcmds)
++    {
++        const sleepcmd &s = sleepcmds[i];
++        if(!(s.flags&IDF_OVERRIDDEN)) continue;
++        h = (h ^ uint(s.delay)) * 16777619U;
++        h = (h ^ uint(s.millis)) * 16777619U;
++        h = (h ^ uint(s.flags)) * 16777619U;
++        for(const char *c = s.command; c && *c; c++) h = (h ^ uchar(*c)) * 16777619U;
++    }
++}
++
+ void addsleep(int *msec, char *cmd)
+ {
+     sleepcmd &s = sleepcmds.add();
+@@ -3503,8 +3539,11 @@
+ 
+ COMMANDN(sleep, addsleep, "is");
+ 
++static bool sleepsrebased = false;
++
+ void checksleep(int millis)
+ {
++    sleepsrebased = false;
+     loopv(sleepcmds)
+     {
+         sleepcmd &s = sleepcmds[i];
+@@ -3517,11 +3556,29 @@
+             execute(cmd);
+             identflags = oldflags;
+             delete[] cmd;
++            if(sleepsrebased)
++            {
++                // millis is from before the clock moved; the rest are checked next time
++                loopvj(sleepcmds) if(!sleepcmds[j].command) sleepcmds.remove(j--);
++                return;
++            }
+             if(sleepcmds.inrange(i) && !sleepcmds[i].command) sleepcmds.remove(i--);
+         }
+     }
+ }
+ 
++// moves the player's own sleeps (not the map's) with the game clock
++void shiftusersleeps(int delta)
++{
++    loopv(sleepcmds) if(!(sleepcmds[i].flags&IDF_OVERRIDDEN)) sleepcmds[i].millis += delta;
++}
++
++void rebasesleeps(int delta)
++{
++    loopv(sleepcmds) sleepcmds[i].millis += delta;
++    sleepsrebased = true;
++}
++
+ void clearsleep(bool clearoverrides)
+ {
+     int len = 0;
+@@ -3533,6 +3590,8 @@
+     sleepcmds.shrink(len);
+ }
+ 
++#include "varstate.h"
++
+ void clearsleep_(int *clearoverrides)
+ {
+     clearsleep(*clearoverrides!=0 || identflags&IDF_OVERRIDDEN);
+--- a/engine/console.cpp
++++ b/engine/console.cpp
+@@ -317,6 +317,7 @@
+ 
+     void run()
+     {
++        inputsourcescope src(INPUTSRC_CONSOLE);
+         if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
+         else if(action)
+         {
+@@ -367,8 +368,26 @@
+ 
+ COMMAND(onrelease, "s");
+ 
++static int bindstate()
++{
++    if(mainmenu) return keym::ACTION_DEFAULT;
++    if(editmode) return keym::ACTION_EDITING;
++    if(player->state==CS_SPECTATOR) return keym::ACTION_SPECTATOR;
++    return keym::ACTION_DEFAULT;
++}
++
++const char *getbindaction(int code)
++{
++    keym *k = keyms.access(code);
++    if(!k) return NULL;
++    int state = bindstate();
++    const char *action = k->actions[state][0] ? k->actions[state] : k->actions[keym::ACTION_DEFAULT];
++    return action[0] ? action : NULL;
++}
++
+ void execbind(keym &k, bool isdown)
+ {
++    inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);
+     loopv(releaseactions)
+     {
+         releaseaction &ra = releaseactions[i];
+--- a/engine/decal.cpp
++++ b/engine/decal.cpp
+@@ -327,7 +327,7 @@
+         decaltangent = vec(dir.z, -dir.x, dir.y);
+         decaltangent.sub(vec(dir).mul(decaltangent.dot(dir)));
+ #endif
+-        if(flags&DF_ROTATE) decaltangent.rotate(rnd(360)*RAD, dir);
++        if(flags&DF_ROTATE) decaltangent.rotate(crnd(360)*RAD, dir);
+         decaltangent.normalize();
+         decalbitangent.cross(decaltangent, dir);
+         if(flags&DF_RND4)
+--- a/engine/engine.h
++++ b/engine/engine.h
+@@ -405,6 +405,13 @@
+ extern void writecfg(const char *name = NULL);
+ 
+ extern void checksleep(int millis);
++extern void rebasesleeps(int delta);
++
++// simloop
++extern void simframestart(int &timeerr);
++extern void simadvanceclock();
++extern void simupdate(bool draw);
++extern bool simdisplaystart();
+ extern void clearsleep(bool clearoverrides = true);
+ 
+ // console
+--- a/engine/grass.cpp
++++ b/engine/grass.cpp
+@@ -246,7 +246,7 @@
+     grassgroups.setsize(0);
+     grassverts.setsize(0);
+ 
+-    if(grassoffsets[0] < 0) loopi(NUMGRASSOFFSETS) grassoffsets[i] = rnd(0x1000000)/float(0x1000000);
++    if(grassoffsets[0] < 0) loopi(NUMGRASSOFFSETS) grassoffsets[i] = crnd(0x1000000)/float(0x1000000);
+ 
+     loopi(NUMGRASSWEDGES)
+     {
+--- a/engine/lightning.h
++++ b/engine/lightning.h
+@@ -14,8 +14,8 @@
+ {
+     loopi(MAXLIGHTNINGSTEPS)
+     {
+-        lnjitterx[lnjitterframe][i] = -lnjitterradius + rnd(2*lnjitterradius + 1);
+-        lnjittery[lnjitterframe][i] = -lnjitterradius + rnd(2*lnjitterradius + 1);
++        lnjitterx[lnjitterframe][i] = -lnjitterradius + crnd(2*lnjitterradius + 1);
++        lnjittery[lnjitterframe][i] = -lnjitterradius + crnd(2*lnjitterradius + 1);
+     }
+ }
+ 
+--- a/engine/main.cpp
++++ b/engine/main.cpp
+@@ -65,14 +65,20 @@
+                 #endif
+             }
+             SDL_Quit();
++#ifndef HEADLESS
+             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cube 2: Sauerbraten fatal error", msg, NULL);
++#endif
+         }
+     }
+ 
++#ifdef HEADLESS
++    exit(2);
++#else
+     exit(EXIT_FAILURE);
++#endif
+ }
+ 
+-int curtime = 0, lastmillis = 1, elapsedtime = 0, totalmillis = 1;
++int curtime = 0, lastmillis = 1, elapsedtime = 0, totalmillis = 1, curframetime = 0;
+ 
+ dynent *player = NULL;
+ 
+@@ -177,8 +183,13 @@
+     gle::end();
+ }
+ 
++#include "menubg.h"
++
+ void renderbackground(const char *caption, Texture *mapshot, const char *mapname, const char *mapinfo, bool restore, bool force)
+ {
++#ifdef HEADLESS
++    return;
++#endif
+     if(!inbetweenframes && !force) return;
+ 
+     if(!restore || force) stopsounds(); // stop sounds while loading
+@@ -198,21 +209,25 @@
+         lastw = w;
+         lasth = h;
+ 
+-        backgroundu = rndscale(1);
+-        backgroundv = rndscale(1);
+-        detailu = rndscale(1);
+-        detailv = rndscale(1);
++        backgroundu = crndscale(1);
++        backgroundv = crndscale(1);
++        detailu = crndscale(1);
++        detailv = crndscale(1);
+         numdecals = sizeof(decals)/sizeof(decals[0]);
+-        numdecals = numdecals/3 + rnd((numdecals*2)/3 + 1);
++        numdecals = numdecals/3 + crnd((numdecals*2)/3 + 1);
+         float maxsize = min(w, h)/16.0f;
+         loopi(numdecals)
+         {
+-            decal d = { rndscale(w), rndscale(h), maxsize/2 + rndscale(maxsize/2), rnd(2) };
++            decal d = { crndscale(w), crndscale(h), maxsize/2 + crndscale(maxsize/2), crnd(2) };
+             decals[i] = d;
+         }
+     }
+     else if(lastupdate != lastmillis) lastupdate = lastmillis;
+ 
++    bool image = updatemenubackground();
++    float imagealpha = image ? menubackgroundalpha() : 0;
++    bool tiles = !image || (imagealpha < 1 && !menubgprev);
++
+     loopi(restore ? 1 : 3)
+     {
+         hudmatrix.ortho(0, w, h, 0, -1, 1);
+@@ -224,31 +239,58 @@
+         gle::defvertex(2);
+         gle::deftexcoord0();
+ 
+-        settexture("data/background.png", 0);
+-        float bu = w*0.67f/256.0f + backgroundu, bv = h*0.67f/256.0f + backgroundv;
+-        bgquad(0, 0, w, h, 0, 0, bu, bv);
++        if(tiles)
++        {
++            settexture("data/background.png", 0);
++            float bu = w*0.67f/256.0f + backgroundu, bv = h*0.67f/256.0f + backgroundv;
++            bgquad(0, 0, w, h, 0, 0, bu, bv);
++        }
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         glEnable(GL_BLEND);
+-        settexture("data/background_detail.png", 0);
+-        float du = w*0.8f/512.0f + detailu, dv = h*0.8f/512.0f + detailv;
+-        bgquad(0, 0, w, h, 0, 0, du, dv);
+-        settexture("data/background_decal.png", 3);
+-        gle::begin(GL_QUADS);
+-        loopj(numdecals)
++        if(tiles)
+         {
+-            float hsz = decals[j].size, hx = clamp(decals[j].x, hsz, w-hsz), hy = clamp(decals[j].y, hsz, h-hsz), side = decals[j].side;
+-            gle::attribf(hx-hsz, hy-hsz); gle::attribf(side,   0);
+-            gle::attribf(hx+hsz, hy-hsz); gle::attribf(1-side, 0);
+-            gle::attribf(hx+hsz, hy+hsz); gle::attribf(1-side, 1);
+-            gle::attribf(hx-hsz, hy+hsz); gle::attribf(side,   1);
++            settexture("data/background_detail.png", 0);
++            float du = w*0.8f/512.0f + detailu, dv = h*0.8f/512.0f + detailv;
++            bgquad(0, 0, w, h, 0, 0, du, dv);
++            settexture("data/background_decal.png", 3);
++            gle::begin(GL_QUADS);
++            loopj(numdecals)
++            {
++                float hsz = decals[j].size, hx = clamp(decals[j].x, hsz, w-hsz), hy = clamp(decals[j].y, hsz, h-hsz), side = decals[j].side;
++                gle::attribf(hx-hsz, hy-hsz); gle::attribf(side,   0);
++                gle::attribf(hx+hsz, hy-hsz); gle::attribf(1-side, 0);
++                gle::attribf(hx+hsz, hy+hsz); gle::attribf(1-side, 1);
++                gle::attribf(hx-hsz, hy+hsz); gle::attribf(side,   1);
++            }
++            gle::end();
+         }
+-        gle::end();
++        if(image)
++        {
++            if(imagealpha < 1 && menubgprev) covermenubackground(menubgprev, w, h, 1);
++            covermenubackground(menubgcur, w, h, imagealpha);
++            if(menubackgrounddim > 0)
++            {
++                hudnotextureshader->set();
++                gle::colorf(0, 0, 0, menubackgrounddim/100.0f);
++                gle::defvertex(2);
++                gle::begin(GL_TRIANGLE_STRIP);
++                gle::attribf(0, 0); gle::attribf(w, 0); gle::attribf(0, h); gle::attribf(w, h);
++                gle::end();
++                hudshader->set();
++                gle::colorf(1, 1, 1);
++                gle::defvertex(2);
++                gle::deftexcoord0();
++            }
++        }
+         float lh = 0.44f*min(w, h);
+         float lw = lh*2;
+         float lx = 0.5f*(w - lw);
+         float ly = 0.2f*(h*0.5f - lh);
+-        settexture((maxtexsize ? min(maxtexsize, hwtexsize) : hwtexsize) >= 1024 && (screenw > 1280 || screenh > 800) ? "data/logo_1024.png" : "data/logo.png", 3);
+-        bgquad(lx, ly, lw, lh);
++        if(!image || menubackgroundlogo)
++        {
++            settexture((maxtexsize ? min(maxtexsize, hwtexsize) : hwtexsize) >= 1024 && (screenw > 1280 || screenh > 800) ? "data/logo_1024.png" : "data/logo.png", 3);
++            bgquad(lx, ly, lw, lh);
++        }
+         if(caption)
+         {
+             int tw = text_width(caption);
+@@ -330,6 +372,9 @@
+ 
+ void renderprogress(float bar, const char *text, GLuint tex, bool background)   // also used during loading
+ {
++#ifdef HEADLESS
++    return;
++#endif
+     if(!inbetweenframes || drawtex) return;
+ 
+     extern int menufps, maxfps;
+@@ -472,7 +517,7 @@
+ VARNP(relativemouse, userelativemouse, 0, 1, 1);
+ #endif
+ 
+-bool shouldgrab = false, grabinput = false, minimized = false, canrelativemouse = true, relativemouse = false;
++bool shouldgrab = false, grabinput = false, minimized = false, hasfocus = true, canrelativemouse = true, relativemouse = false;
+ 
+ #ifdef SDL_VIDEO_DRIVER_X11
+ VAR(sdl_xgrab_bug, 0, 0, 1);
+@@ -480,6 +525,9 @@
+ 
+ void inputgrab(bool on, bool delay = false)
+ {
++#ifdef HEADLESS
++    return;
++#endif
+ #ifdef SDL_VIDEO_DRIVER_X11
+     bool wasrelativemouse = relativemouse;
+ #endif
+@@ -637,6 +685,13 @@
+ 
+ void setupscreen()
+ {
++#ifdef HEADLESS
++    if(scr_w < 0) scr_w = SCR_DEFAULTW;
++    if(scr_h < 0) scr_h = SCR_DEFAULTH;
++    screenw = scr_w;
++    screenh = scr_h;
++    return;
++#endif
+     if(glcontext)
+     {
+         SDL_GL_DeleteContext(glcontext);
+@@ -710,6 +765,9 @@
+         }
+         screen = SDL_CreateWindow("Cube 2: Sauerbraten", winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
+         if(!screen) continue;
++        // test harnesses run the client without covering the desktop
++        const char *minimized = getenv("SAUER_MINIMIZED");
++        if(minimized && minimized[0] && strcmp(minimized, "0")) SDL_MinimizeWindow(screen);
+ 
+     #ifdef __APPLE__
+         static const int glversions[] = { 32, 20 };
+@@ -916,7 +974,54 @@
+         events.remove();
+     }
+ }
++
++#ifndef HEADLESS
++// Harness: pushes an SDL event, which then goes through checkinput like a real one.
++// kind: 0 key down, 1 key up (code = SDL keycode), 2 button down, 3 button up (code = SDL
++// button), 4 motion (dx dy), 5 wheel (dx dy)
++ICOMMAND(harnessraw, "iiii", (int *kind, int *code, int *dx, int *dy),
++{
++    game::tellsharness();
++    SDL_Event e;
++    memset(&e, 0, sizeof(e));
++    switch(*kind)
++    {
++        case 0: case 1:
++            e.type = *kind == 0 ? SDL_KEYDOWN : SDL_KEYUP;
++            e.key.state = *kind == 0 ? SDL_PRESSED : SDL_RELEASED;
++            e.key.keysym.sym = *code;
++            e.key.keysym.scancode = SDL_GetScancodeFromKey(*code);
++            break;
++        case 2: case 3:
++            e.type = *kind == 2 ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
++            e.button.state = *kind == 2 ? SDL_PRESSED : SDL_RELEASED;
++            e.button.button = *code;
++            break;
++        case 4: e.type = SDL_MOUSEMOTION; e.motion.xrel = *dx; e.motion.yrel = *dy; break;
++        case 5: e.type = SDL_MOUSEWHEEL; e.wheel.x = *dx; e.wheel.y = *dy; break;
++        default: return;
++    }
++    SDL_PushEvent(&e);
++});
++#endif
+ 
++// the key code processkey gets for an SDL mouse button, 0 for none
++static int mousebuttoncode(int button)
++{
++    switch(button)
++    {
++        case SDL_BUTTON_LEFT: return -1;
++        case SDL_BUTTON_MIDDLE: return -2;
++        case SDL_BUTTON_RIGHT: return -3;
++        case SDL_BUTTON_X1: return -6;
++        case SDL_BUTTON_X2: return -7;
++        case SDL_BUTTON_X2 + 1: return -10;
++        case SDL_BUTTON_X2 + 2: return -11;
++        case SDL_BUTTON_X2 + 3: return -12;
++        default: return 0;
++    }
++}
++
+ void checkinput()
+ {
+     if(interceptkeysym) clearinterceptkey();
+@@ -946,6 +1051,18 @@
+ 
+             case SDL_KEYDOWN:
+             case SDL_KEYUP:
++            {
++                rawevent raw(event.type == SDL_KEYDOWN ? rawevent::KEYDOWN : rawevent::KEYUP, event.key.timestamp);
++                if(textinputmask) raw.flags |= rawevent::TEXT;
++                else
++                {
++                    raw.code = event.key.keysym.scancode;
++                    raw.keycode = event.key.keysym.sym;
++                    raw.bind = getbindaction(event.key.keysym.sym);
++                }
++                if(event.key.repeat) raw.flags |= rawevent::REPEAT;
++                game::rawinput(raw);
++            }
+                 if(keyrepeatmask || !event.key.repeat)
+                     processkey(event.key.keysym.sym, event.key.state==SDL_PRESSED, event.key.keysym.mod | SDL_GetModState());
+                 break;
+@@ -958,6 +1075,11 @@
+                         break;
+ 
+                     case SDL_WINDOWEVENT_FOCUS_GAINED:
++                    {
++                        rawevent raw(rawevent::FOCUS, event.window.timestamp);
++                        raw.flags = rawevent::GAINED;
++                        game::rawinput(raw);
++                    }
+                         shouldgrab = true;
+                         break;
+                     case SDL_WINDOWEVENT_ENTER:
+@@ -967,6 +1089,7 @@
+ 
+                     case SDL_WINDOWEVENT_LEAVE:
+                     case SDL_WINDOWEVENT_FOCUS_LOST:
++                        if(event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) game::rawinput(rawevent(rawevent::FOCUS, event.window.timestamp));
+                         shouldgrab = false;
+                         focused = -1;
+                         break;
+@@ -998,6 +1121,13 @@
+                 break;
+ 
+             case SDL_MOUSEMOTION:
++            {
++                rawevent raw(rawevent::MOTION, event.motion.timestamp);
++                raw.dx = event.motion.xrel;
++                raw.dy = event.motion.yrel;
++                if(grabinput) raw.flags |= rawevent::GRABBED;
++                game::rawinput(raw);
++            }
+                 if(grabinput)
+                 {
+                     int dx = event.motion.xrel, dy = event.motion.yrel;
+@@ -1011,6 +1141,13 @@
+             case SDL_MOUSEBUTTONDOWN:
+             case SDL_MOUSEBUTTONUP:
+                 //if(lasttype==event.type && lastbut==event.button.button) break; // why?? get event twice without it
++            {
++                rawevent raw(event.type == SDL_MOUSEBUTTONDOWN ? rawevent::BUTTONDOWN : rawevent::BUTTONUP, event.button.timestamp);
++                raw.code = event.button.button;
++                int code = mousebuttoncode(event.button.button);
++                if(code) raw.bind = getbindaction(code);
++                game::rawinput(raw);
++            }
+                 switch(event.button.button)
+                 {
+                     case SDL_BUTTON_LEFT: processkey(-1, event.button.state==SDL_PRESSED); break;
+@@ -1027,6 +1164,14 @@
+                 break;
+ 
+             case SDL_MOUSEWHEEL:
++            {
++                rawevent raw(rawevent::WHEEL, event.wheel.timestamp);
++                raw.dx = event.wheel.x;
++                raw.dy = event.wheel.y;
++                int code = event.wheel.y > 0 ? -4 : event.wheel.y < 0 ? -5 : event.wheel.x > 0 ? -8 : event.wheel.x < 0 ? -9 : 0;
++                if(code) raw.bind = getbindaction(code);
++                game::rawinput(raw);
++            }
+                 if(event.wheel.y > 0) { processkey(-4, true); processkey(-4, false); }
+                 else if(event.wheel.y < 0) { processkey(-5, true); processkey(-5, false); }
+                 else if(event.wheel.x > 0) { processkey(-8, true); processkey(-8, false); }
+@@ -1040,6 +1185,9 @@
+ 
+ void swapbuffers(bool overlay)
+ {
++#ifdef HEADLESS
++    return;
++#endif
+     recorder::capture(overlay);
+     gle::disable();
+     SDL_GL_SwapWindow(screen);
+@@ -1047,28 +1195,44 @@
+ 
+ VARP(menufps, 0, 60, 1000);
+ VARP(maxfps, 0, 200, 1000);
++MOD(VARFP, maxtps, 0, 0, 1000, { if(maxtps && maxtps<60) {conoutf("can't set maxtps < 60"); maxtps = 60;} });
+ 
+-void limitfps(int &millis, int curmillis)
++void ratelimit(int &millis, int lastdrawmillis, bool &draw)
+ {
+-    int limit = (mainmenu || minimized) && menufps ? (maxfps ? min(maxfps, menufps) : menufps) : maxfps;
+-    if(!limit) return;
+-    static int fpserror = 0;
+-    int delay = 1000/limit - (millis-curmillis);
+-    if(delay < 0) fpserror = 0;
+-    else
++    int fpslimit = (mainmenu || minimized) && menufps ? (maxfps ? min(maxfps, menufps) : menufps) : maxfps;
++    if(!fpslimit) draw = true;
++    int tpslimit = minimized ? 100 : (maxtps ? max(maxtps, fpslimit) : 0);
++    if(!fpslimit && !tpslimit) return;
++    int delay = 1;
++    if(tpslimit) delay = max(1000/tpslimit - (millis-totalmillis), 0);
++    // should we draw?
++    int fpsdelay = INT_MAX;
++    if(!minimized && fpslimit)
+     {
+-        fpserror += 1000%limit;
+-        if(fpserror >= limit)
++        static int fpserror = 0;
++        fpsdelay = 1000/fpslimit - (millis-lastdrawmillis);
++        if(fpsdelay < 0)
+         {
+-            ++delay;
+-            fpserror -= limit;
++            draw = true;
++            fpserror = 0;
+         }
+-        if(delay > 0)
++        else
+         {
+-            SDL_Delay(delay);
+-            millis += delay;
++            if(fpserror >= fpslimit) fpsdelay++;
++            if(fpsdelay <= delay)
++            {
++                draw = true;
++                if(fpserror >= fpslimit) fpserror -= fpslimit;
++                fpserror += 1000%fpslimit;
++            }
+         }
+     }
++    delay = min(delay, fpsdelay);
++    if(delay > 0)
++    {
++       SDL_Delay(delay);
++       millis += delay;
++    }
+ }
+ 
+ #if defined(WIN32) && !defined(_DEBUG) && !defined(__GNUC__)
+@@ -1176,7 +1340,17 @@
+     return max(millis, totalmillis);
+ }
+ 
++// Advances the clock by exactly this many ms per main-loop iteration instead of reading
++// wall time, so a run is reproducible regardless of machine speed or frame pacing.
++VARF(fixedframe, 0, 0, 100, clockreset());
++VAR(fixedframedraw, 1, 1, 1000);
++
++int inputsource = INPUTSRC_OTHER;
++
++_SVAR(speedbratenversion, speedbratenversion, "<git-dev>", IDF_READONLY);
++
+ VAR(numcpus, 1, 1, 16);
++MOD(VARP, minimizedframes, 0, 0, 1);
+ 
+ int main(int argc, char **argv)
+ {
+@@ -1193,10 +1367,17 @@
+ 
+     int dedicated = 0;
+     char *load = NULL, *initscript = NULL;
++#ifdef HEADLESS
++    const char *resimfile = NULL;
++#endif
+ 
+     initing = INIT_RESET;
+     // set home dir first
+     for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'q') { sethomedir(&argv[i][2]); break; }
++    // -o<dir> sets the folder of speedbraten's file patches, -o alone turns them off
++    const char *overrides = "speedbraten_overrides";
++    for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'o') overrides = &argv[i][2];
++    if(overrides[0]) setoverridedir(overrides);
+     // set log after home dir, but before anything else
+     for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'g')
+     {
+@@ -1206,11 +1387,13 @@
+         break;
+     }
+     execfile("init.cfg", false);
++    if(overridedir[0]) logoutf("Using file patches: %s", overridedir);
+     for(int i = 1; i<argc; i++)
+     {
+         if(argv[i][0]=='-') switch(argv[i][1])
+         {
+             case 'q': if(homedir[0]) logoutf("Using home directory: %s", homedir); break;
++            case 'o': break;
+             case 'r': /* compat, ignore */ break;
+             case 'k':
+             {
+@@ -1238,8 +1421,15 @@
+                 break;
+             }
+             case 'x': initscript = &argv[i][2]; break;
++#ifdef HEADLESS
++            case 'V': game::resimverify(&argv[i][2]); break;
++            case 'L': game::resimlivemode(); break;
++#endif
+             default: if(!serveroption(argv[i])) gameargs.add(argv[i]); break;
+         }
++#ifdef HEADLESS
++        else if(!resimfile) resimfile = argv[i];
++#endif
+         else gameargs.add(argv[i]);
+     }
+     initing = NOT_INITING;
+@@ -1250,7 +1440,11 @@
+     {
+         logoutf("init: sdl");
+ 
++#ifdef HEADLESS
++        if(SDL_Init(SDL_INIT_TIMER|SDL_INIT_EVENTS)<0) fatal("Unable to initialize SDL: %s", SDL_GetError());
++#else
+         if(SDL_Init(SDL_INIT_TIMER|SDL_INIT_VIDEO|SDL_INIT_AUDIO)<0) fatal("Unable to initialize SDL: %s", SDL_GetError());
++#endif
+ 
+ #ifdef SDL_VIDEO_DRIVER_X11
+         SDL_version version;
+@@ -1298,8 +1492,10 @@
+     camera1 = player = game::iterdynents(0);
+     emptymap(0, true, NULL, false);
+ 
++#ifndef HEADLESS
+     logoutf("init: sound");
+     initsound();
++#endif
+ 
+     logoutf("init: cfg");
+     initing = INIT_LOAD;
+@@ -1312,6 +1508,8 @@
+     defformatstring(gamecfgname, "data/game_%s.cfg", game::gameident());
+     execfile(gamecfgname);
+     if(game::savedservers()) execfile(game::savedservers(), false);
++    execfile("data/speedbraten/speedbraten.cfg");
++    execfile("data/speedbraten/mainmenu.cfg");
+ 
+     identflags |= IDF_PERSIST;
+ 
+@@ -1320,6 +1518,7 @@
+         execfile(game::defaultconfig());
+         writecfg(game::restoreconfig());
+     }
++    execfile(game::modconfig(), false);
+     execfile(game::autoexec(), false);
+ 
+     identflags &= ~IDF_PERSIST;
+@@ -1351,6 +1550,11 @@
+ 
+     if(initscript) execute(initscript);
+ 
++#ifdef HEADLESS
++    fixedframe = SIMTICK;
++    if(!game::resimstart(resimfile)) exit(2);
++#endif
++
+     initmumble();
+     resetfpshistory();
+ 
+@@ -1359,45 +1563,78 @@
+ 
+     for(;;)
+     {
+-        static int frames = 0;
++#ifdef HEADLESS
++        game::resimwait();
++#endif
++        static int frames = 0, lastdrawmillis = 0;
+         int millis = getclockmillis();
+-        limitfps(millis, totalmillis);
++        bool draw = false;
++        if(fixedframe)
++        {
++            static int framessincedraw = 0;
++            millis = totalmillis + fixedframe;
++            draw = ++framessincedraw >= fixedframedraw;
++            if(draw) framessincedraw = 0;
++        }
++        else ratelimit(millis, lastdrawmillis, draw);
+         elapsedtime = millis - totalmillis;
+         static int timeerr = 0;
++        simframestart(timeerr);
+         int scaledtime = game::scaletime(elapsedtime) + timeerr;
+         curtime = scaledtime/100;
+         timeerr = scaledtime%100;
+-        if(!multiplayer(false) && curtime>200) curtime = 200;
+-        if(game::ispaused()) curtime = 0;
+-		lastmillis += curtime;
++        simadvanceclock();
+         totalmillis = millis;
+         updatetime();
+-
++ 
+         checkinput();
+-        menuprocess();
++        witnessslice();
++        {
++            inputsourcescope src(INPUTSRC_MENU);
++            menuprocess();
++        }
+         tryedit();
+ 
+-        if(lastmillis) game::updateworld();
++        simupdate(draw);
+ 
+-        checksleep(lastmillis);
++#ifdef HEADLESS
++        if(game::resimdone()) exit(game::resimreport());
++        draw = false;
++#endif
+ 
+-        serverslice(false, 0);
++        bool display = simdisplaystart();
+ 
+-        if(frames) updatefpshistory(elapsedtime);
+-        frames++;
+-
+         // miscellaneous general game effects
+         recomputecamera();
+         updateparticles();
+         updatesounds();
+ 
+-        if(minimized) continue;
++        if(minimized && !minimizedframes)
++        {
++            if(display) game::enddisplay();
++            continue;
++        }
+ 
+-        inbetweenframes = false;
+-        if(mainmenu) gl_drawmainmenu();
+-        else gl_drawframe();
+-        swapbuffers();
+-        renderedframe = inbetweenframes = true;
++        if(draw)
++        {
++            int frametime = millis - lastdrawmillis;
++            static int frametimeerr = 0;
++            int scaledframetime = game::scaletime(frametime) + frametimeerr;
++            curframetime = scaledframetime/100;
++            frametimeerr = scaledframetime%100;
++
++            if(frames) updatefpshistory(frametime);
++            frames++;
++
++            inbetweenframes = false;
++            if(mainmenu) gl_drawmainmenu();
++            else gl_drawframe();
++            swapbuffers();
++            renderedframe = inbetweenframes = true;
++            lastdrawmillis = millis;
++        }
++
++        if(display) game::enddisplay();
+     }
+ 
+     ASSERT(0);
+--- a/engine/menus.cpp
++++ b/engine/menus.cpp
+@@ -16,10 +16,10 @@
+ {
+     char *name, *header;
+     uint *contents, *init, *onclear;
+-    bool showtab, keeptab;
++    bool showtab, keeptab, mapgui;
+     int menutab;
+ 
+-    menu() : name(NULL), header(NULL), contents(NULL), init(NULL), onclear(NULL), showtab(true), keeptab(false), menutab(1) {}
++    menu() : name(NULL), header(NULL), contents(NULL), init(NULL), onclear(NULL), showtab(true), keeptab(false), mapgui(false), menutab(1) {}
+ 
+     void gui(g3d_gui &g, bool firstpass)
+     {
+@@ -55,7 +55,8 @@
+         float f;
+         char *s;
+     } val;
+-    delayedupdate() : type(ACTION), id(NULL) { val.s = NULL; }
++    bool scripted;
++    delayedupdate() : type(ACTION), id(NULL), scripted(false) { val.s = NULL; }
+     ~delayedupdate() { if(type == STRING || type == ACTION) DELETEA(val.s); }
+ 
+     void schedule(const char *s) { type = ACTION; val.s = newstring(s); }
+@@ -105,7 +106,22 @@
+             case ID_FVAR: setfvarchecked(id, getfloat()); break;
+             case ID_SVAR: setsvarchecked(id, getstring()); break;
+             case ID_ALIAS: alias(id->name, getstring()); break;
++        }
++    }
++
++    // the same update as cubescript, so it can be recorded and run later
++    void command(vector<char> &buf) const
++    {
++        buf.setsize(0);
++        if(type == ACTION) { if(val.s) buf.put(val.s, strlen(val.s)); }
++        else if(id) switch(id->type)
++        {
++            case ID_VAR: buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(intstr(getint()), strlen(intstr(getint()))); break;
++            case ID_FVAR: { const char *v = floatstr(getfloat()); buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(v, strlen(v)); break; }
++            case ID_SVAR: { const char *v = escapestring(getstring()); buf.put(id->name, strlen(id->name)); buf.add(' '); buf.put(v, strlen(v)); break; }
++            case ID_ALIAS: { const char *v = escapestring(getstring()); buf.put(id->name, strlen(id->name)); buf.put(" = ", 3); buf.put(v, strlen(v)); break; }
+         }
++        buf.add('\0');
+     }
+ };
+      
+@@ -557,6 +573,7 @@
+     }
+     m->contents = compilecode(contents);
+     m->init = init && init[0] ? compilecode(init) : NULL;
++    m->mapgui = (identflags&IDF_OVERRIDDEN) != 0;
+ }
+ 
+ menu *guiserversmenu = NULL;
+@@ -585,6 +602,50 @@
+     }
+ }
+  
++ICOMMAND(clearmapguis, "", (), clearguis());
++
++bool mapguiontop() { return guistack.length() && guistack.last()->mapgui; }
++
++// Open map GUIs (bottom to top) and the cursor, for recording what the player saw.
++bool getmapguistate(vector<char> &names, float &cx, float &cy)
++{
++    names.setsize(0);
++    loopv(guistack) if(guistack[i]->mapgui)
++    {
++        if(names.length()) names.add(' ');
++        const char *s = escapestring(guistack[i]->name);
++        names.put(s, strlen(s));
++    }
++    names.add('\0');
++    bool top = guistack.length() && guistack.last()->mapgui;
++    if(top) g3d_cursorpos(cx, cy);
++    else cx = cy = 0;
++    return top;
++}
++
++// Shows the recorded map GUIs without running their init or onclear scripts.
++void setmapguistate(const char *names, float cx, float cy)
++{
++    vector<char> cur;
++    float ox, oy;
++    bool top = getmapguistate(cur, ox, oy);
++    if(strcmp(cur.getbuf(), names))
++    {
++        loopvrev(guistack) if(guistack[i]->mapgui) guistack.remove(i)->clear();
++        vector<char *> want;
++        explodelist(names, want);
++        loopv(want) if(menu *m = guis.access(want[i]))
++        {
++            if(guistack.empty()) { menupos = menuinfrontofplayer(); g3d_resetcursor(); }
++            guistack.add(m);
++            menustart = totalmillis;
++        }
++        want.deletearrays();
++        top = guistack.length() && guistack.last()->mapgui;
++    }
++    if(top) g3d_setcursor(cx, cy);
++}
++
+ COMMAND(newgui, "ssss");
+ COMMAND(guibutton, "sss");
+ COMMAND(guitext, "ss");
+@@ -757,10 +818,39 @@
+     if(needsapply.empty()) removegui(&applymenu);
+ }
+ 
++// Lets a script act as if a button in the top GUI was clicked.
++void schedulemenuaction(const char *action, bool scripted)
++{
++    delayedupdate &u = updatelater.add();
++    u.schedule(action);
++    u.scripted = scripted;
++}
++
++// Clicks in a map's own GUI change the game, so in a local game they go through the
++// recorded input stream instead of running between ticks.
++static bool queuemapguiupdates(int level)
++{
++    if(guistack.empty() || !guistack.last()->mapgui) return false;
++    vector<char> buf;
++    loopv(updatelater)
++    {
++        delayedupdate &u = updatelater[i];
++        u.command(buf);
++        if(!game::queuemenuinput(buf.getbuf(), u.scripted)) return false;
++    }
++    if(clearlater && level == guistack.length()) game::queuemenuinput("clearmapguis", updatelater.length() && updatelater.last().scripted);
++    return true;
++}
++
+ void menuprocess()
+ {
+     processingmenu = true;
+     int wasmain = mainmenu, level = guistack.length();
++    if(updatelater.length() && queuemapguiupdates(level))
++    {
++        updatelater.shrink(0);
++        clearlater = false;
++    }
+     loopv(updatelater) updatelater[i].run();
+     updatelater.shrink(0);
+     if(wasmain > mainmenu || clearlater)
+--- a/engine/movie.cpp
++++ b/engine/movie.cpp
+@@ -8,7 +8,11 @@
+ //   kino - ok
+ 
+ #include "engine.h"
++#ifdef __APPLE__
++  #include <SDL2_mixer/SDL_mixer.h>
++#else
+ #include "SDL_mixer.h"
++#endif
+ 
+ VAR(dbgmovie, 0, 0, 1);
+ 
+--- a/engine/octaedit.cpp
++++ b/engine/octaedit.cpp
+@@ -254,6 +254,15 @@
+     result(size);
+ });
+ 
++// the selection box in world units; false without a selection
++bool getselbox(vec &lo, vec &hi)
++{
++    if(!havesel) return false;
++    lo = vec(sel.o);
++    hi = vec(ivec(sel.s).mul(sel.grid).add(sel.o));
++    return true;
++}
++
+ ICOMMAND(getselpos, "", (),
+ {
+     if(noedit(true)) return;
+--- a/engine/ragdoll.h
++++ b/engine/ragdoll.h
+@@ -132,7 +132,7 @@
+ 
+     ragdollskel *skel;
+     int millis, collidemillis, collisions, floating, lastmove, unsticks;
+-    vec offset, center;
++    vec offset, center, displayeye;
+     float radius, timestep, scale;
+     vert *verts;
+     matrix3 *tris;
+@@ -221,6 +221,7 @@
+         offset = d->o;
+         offset.sub(skel->eye >= 0 ? verts[skel->eye].pos : center);
+         offset.z += (d->eyeheight + d->aboveeye)/2;
++        displayeye = d->o;
+     }
+ 
+     void move(dynent *pl, float ts);
+@@ -508,7 +509,7 @@
+ 
+ void moveragdoll(dynent *d)
+ {
+-    if(!curtime || !d->ragdoll) return;
++    if(!curtime || game::ispaused() || !d->ragdoll) return;
+ 
+     if(!d->ragdoll->collidemillis || lastmillis < d->ragdoll->collidemillis)
+     {
+@@ -524,9 +525,19 @@
+     vec eye = d->ragdoll->skel->eye >= 0 ? d->ragdoll->verts[d->ragdoll->skel->eye].pos : d->ragdoll->center;
+     eye.add(d->ragdoll->offset);
+     float k = pow(ragdolleyesmooth, float(curtime)/ragdolleyesmoothmillis);
+-    d->o.mul(k).add(eye.mul(1-k));
++    // the ragdoll only exists once the renderer has drawn the corpse, so under the fixed
++    // tick it must not feed back into gameplay
++    vec &pos = simticking ? d->ragdoll->displayeye : d->o;
++    pos.mul(k).add(eye.mul(1-k));
+ }
+ 
++bool getragdolleye(dynent *d, vec &eye)
++{
++    if(!d->ragdoll) return false;
++    eye = d->ragdoll->displayeye;
++    return true;
++}
++
+ void cleanragdoll(dynent *d)
+ {
+     DELETEP(d->ragdoll);
+--- a/engine/rendergl.cpp
++++ b/engine/rendergl.cpp
+@@ -165,9 +165,17 @@
+ PFNGLGENVERTEXARRAYSPROC    glGenVertexArrays_    = NULL;
+ PFNGLISVERTEXARRAYPROC      glIsVertexArray_      = NULL;
+ 
++#ifdef HEADLESS
++extern void *nullgl_getprocaddress(const char *name);
++#endif
++
+ void *getprocaddress(const char *name)
+ {
++#ifdef HEADLESS
++    return nullgl_getprocaddress(name);
++#else
+     return SDL_GL_GetProcAddress(name);
++#endif
+ }
+ 
+ VARP(ati_skybox_bug, 0, 0, 1);
+@@ -2025,7 +2033,7 @@
+         gle::attrib(m.transform(vec2(0, 0)));
+ 
+         // fade in log space so short blips don't disappear too quickly
+-        scale -= float(curtime)/damagecompassfade;
++        scale -= float(curframetime)/damagecompassfade;
+         damagedirs[i] = scale > 0 ? (pow(logscale, scale) - 1) / (logscale - 1) : 0;
+     }
+     if(dirs) gle::end();
+--- a/engine/renderparticles.cpp
++++ b/engine/renderparticles.cpp
+@@ -711,7 +711,7 @@
+ 
+     particle *addpart(const vec &o, const vec &d, int fade, int color, float size, int gravity)
+     {
+-        particle *p = parts + (numparts < maxparts ? numparts++ : rnd(maxparts)); //next free slot, or kill a random kitten
++        particle *p = parts + (numparts < maxparts ? numparts++ : crnd(maxparts)); //next free slot, or kill a random kitten
+         p->o = o;
+         p->d = d;
+         p->gravity = gravity;
+@@ -720,7 +720,7 @@
+         p->color = bvec(color>>16, (color>>8)&0xFF, color&0xFF);
+         p->size = size;
+         p->owner = NULL;
+-        p->flags = 0x80 | (rndmask ? rnd(0x80) & rndmask : 0);
++        p->flags = 0x80 | (rndmask ? crnd(0x80) & rndmask : 0);
+         lastupdate = -1;
+         return p;
+     }
+@@ -986,6 +986,9 @@
+ 
+ VARP(particleglare, 0, 2, 100);
+ 
++// harness: the number of live particles
++ICOMMAND(harnessparticles, "", (), { int n = 0; loopi(sizeof(parts)/sizeof(parts[0])) n += parts[i]->count(); intret(n); });
++
+ VARN(debugparticles, dbgparts, 0, 0, 1);
+ 
+ void debugparticles()
+@@ -1108,20 +1111,20 @@
+         int x, y, z;
+         do
+         {
+-            x = rnd(radius*2)-radius;
+-            y = rnd(radius*2)-radius;
+-            z = rnd(radius*2)-radius;
++            x = crnd(radius*2)-radius;
++            y = crnd(radius*2)-radius;
++            z = crnd(radius*2)-radius;
+         }
+         while(x*x+y*y+z*z>radius*radius);
+     	vec tmp = vec((float)x, (float)y, (float)z);
+-        int f = (num < 10) ? (fmin + rnd(fmax)) : (fmax - (i*(fmax-fmin))/(num-1)); //help deallocater by using fade distribution rather than random
++        int f = (num < 10) ? (fmin + crnd(fmax)) : (fmax - (i*(fmax-fmin))/(num-1)); //help deallocater by using fade distribution rather than random
+         newparticle(p, tmp, f, type, color, size, gravity)->val = collidez;
+     }
+ }
+ 
+ static void regularsplash(int type, int color, int radius, int num, int fade, const vec &p, float size, int gravity, int delay = 0)
+ {
+-    if(!canemitparticles() || (delay > 0 && rnd(delay) != 0)) return;
++    if(!canemitparticles() || (delay > 0 && crnd(delay) != 0)) return;
+     splash(type, color, radius, num, fade, p, size, gravity);
+ }
+ 
+@@ -1155,8 +1158,8 @@
+     loopi(steps)
+     {
+         p.add(v);
+-        vec tmp = vec(float(rnd(11)-5), float(rnd(11)-5), float(rnd(11)-5));
+-        newparticle(p, tmp, rnd(fade)+fade, type, color, size, gravity);
++        vec tmp = vec(float(crnd(11)-5), float(crnd(11)-5), float(crnd(11)-5));
++        newparticle(p, tmp, crnd(fade)+fade, type, color, size, gravity);
+     }
+ }
+ 
+@@ -1259,7 +1262,7 @@
+         vec to, from;
+         if(dir < 12)
+         {
+-            const vec2 &sc = sincos360[rnd(360)];
++            const vec2 &sc = sincos360[crnd(360)];
+             to[dir%3] = sc.y*radius;
+             to[(dir+1)%3] = sc.x*radius;
+             to[(dir+2)%3] = 0.0;
+@@ -1280,8 +1283,8 @@
+         }
+         else if(dir < 15) //plane
+         {
+-            to[dir%3] = float(rnd(radius<<4)-(radius<<3))/8.0;
+-            to[(dir+1)%3] = float(rnd(radius<<4)-(radius<<3))/8.0;
++            to[dir%3] = float(crnd(radius<<4)-(radius<<3))/8.0;
++            to[(dir+1)%3] = float(crnd(radius<<4)-(radius<<3))/8.0;
+             to[(dir+2)%3] = radius;
+             to.add(p);
+             from = to;
+@@ -1291,13 +1294,13 @@
+         {
+             if(dir < 18)
+             {
+-                to[dir%3] = float(rnd(radius<<4)-(radius<<3))/8.0;
++                to[dir%3] = float(crnd(radius<<4)-(radius<<3))/8.0;
+                 to[(dir+1)%3] = 0.0;
+             }
+             else
+             {
+                 to[dir%3] = 0.0;
+-                to[(dir+1)%3] = float(rnd(radius<<4)-(radius<<3))/8.0;
++                to[(dir+1)%3] = float(crnd(radius<<4)-(radius<<3))/8.0;
+             }
+             to[(dir+2)%3] = 0.0;
+             to.add(p);
+@@ -1306,14 +1309,14 @@
+         }
+         else if(dir < 24) //sphere
+         {
+-            to = vec(2*M_PI*float(rnd(1000))/1000.0, M_PI*float(rnd(1000)-500)/1000.0).mul(radius);
++            to = vec(2*M_PI*float(crnd(1000))/1000.0, M_PI*float(crnd(1000)-500)/1000.0).mul(radius);
+             to.add(p);
+             from = p;
+         }
+         else if(dir < 27) // flat plane
+         {
+-            to[dir%3] = float(rndscale(2*radius)-radius);
+-            to[(dir+1)%3] = float(rndscale(2*radius)-radius);
++            to[dir%3] = float(crndscale(2*radius)-radius);
++            to[(dir+1)%3] = float(crndscale(2*radius)-radius);
+             to[(dir+2)%3] = 0.0;
+             to.add(p);
+             from = to;
+@@ -1328,16 +1331,16 @@
+             if(dist > 0.2f)
+             {
+                 dist = 1 - (dist - 0.2f)/0.8f;
+-                if(rnd(0x10000) > dist*dist*0xFFFF) continue;
++                if(crnd(0x10000) > dist*dist*0xFFFF) continue;
+             }
+         }
+ 
+         if(flare)
+-            newparticle(from, to, rnd(fade*3)+1, type, color, size, gravity);
++            newparticle(from, to, crnd(fade*3)+1, type, color, size, gravity);
+         else
+         {
+             vec d = vec(to).sub(from).rescale(vel); //velocity
+-            particle *n = newparticle(from, d, rnd(fade*3)+1, type, color, size, gravity);
++            particle *n = newparticle(from, d, crnd(fade*3)+1, type, color, size, gravity);
+             if(parts[type]->collide)
+                 n->val = from.z - raycube(from, vec(0, 0, -1), parts[type]->collide >= 0 ? COLLIDERADIUS : max(from.z, 0.0f), RAY_CLIPMAT) + (parts[type]->collide >= 0 ? COLLIDEERROR : 0);
+         }
+@@ -1353,9 +1356,9 @@
+     loopi(density)
+     {
+         vec s = p;
+-        s.x += rndscale(radius*2.0f)-radius;
+-        s.y += rndscale(radius*2.0f)-radius;
+-        newparticle(s, v, rnd(max(int(fade*height), 1))+1, type, color, size, gravity);
++        s.x += crndscale(radius*2.0f)-radius;
++        s.y += crndscale(radius*2.0f)-radius;
++        newparticle(s, v, crnd(max(int(fade*height), 1))+1, type, color, size, gravity);
+     }
+ }
+ 
+@@ -1380,7 +1383,7 @@
+             break;
+         }
+         case 1: //steam vent - <dir>
+-            regularsplash(PART_STEAM, 0x897661, 50, 1, 200, offsetvec(e.o, e.attr2, rnd(10)), 2.4f, -20);
++            regularsplash(PART_STEAM, 0x897661, 50, 1, 200, offsetvec(e.o, e.attr2, crnd(10)), 2.4f, -20);
+             break;
+         case 2: //water fountain - <dir>
+         {
+@@ -1397,7 +1400,7 @@
+                     color = (int(wcol[0])<<16) | (int(wcol[1])<<8) | int(wcol[2]);
+                 }
+             }
+-            regularsplash(PART_WATER, color, 150, 4, 200, offsetvec(e.o, e.attr2, rnd(10)), 0.6f, 2);
++            regularsplash(PART_WATER, color, 150, 4, 200, offsetvec(e.o, e.attr2, crnd(10)), 0.6f, 2);
+             break;
+         }
+         case 3: //fire ball - <size> <rgb>
+--- a/engine/server.cpp
++++ b/engine/server.cpp
+@@ -18,7 +18,9 @@
+ 
+ FILE *getlogfile()
+ {
+-#ifdef WIN32
++#if defined(HEADLESS)
++    return logfile ? logfile : stderr;
++#elif defined(WIN32)
+     return logfile;
+ #else
+     return logfile ? logfile : stdout;
+@@ -623,8 +625,7 @@
+         int scaledtime = server::scaletime(elapsedtime) + timeerr;
+         curtime = scaledtime/100;
+         timeerr = scaledtime%100;
+-        if(server::ispaused()) curtime = 0;
+-        lastmillis += curtime;
++        if(!server::ispaused()) lastmillis += curtime;
+         totalmillis = millis;
+         updatetime();
+     }
+@@ -979,7 +980,7 @@
+         line.buf[line.len] = '\0';
+         if(outhandle) writeline(line);
+     }
+-    else if(logfile) writelogv(logfile, fmt, args);
++    else if(FILE *f = getlogfile()) writelogv(f, fmt, args);
+ }
+ 
+ #else
+--- a/engine/sound.cpp
++++ b/engine/sound.cpp
+@@ -1,7 +1,11 @@
+ // sound.cpp: basic positional sound using sdl_mixer
+ 
+ #include "engine.h"
++#ifdef __APPLE__
++  #include <SDL2_mixer/SDL_mixer.h>
++#else
+ #include "SDL_mixer.h"
++#endif
+ 
+ bool nosound = true;
+ 
+@@ -36,8 +40,8 @@
+     int chooseslot(int flags) const
+     {
+         if(flags&SND_NO_ALT || numslots <= 1) return slots;
+-        if(flags&SND_USE_ALT) return slots + 1 + rnd(numslots - 1);
+-        return slots + rnd(numslots);
++        if(flags&SND_USE_ALT) return slots + 1 + crnd(numslots - 1);
++        return slots + crnd(numslots);
+     }
+ };
+ 
+--- a/engine/texture.cpp
++++ b/engine/texture.cpp
+@@ -1,7 +1,11 @@
+ // texture.cpp: texture slot management
+ 
+ #include "engine.h"
++#ifdef __APPLE__
++  #include <SDL2_image/SDL_image.h>
++#else
+ #include "SDL_image.h"
++#endif
+ 
+ #ifndef SDL_IMAGE_VERSION_ATLEAST
+ #define SDL_IMAGE_VERSION_ATLEAST(X, Y, Z) \
+@@ -1341,10 +1345,59 @@
+     if(!f) return false;
+     delete f;
+     return true;
++}
++
++#ifdef HEADLESS
++#define STB_IMAGE_IMPLEMENTATION
++#define STBI_NO_STDIO
++#define STBI_NO_LINEAR
++#define STBI_NO_HDR
++#define STBI_NO_SIMD
++#define STBI_ONLY_PNG
++#define STBI_ONLY_JPEG
++#define STBI_ONLY_TGA
++#define STBI_ONLY_BMP
++#include "stb_image.h"
++
++static int stbread(void *f, char *data, int size) { return int(((stream *)f)->read(data, size)); }
++static void stbskip(void *f, int n) { ((stream *)f)->seek(n, SEEK_CUR); }
++static int stbeof(void *f) { return ((stream *)f)->end(); }
++static const stbi_io_callbacks stbstream = { stbread, stbskip, stbeof };
++
++// Only the alpha of textures that rays test (loadalphamask) affects gameplay, so images are
++// decoded only while that is being built; any other image is a 1x1 placeholder with the
++// image's channel layout, which decides Texture::ALPHA as the real image would.
++static bool decodeimages = false;
++
++static SDL_Surface *headlesssurface(const char *name)
++{
++    stream *f = openfile(name, "rb");
++    if(!f) return NULL;
++    int w = 0, h = 0, comp = 0;
++    bool ok = stbi_info_from_callbacks(&stbstream, f, &w, &h, &comp) != 0;
++    delete f;
++    if(!ok) return NULL;
++    int bpp = comp == 2 || comp == 4 ? 4 : 3;
++    if(!decodeimages)
++        return fixsurfaceformat(bpp == 4 ? SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 32, RGBAMASKS) : SDL_CreateRGBSurface(SDL_SWSURFACE, 1, 1, 24, RGBMASKS));
++    f = openfile(name, "rb");
++    if(!f) return NULL;
++    int n = 0;
++    uchar *data = stbi_load_from_callbacks(&stbstream, f, &w, &h, &n, bpp);
++    delete f;
++    if(!data) return NULL;
++    SDL_Surface *s = bpp == 4 ? SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 32, RGBAMASKS) : SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 24, RGBMASKS);
++    if(s) loopi(h) memcpy((uchar *)s->pixels + i*s->pitch, data + i*w*bpp, w*bpp);
++    stbi_image_free(data);
++    return fixsurfaceformat(s);
+ }
++#endif
+ 
+ SDL_Surface *loadsurface(const char *name)
+ {
++#ifdef HEADLESS
++    return headlesssurface(name);
++#endif
+     SDL_Surface *s = NULL;
+     stream *z = openzipfile(name, "rb");
+     if(z)
+@@ -1535,7 +1588,16 @@
+     if(t->alphamask) return t->alphamask;
+     if(!(t->type&Texture::ALPHA)) return NULL;
+     ImageData s;
++#ifdef HEADLESS
++    decodeimages = true;
++    bool loaded = texturedata(s, t->name, NULL, false);
++    decodeimages = false;
++    if(!loaded || !s.data || s.compressed) return NULL;
++    t->xs = s.w;
++    t->ys = s.h;
++#else
+     if(!texturedata(s, t->name, NULL, false) || !s.data || s.compressed) return NULL;
++#endif
+     t->alphamask = new uchar[s.h * ((s.w+7)/8)];
+     uchar *srcrow = s.data, *dst = t->alphamask-1;
+     loop(y, s.h)
+--- a/engine/world.cpp
++++ b/engine/world.cpp
+@@ -273,6 +273,8 @@
+ extern bool havesel;
+ int entlooplevel = 0;
+ int efocus = -1, enthover = -1, entorient = -1, oldhover = -1;
++// the entity under the cursor in edit mode, else the first selected one; -1 for none
++int getenthover() { return enthover >= 0 ? enthover : (entgroup.length() ? entgroup[0] : -1); }
+ bool undonext = true;
+ 
+ VARF(entediting, 0, 1, 1, { if(!entediting) { entcancel(); efocus = enthover = -1; } });
+--- a/engine/worldio.cpp
++++ b/engine/worldio.cpp
+@@ -1,6 +1,9 @@
+ // worldio.cpp: loading & saving of maps and savegames
+ 
+ #include "engine.h"
++#ifndef STANDALONE
++#include "blake3.h"
++#endif
+ 
+ void validmapname(char *dst, const char *src, const char *prefix = NULL, const char *alt = "untitled", size_t maxlen = 100)
+ {
+@@ -994,11 +997,55 @@
+     return true;
+ }
+ 
+-static uint mapcrc = 0;
++static uint mapcrc = 0, mapcfgcrc = 0;
++static vector<mapdatafile> mapdatafiles;
+ 
+ uint getmapcrc() { return mapcrc; }
+-void clearmapcrc() { mapcrc = 0; }
++// 0 when the map has no cfg
++uint getmapcfgcrc() { return mapcfgcrc; }
++void clearmapcrc() { mapcrc = mapcfgcrc = 0; mapdatafiles.setsize(0); }
++const vector<mapdatafile> &getmapdatafiles() { return mapdatafiles; }
++
++// a map file's bytes as identified across platforms: a text file (cfg) with CR LF line ends read
++// as LF, so the copy a Windows install ships matches the others
++static char *loadmapfile(const char *name, size_t &len, bool text)
++{
++    char *buf = loadfile(path(name, true), &len, false);
++    if(!buf || !text) return buf;
++    size_t n = 0;
++    loopi(int(len)) if(buf[i] != '\r' || size_t(i+1) >= len || buf[i+1] != '\n') buf[n++] = buf[i];
++    len = n;
++    return buf;
++}
++
++static void addmapdatafile(int role, const char *name)
++{
++    size_t len = 0;
++    char *buf = loadmapfile(name, len, role == 1);
++    if(!buf) return;
++    mapdatafile &f = mapdatafiles.add();
++    f.role = role;
++    f.size = uint(len);
++    // the path with '/' on every platform (path() turns them into '\' on Windows)
++    copystring(f.path, name);
++    for(char *s = f.path; *s; s++) if(*s == '\\') *s = '/';
++    blake3_hasher h;
++    blake3_hasher_init(&h);
++    blake3_hasher_update(&h, buf, len);
++    blake3_hasher_finalize(&h, f.hash, sizeof(f.hash));
++    delete[] buf;
++}
+ 
++static uint filecrc(const char *name)
++{
++    size_t len = 0;
++    char *buf = loadmapfile(name, len, true);
++    if(!buf) return 0;
++    uint crc = crc32(crc32(0, Z_NULL, 0), (const Bytef *)buf, len);
++    delete[] buf;
++    return crc ? crc : 1;
++}
++
+ bool load_world(const char *mname, const char *cname)        // still supports all map formats that have existed since the earliest cube betas!
+ {
+     int loadingstart = SDL_GetTicks();
+@@ -1239,6 +1286,8 @@
+     }
+ 
+     mapcrc = f->getcrc();
++    mapdatafiles.setsize(0);
++    addmapdatafile(0, ogzname);
+     delete f;
+ 
+     conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);
+@@ -1248,6 +1297,9 @@
+     identflags |= IDF_OVERRIDDEN;
+     execfile("data/default_map_settings.cfg", false);
+     execfile(cfgname, false);
++    mapcfgcrc = filecrc(cfgname);
++    addmapdatafile(1, "data/default_map_settings.cfg");
++    addmapdatafile(1, cfgname);
+     identflags &= ~IDF_OVERRIDDEN;
+    
+     extern void fixlightmapnormals();
+--- a/fpsgame/ai.cpp
++++ b/fpsgame/ai.cpp
+@@ -9,14 +9,82 @@
+     avoidset obstacles;
+     int updatemillis = 0, iteration = 0, itermillis = 0, forcegun = -1;
+     vec aitarget(0, 0, 0);
++
++    // obstacle owners are dynents or NULL
++    void snapavoidset(snapio &s, avoidset &a)
++    {
++        int n = s.count(a.obstacles.length(), 1<<16);
++        if(s.loading) { a.obstacles.setsize(0); loopi(n) a.obstacles.add(avoidset::obstacle(NULL)); }
++        loopv(a.obstacles)
++        {
++            avoidset::obstacle &o = a.obstacles[i];
++            int owner = s.loading ? -1 : dynentindex((physent *)o.owner);
++            s.i(owner);
++            if(s.loading) o.owner = dynentat(owner);
++            s.i(o.numwaypoints); s.f(o.above);
++        }
++        n = s.count(a.waypoints.length(), 1<<20);
++        if(s.loading) { a.waypoints.setsize(0); loopi(n) a.waypoints.add(0); }
++        loopv(a.waypoints) s.i(a.waypoints[i]);
++    }
++
++    void snapaiinfo(snapio &s, aiinfo &a)
++    {
++        int n = s.count(a.state.length(), 1<<12);
++        if(s.loading) { a.state.setsize(0); loopi(n) a.state.add(aistate(0, 0)); }
++        loopv(a.state)
++        {
++            aistate &b = a.state[i];
++            s.i(b.type); s.i(b.millis); s.i(b.targtype); s.i(b.target); s.i(b.idle); s.n(b.override);
++        }
++        n = s.count(a.route.length(), 1<<16);
++        if(s.loading) { a.route.setsize(0); loopi(n) a.route.add(0); }
++        loopv(a.route) s.i(a.route[i]);
++        s.v(a.target); s.v(a.spot);
++        s.i(a.enemy); s.i(a.enemyseen); s.i(a.enemymillis); s.i(a.weappref);
++        loopi(NUMPREVNODES) s.i(a.prevnodes[i]);
++        s.i(a.targnode); s.i(a.targlast); s.i(a.targtime); s.i(a.targseq);
++        s.i(a.lastrun); s.i(a.lasthunt); s.i(a.lastaction); s.i(a.lastcheck);
++        s.i(a.jumpseed); s.i(a.jumprand); s.i(a.blocktime); s.i(a.huntseq); s.i(a.blockseq); s.i(a.lastaimrnd);
++        s.f(a.targyaw); s.f(a.targpitch);
++        loopi(3) { s.f(a.views[i]); s.f(a.aimrnd[i]); }
++        s.n(a.dontmove); s.n(a.becareful); s.n(a.tryreset); s.n(a.trywipe);
++    }
++
++    void snapai(snapio &s)
++    {
++        s.i(updatemillis); s.i(iteration); s.i(itermillis); s.i(forcegun);
++        snapavoidset(s, obstacles);
++        snapwaypoints(s);
++    }
++
++    // Called at every map start, which may run before the map's clock is reset, so the timers
++    // go back to their values at program start rather than to the current lastmillis.
++    void resetupdates()
++    {
++        updatemillis = itermillis = iteration = 0;
++    }
+ 
+     VAR(aidebug, 0, 0, 6);
+     VAR(aiforcegun, -1, -1, NUMGUNS-1);
+ 
+-    ICOMMAND(addbot, "s", (char *s), addmsg(N_ADDBOT, "ri", *s ? clamp(parseint(s), 1, 101) : -1));
+-    ICOMMAND(delbot, "", (), addmsg(N_DELBOT, "r"));
+-    ICOMMAND(botlimit, "i", (int *n), addmsg(N_BOTLIMIT, "ri", *n));
+-    ICOMMAND(botbalance, "i", (int *n), addmsg(N_BOTBALANCE, "ri", *n));
++    // offline these change the game, so they run in the tick and are recorded
++    ICOMMAND(addbot, "s", (char *s),
++    {
++        defformatstring(cmd, "addbot %s", escapestring(s));
++        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_ADDBOT, "ri", *s ? clamp(parseint(s), 1, 101) : -1);
++    });
++    ICOMMAND(delbot, "", (), { if(!deferinput(INPUT_COMMAND, 0, "delbot")) addmsg(N_DELBOT, "r"); });
++    ICOMMAND(botlimit, "i", (int *n),
++    {
++        defformatstring(cmd, "botlimit %d", *n);
++        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_BOTLIMIT, "ri", *n);
++    });
++    ICOMMAND(botbalance, "i", (int *n),
++    {
++        defformatstring(cmd, "botbalance %d", *n);
++        if(!deferinput(INPUT_COMMAND, 0, cmd)) addmsg(N_BOTBALANCE, "ri", *n);
++    });
+ 
+     float viewdist(int x)
+     {
+@@ -66,8 +134,8 @@
+ 
+         if(dist <= mdist)
+         {
+-            float x = fmod(fabs((dist > 0 ? asin((q.z-o.z)/dist)/RAD : 0) - pitch), 360);
+-            float y = fmod(fabs(-atan2(q.x-o.x, q.y-o.y)/RAD-yaw), 360);
++            float x = fmod(fabs((dist > 0 ? detasin((q.z-o.z)/dist)/RAD : 0) - pitch), 360);
++            float y = fmod(fabs(-detatan2(q.x-o.x, q.y-o.y)/RAD-yaw), 360);
+             if(min(x, 360-x) <= fovx && min(y, 360-y) <= fovy) return raycubelos(o, q, v);
+         }
+         return false;
+@@ -188,16 +256,16 @@
+         if(intermission) { loopv(players) if(players[i]->ai) players[i]->stopmoving(); }
+         else // fixed rate logic done out-of-sequence at 1 frame per second for each ai
+         {
+-            if(totalmillis-updatemillis > 1000)
++            if(lastmillis-updatemillis > 1000)
+             {
+                 avoid();
+                 forcegun = multiplayer(false) ? -1 : aiforcegun;
+-                updatemillis = totalmillis;
++                updatemillis = lastmillis;
+             }
+-            if(!iteration && totalmillis-itermillis > 1000)
++            if(!iteration && lastmillis-itermillis > 1000)
+             {
+                 iteration = 1;
+-                itermillis = totalmillis;
++                itermillis = lastmillis;
+             }
+             int count = 0;
+             loopv(players) if(players[i]->ai) think(players[i], ++count == iteration ? true : false);
+@@ -947,8 +1015,8 @@
+     void getyawpitch(const vec &from, const vec &pos, float &yaw, float &pitch)
+     {
+         float dist = from.dist(pos);
+-        yaw = -atan2(pos.x-from.x, pos.y-from.y)/RAD;
+-        pitch = dist > 0 ? asin((pos.z-from.z)/dist)/RAD : 0;
++        yaw = -detatan2(pos.x-from.x, pos.y-from.y)/RAD;
++        pitch = dist > 0 ? detasin((pos.z-from.z)/dist)/RAD : 0;
+     }
+ 
+     void scaleyawpitch(float &yaw, float &pitch, float targyaw, float targpitch, float frame, float scale)
+@@ -1248,7 +1316,7 @@
+         else if(d->state == CS_DEAD)
+         {
+             if(d->ragdoll) moveragdoll(d);
+-            else if(lastmillis-d->lastpain<2000)
++            if((!d->ragdoll || simticking) && lastmillis-d->lastpain<2000)
+             {
+                 d->move = d->strafe = 0;
+                 moveplayer(d, 10, false);
+--- a/fpsgame/ai.h
++++ b/fpsgame/ai.h
+@@ -1,4 +1,5 @@
+ struct fpsent;
++struct snapio;
+ 
+ #define MAXBOTS 32
+ 
+@@ -130,6 +131,8 @@
+ 
+     extern bool route(fpsent *d, int node, int goal, vector<int> &route, const avoidset &obstacles, int retries = 0);
+     extern void navigate();
++    extern void snapavoidset(snapio &s, avoidset &a);
++    extern void snapwaypoints(snapio &s);
+     extern void clearwaypoints(bool full = false);
+     extern void seedwaypoints();
+     extern void loadwaypoints(bool force = false, const char *mname = NULL);
+@@ -291,6 +294,9 @@
+ 
+     extern void init(fpsent *d, int at, int on, int sk, int bn, int pm, const char *name, const char *team);
+     extern void update();
++    extern void snapaiinfo(snapio &s, aiinfo &a);
++    extern void snapai(snapio &s);
++    extern void resetupdates();
+     extern void avoid();
+     extern void think(fpsent *d, bool run);
+ 
+--- a/fpsgame/client.cpp
++++ b/fpsgame/client.cpp
+@@ -120,6 +120,10 @@
+     int lastping = 0;
+ 
+     bool connected = false, remote = false, demoplayback = false, gamepaused = false;
++
++    bool flagrunrules() { return connected && !remote && server::flagrunactive(); }
++    ICOMMAND(flagrunrules, "", (), intret(flagrunrules() ? 1 : 0));
++    bool racerules() { return connected && !remote && server::racerulesactive(); }
+     int sessionid = 0, mastermode = MM_OPEN, gamespeed = 100;
+     string servdesc = "", servauth = "", connectpass = "";
+ 
+@@ -154,7 +158,12 @@
+     }
+     ICOMMAND(team, "sN", (char *s, int *numargs),
+     {
+-        if(*numargs > 0) switchteam(s);
++        if(*numargs > 0)
++        {
++            // a team switch kills the player in a local game, so it is played at a tick boundary and recorded
++            defformatstring(cmd, "team %s", s);
++            if(!deferinput(INPUT_COMMAND, 0, cmd)) switchteam(s);
++        }
+         else if(!*numargs) printteam();
+         else result(player1->team);
+     });
+@@ -271,6 +280,7 @@
+ 
+     void edittoggled(bool on)
+     {
++        runtimeredittoggled(on);
+         addmsg(N_EDITMODE, "ri", on ? 1 : 0);
+         if(player1->state==CS_DEAD) deathstate(player1, true);
+         else if(player1->state==CS_EDITING && player1->editstate==CS_DEAD) showscores(false);
+@@ -528,6 +538,8 @@
+ 
+     void changemapserv(const char *name, int mode)        // forced map change from the server
+     {
++        runtimermapstart(mode, !multiplayer(false));
++        if(!multiplayer(false)) { inputmapstart(name, mode); resetsimclock(1000); }
+         if(multiplayer(false) && !m_mp(mode))
+         {
+             conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);
+@@ -536,8 +548,13 @@
+ 
+         gamemode = mode;
+         nextmode = mode;
++        // the player spawns during the load, in the new mode's spawn group
++        setclientmode();
+         if(editmode) toggleedit();
+         if(m_demo) { entities::resetspawns(); return; }
++        // the player spawns during the load, and must not collide with the old map's monsters
++        removemonsters();
++        removemovables();
+         if((m_edit && !name[0]) || !load_world(name))
+         {
+             emptymap(0, true, name);
+@@ -641,6 +658,7 @@
+ 
+     void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
+     {
++        noteworldedit();
+         if(m_edit) switch(op)
+         {
+             case EDIT_FLIP:
+@@ -809,7 +827,7 @@
+ 
+     bool ispaused() { return gamepaused; }
+ 
+-    bool allowmouselook() { return !gamepaused || !remote || m_edit; }
++    bool allowmouselook() { return !inputlocked() && (player1->state==CS_SPECTATOR || !gamepaused || !remote || m_edit); }
+ 
+     void changegamespeed(int val)
+     {
+@@ -824,12 +842,14 @@
+         else printvar(id, gamespeed);
+     });
+ 
+-    int scaletime(int t) { return t*gamespeed; }
++    int scaletime(int t) { return t*gamespeed*spectatespeed()/100; }
+ 
+     // collect c2s messages conveniently
+     vector<uchar> messages;
+     int messagecn = -1, messagereliable = false;
+ 
++    #include "clientstate.h"
++
+     bool addmsg(int type, const char *fmt, ...)
+     {
+         if(!connected) return false;
+@@ -912,6 +932,7 @@
+ 
+     void gamedisconnect(bool cleanup)
+     {
++        if(!remote) inputdisconnect();
+         if(remote) stopfollowing();
+         ignores.setsize(0);
+         connected = remote = false;
+@@ -937,12 +958,14 @@
+             nextmode = gamemode = INT_MAX;
+             clientmap[0] = '\0';
+         }
++        // the world stays loaded behind the menu; without this its monsters go on hunting
++        dropmonsters();
+     }
+ 
+     VARP(teamcolorchat, 0, 1, 1);
+     const char *chatcolorname(fpsent *d) { return teamcolorchat && (d!=player1 || d->state!=CS_SPECTATOR) ? teamcolorname(d, NULL) : colorname(d); }
+ 
+-    void toserver(char *text) { conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
++    void toserver(char *text) { if(!remote && hubchat(text)) return; conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
+     COMMANDN(say, toserver, "C");
+ 
+     void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
+@@ -1061,7 +1084,8 @@
+             messagereliable = false;
+             messagecn = -1;
+         }
+-        if(totalmillis-lastping>250)
++        // offline the ping is meaningless and its wall-clock timing would vary between replays
++        if(remote && totalmillis-lastping>250)
+         {
+             putint(p, N_PING);
+             putint(p, totalmillis);
+@@ -1497,7 +1521,9 @@
+                 {
+                     showscores(false);
+                     lasthit = 0;
++                    entities::clearheld();
+                 }
++                runtimerspawned(s);
+                 if(cmode) cmode->respawned(s);
+ 				ai::spawned(s);
+                 addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
+@@ -1572,6 +1598,8 @@
+                     particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
+                 }
+                 if(!victim) break;
++                // a new flagrun or race attempt must not start with rockets or grenades left over
++                if(victim==player1 && actor==player1 && (flagrunrules() || racerules())) removeshots(player1);
+                 killed(victim, actor);
+                 break;
+             }
+--- a/fpsgame/ctf.h
++++ b/fpsgame/ctf.h
+@@ -328,6 +328,11 @@
+             {
+                 returnflag(i);
+                 sendf(-1, 1, "ri4", N_RETURNFLAG, ci->clientnum, i, ++f.version);
++            }
++            else if(flagrunactive())
++            {
++                returnflag(i);
++                sendf(-1, 1, "ri6", N_RESETFLAG, i, ++f.version, f.spawnindex, f.team, addscore(f.team, 0));
+             }
+             else
+             {
+@@ -354,6 +359,7 @@
+ 
+     bool canspawn(clientinfo *ci, bool connecting) 
+     { 
++        if(flagrunactive()) return true;
+         return m_efficiency || !m_protect ? connecting || !ci->state.lastdeath || gamemillis+curtime-ci->state.lastdeath >= RESPAWNSECS*1000 : true;
+     }
+ 
+@@ -386,7 +392,7 @@
+         int team = ctfteamflag(ci->team), score = addscore(team, 1);
+         if(m_hold) spawnflag(goal);
+         sendf(-1, 1, "rii9", N_SCOREFLAG, ci->clientnum, relay, relay >= 0 ? ++flags[relay].version : -1, goal, ++flags[goal].version, flags[goal].spawnindex, team, score, ci->state.flags);
+-        if(score >= FLAGLIMIT) startintermission();
++        if(score >= FLAGLIMIT && !flagrunactive()) startintermission();
+     }
+ 
+     void takeflag(clientinfo *ci, int i, int version)
+@@ -395,6 +401,18 @@
+         flag &f = flags[i];
+         if((m_hold ? f.spawnindex < 0 : !ctfflagteam(f.team)) || f.owner>=0 || f.version != version || (f.droptime && f.dropper == ci->clientnum && f.dropcount >= 3)) return;
+         int team = ctfteamflag(ci->team);
++        if(flagrunactive())
++        {
++            int held = -1;
++            loopvj(flags) if(flags[j].owner==ci->clientnum) { held = j; break; }
++            if(held < 0)
++            {
++                ownflag(i, ci->clientnum, lastmillis);
++                sendf(-1, 1, "ri4", N_TAKEFLAG, ci->clientnum, i, ++f.version);
++            }
++            else if(flags[held].team != f.team) scoreflag(ci, i, held);
++            return;
++        }
+         if(m_hold || m_protect == (f.team==team))
+         {
+             loopvj(flags) if(flags[j].owner==ci->clientnum) return;
+@@ -924,6 +942,7 @@
+ 
+     void scoreflag(fpsent *d, int relay, int relayversion, int goal, int goalversion, int goalspawn, int team, int score, int dflags)
+     {
++        runtimerflagscored(d);
+         setscore(team, score);
+         if(flags.inrange(goal))
+         {
+@@ -951,7 +970,7 @@
+         conoutf(CON_GAMEINFO, "%s scored for %s", teamcolorname(d), teamcolor("your team", ctfflagteam(team), "the enemy team"));
+         playsound(team==ctfteamflag(player1->team) ? S_FLAGSCORE : S_FLAGFAIL);
+ 
+-        if(score >= FLAGLIMIT) conoutf(CON_GAMEINFO, "%s captured %d flags", teamcolor("your team", ctfflagteam(team), "the enemy team"), score);
++        if(score >= FLAGLIMIT && !flagrunrules()) conoutf(CON_GAMEINFO, "%s captured %d flags", teamcolor("your team", ctfflagteam(team), "the enemy team"), score);
+     }
+ 
+     void takeflag(fpsent *d, int i, int version)
+@@ -964,6 +983,7 @@
+         if(m_hold) conoutf(CON_GAMEINFO, "%s picked up the flag for %s", teamcolorname(d), teamcolor("your team", d->team, "the enemy team"));
+         else if(m_protect || f.droptime) conoutf(CON_GAMEINFO, "%s picked up %s", teamcolorname(d), teamcolorflag(f));
+         else conoutf(CON_GAMEINFO, "%s stole %s", teamcolorname(d), teamcolorflag(f));
++        if(!m_hold && !m_protect) runtimerflagtaken(d, i, f.droptime ? f.droploc : f.spawnloc, FLAGRADIUS);
+         ownflag(i, d, lastmillis, m_hold ? ctfteamflag(d->team) : -1);
+         teamsound(d, S_FLAGPICKUP);
+     }
+@@ -1029,6 +1049,7 @@
+ 
+     int respawnwait(fpsent *d, int delay = 0)
+     {
++        if(flagrunrules()) return 0;
+         return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
+     }
+ 
+@@ -1270,7 +1291,21 @@
+ };
+ 
+ extern ctfclientmode ctfmode;
+-ICOMMAND(dropflag, "", (), { ctfmode.trydropflag(); });
++bool flagheldby(int flag, fpsent *d) { return m_ctf && ctfmode.flags.inrange(flag) && ctfmode.flags[flag].owner == d; }
++// for the determinism harness: puts the player at its own (1) or the enemy (0) flag's spawn
++bool flagspawnloc(bool own, vec &loc)
++{
++    if(!m_ctf) return false;
++    loopv(ctfmode.flags)
++    {
++        const ctfclientmode::flag &f = ctfmode.flags[i];
++        if((f.team == ctfteamflag(player1->team)) != own) continue;
++        loc = f.spawnloc;
++        return true;
++    }
++    return false;
++}
++ICOMMAND(dropflag, "", (), { if(!deferinput(INPUT_COMMAND, 0, "dropflag")) ctfmode.trydropflag(); });
+ 
+ #endif
+ 
+--- a/fpsgame/entities.cpp
++++ b/fpsgame/entities.cpp
+@@ -171,9 +171,12 @@
+         extentity *e = ents[n];
+         int type = e->type;
+         if(type<I_SHELLS || type>I_QUAD) return;
++        splitentityused(n, d, false);
+         e->clearspawned();
+         e->clearnopickup();
+         if(!d) return;
++        // a race item comes back at once, but not for the player still standing on it
++        if(d == player1 && server::racerulesactive()) e->flags |= EF_HELD;
+         itemstat &is = itemstats[type-I_SHELLS];
+         fpsent *h = followingplayer(player1);
+         if(d!=h || isthirdperson())
+@@ -260,6 +263,7 @@
+             if(beenhere<0) beenhere = e;
+             if(ents[e]->attr2==tag)
+             {
++                splitentityused(n, d, true);
+                 teleporteffects(d, n, e, true);
+                 d->o = ents[e]->o;
+                 d->yaw = ents[e]->attr1;
+@@ -333,14 +337,24 @@
+ 
+     void checkitems(fpsent *d)
+     {
+-        if(d->state!=CS_ALIVE) return;
+         vec o = d->feetpos();
++        if(d->state==CS_SPECTATOR) loopv(ents)
++        {
++            extentity &e = *ents[i];
++            if(e.type==TELEPORT && e.o.dist(o)<16) trypickup(i, d);
++        }
++        if(d->state!=CS_ALIVE) return;
+         loopv(ents)
+         {
+             extentity &e = *ents[i];
+             if(e.type==NOTUSED) continue;
+-            if((!e.spawned() || e.nopickup()) && e.type!=TELEPORT && e.type!=JUMPPAD && e.type!=RESPAWNPOINT) continue;
+             float dist = e.o.dist(o);
++            if(e.flags&EF_HELD && d==player1)
++            {
++                if(dist < 12) continue;
++                e.flags &= ~EF_HELD;
++            }
++            if((!e.spawned() || e.nopickup()) && e.type!=TELEPORT && e.type!=JUMPPAD && e.type!=RESPAWNPOINT) continue;
+             if(dist<(e.type==TELEPORT ? 16 : 12)) trypickup(i, d);
+         }
+     }
+@@ -367,8 +381,11 @@
+         putint(p, -1);
+     }
+ 
+-    void resetspawns() { loopv(ents) { extentity *e = ents[i]; e->clearspawned(); e->clearnopickup(); } }
++    void resetspawns() { loopv(ents) { extentity *e = ents[i]; e->clearspawned(); e->clearnopickup(); e->flags &= ~EF_HELD; } }
+ 
++    // a respawn puts the items back as a map start has them
++    void clearheld() { loopv(ents) ents[i]->flags &= ~EF_HELD; }
++
+     void spawnitems(bool force)
+     {
+         if(m_noitems) return;
+--- a/fpsgame/fps.cpp
++++ b/fpsgame/fps.cpp
+@@ -1,5 +1,7 @@
+ #include "game.h"
+ 
++extern int lastphysframe;
++
+ namespace game
+ {
+     bool intermission = false;
+@@ -17,6 +19,7 @@
+ 
+     void taunt()
+     {
++        if(deferinput(INPUT_COMMAND, 0, "taunt")) return;
+         if(player1->state!=CS_ALIVE || player1->physstate<PHYS_SLOPE) return;
+         if(lastmillis-player1->lasttaunt<1000) return;
+         player1->lasttaunt = lastmillis;
+@@ -224,9 +227,32 @@
+ 
+     VARFP(slowmosp, 0, 0, 1, { if(m_sp && !slowmosp) server::forcegamespeed(100); });
+ 
++    static int lastslowmohealth = 0;
++
++    void hashgameclock(dethasher &h)
++    {
++        h.i(lastmillis); h.i(maptime); h.i(maplimit); h.i(intermission); h.i(respawnent);
++        h.i(lastslowmohealth);
++        loopi(NUMGUNS) h.i(savedammo[i]);
++        if(dethashdetail) conoutf("dethashdetail clock: lastmillis %d maptime %d maplimit %d intermission %d respawnent %d lastslowmohealth %d savedammo %d %d %d %d %d %d %d", lastmillis, maptime, maplimit, intermission, respawnent, lastslowmohealth, savedammo[0], savedammo[1], savedammo[2], savedammo[3], savedammo[4], savedammo[5], savedammo[6]);
++    }
++
++    void snapgameclock(snapio &s)
++    {
++        // stored as the clock of the last finished tick: inside a tick the engine has already
++        // moved lastmillis on to the tick being run, between ticks it has not
++        int clock = lastmillis - (insimtick ? SIMTICK : 0);
++        s.i(clock);
++        if(s.loading) lastmillis = clock + (insimtick ? SIMTICK : 0);
++        s.i(lastphysframe);
++        s.i(maptime); s.i(maplimit); s.n(intermission); s.i(respawnent);
++        s.i(lastslowmohealth); s.i(lastspawnattempt);
++        loopi(NUMGUNS) s.i(savedammo[i]);
++        s.i(gamespeed);
++    }
++
+     void checkslowmo()
+     {
+-        static int lastslowmohealth = 0;
+         server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
+         if(player1->health<player1->maxhealth && lastmillis-max(maptime, lastslowmohealth)>player1->health*player1->health/2)
+         {
+@@ -234,11 +260,18 @@
+             player1->health++;
+         }
+     }
++
++    void respawn();
+ 
+     void updateworld()        // main game update loop
+     {
+         if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
+-        if(!curtime) { gets2c(); if(player1->clientnum>=0) c2sinfo(); return; }
++        if(!curtime || ispaused()) {
++            gets2c();
++            if(curtime && player1->state==CS_SPECTATOR) { fakephysicsframe(); moveplayer(player1, 10, true); }
++            if(player1->clientnum>=0) c2sinfo();
++            return;
++        }
+ 
+         physicsframe();
+         ai::navigate();
+@@ -257,8 +290,9 @@
+         {
+             if(player1->state == CS_DEAD)
+             {
++                if(flagrunrules()) respawn();
+                 if(player1->ragdoll) moveragdoll(player1);
+-                else if(lastmillis-player1->lastpain<2000)
++                if((!player1->ragdoll || simticking) && lastmillis-player1->lastpain<2000)
+                 {
+                     player1->move = player1->strafe = 0;
+                     moveplayer(player1, 10, true);
+@@ -278,7 +312,9 @@
+                 else if(cmode) cmode->checkitems(player1);
+             }
+         }
+-        if(player1->clientnum>=0) c2sinfo();   // do this last, to reduce the effective frame lag
++        if(player1->clientnum>=0) c2sinfo(simticking);   // do this last, to reduce the effective frame lag
++        runtimertick();
++        dethashframe();
+     }
+ 
+     float proximityscore(float x, float lower, float upper)
+@@ -291,6 +327,8 @@
+ 
+     static inline float harmonicmean(float a, float b) { return a + b > 0 ? 2 * a * b / (a + b) : 0.0f; }
+ 
++    static bool mapstartspawn = false;
++
+     // avoid spawning near other players
+     float ratespawn(dynent *d, const extentity &e)
+     {
+@@ -303,7 +341,7 @@
+             const fpsent *o = players[i];
+             if(o == p)
+             {
+-                if(m_noitems || (o->state != CS_ALIVE && lastmillis - o->lastpain > 3000)) continue;
++                if(mapstartspawn || m_noitems || (o->state != CS_ALIVE && lastmillis - o->lastpain > 3000)) continue;
+             }
+             else if(o->state != CS_ALIVE || isteam(o->team, p->team)) continue;
+ 
+@@ -311,7 +349,7 @@
+             float dist = dir.squaredlen();
+             if(dist >= minplayerdist*minplayerdist) continue;
+             dist = sqrtf(dist);
+-            dir.mul(1/dist);
++            if(dist > 0) dir.mul(1/dist);
+ 
+             // scale actual distance if not in line of sight
+             if(raycube(loc, dir, dist) < dist) dist *= 1.5f;
+@@ -325,6 +363,7 @@
+     {
+         int ent = m_classicsp && d == player1 && respawnent >= 0 ? respawnent : -1;
+         int tag = cmode ? cmode->getspawngroup(d) : 0;
++        if(pickcustomspawn(d, ent)) return;
+         findplayerspawn(d, ent, tag);
+     }
+ 
+@@ -364,7 +403,16 @@
+             }
+         }
+     }
+-    COMMAND(respawn, "");
++    ICOMMAND(respawn, "", (), { if(!deferinput(INPUT_COMMAND, 0, "respawn")) respawn(); });
++
++    // suicide and respawn in the same tick (respawn waits of the mode still apply)
++    ICOMMAND(speedrunrespawn, "", (),
++    {
++        if(deferinput(INPUT_COMMAND, 0, "speedrunrespawn")) return;
++        if(!connected || intermission) return;
++        if(player1->state == CS_ALIVE) suicide(player1);
++        respawn();
++    });
+ 
+     // inputs
+ 
+@@ -372,6 +420,7 @@
+ 
+     void doattack(bool on)
+     {
++        if(deferinput(INPUT_ATTACK, on ? 1 : 0)) return;
+         if(!connected || intermission) return;
+         if((player1->attacking = on) && attackspawn) respawn();
+     }
+@@ -380,11 +429,17 @@
+ 
+     bool canjump()
+     {
++        if(deferinput(INPUT_JUMP, 1)) return false;
+         if(!connected || intermission) return false;
+         if(jumpspawn) respawn();
+         return player1->state!=CS_DEAD;
+     }
+ 
++    bool canhover()
++    {
++        return player1->state==CS_SPECTATOR || player1->state==CS_EDITING;
++    }
++
+     bool allowmove(physent *d)
+     {
+         if(d->type!=ENT_PLAYER) return true;
+@@ -419,7 +474,7 @@
+ 
+         if(d->health<=0) { if(local) killed(d, actor); }
+         else if(d==h) playsound(S_PAIN6);
+-        else playsound(S_PAIN1+rnd(5), &d->o);
++        else playsound(S_PAIN1+crnd(5), &d->o);
+     }
+ 
+     VARP(deathscore, 0, 1, 1);
+@@ -441,14 +496,14 @@
+             d->attacking = false;
+             //d->pitch = 0;
+             d->roll = 0;
+-            playsound(S_DIE1+rnd(2));
++            playsound(S_DIE1+crnd(2));
+         }
+         else
+         {
+-            d->move = d->strafe = 0;
++            d->move = d->strafe = d->vertical = 0;
+             d->resetinterp();
+             d->smoothmillis = 0;
+-            playsound(S_DIE1+rnd(2), &d->o);
++            playsound(S_DIE1+crnd(2), &d->o);
+         }
+     }
+ 
+@@ -599,14 +654,34 @@
+ 
+     VARP(showmodeinfo, 0, 1, 1);
+ 
++    // Non-zero forces the gameplay RNG seed, e.g. for reproducible test runs.
++    VAR(fixedgameseed, 0, 0, INT_MAX);
++    uint gameseed = 0;
++
++    void seedgame()
++    {
++        gameseed = fixedgameseed ? uint(fixedgameseed) : (uint(time(NULL)) * 2654435761U) ^ cosmeticrandom();
++        seedMT(gameseed);
++        logoutf("game seed: %u", gameseed);
++    }
++
+     void startgame()
+     {
++        lasthit = lastspawnattempt = lastslowmohealth = 0;
++        memset(savedammo, 0, sizeof(savedammo));
++
++        // monsters and movables that overlap at their map spots get nudged randomly; offline,
++        // use a per-map sequence so every attempt on a map starts with them in the same places
++        bool local = !multiplayer(false);
++        if(local) seedMT(getmapcrc() ^ 0x5eedU);
+         clearmovables();
+         clearmonsters();
++        if(local) seedMT(gameseed);
+ 
+         clearprojectiles();
+         clearbouncers();
+         clearragdolls();
++        ai::resetupdates();
+ 
+         clearteaminfo();
+ 
+@@ -621,6 +696,7 @@
+             d->maxhealth = 100;
+             d->lifesequence = -1;
+             d->respawned = d->suicided = -2;
++            d->lastpain = 0;
+         }
+ 
+         setclientmode();
+@@ -669,8 +745,12 @@
+         ai::clearwaypoints(true);
+ 
+         respawnent = -1; // so we don't respawn at an old spot
++        savestatemapstart();
++        spawnmapstart(name ? name : "");
++        mapstartspawn = true; // where the player was before the map load is meaningless here
+         if(!m_mp(gamemode)) spawnplayer(player1);
+         else findplayerspawn(player1, -1);
++        mapstartspawn = false;
+         entities::resetspawns();
+         copystring(clientmap, name ? name : "");
+ 
+@@ -732,6 +812,15 @@
+         return NULL;
+     }
+ 
++    // position in iterdynents order, -1 for none
++    int dynentindex(const physent *d)
++    {
++        if(d) loopi(numdynents()) if(iterdynents(i) == d) return i;
++        return -1;
++    }
++
++    dynent *dynentat(int i) { return i >= 0 ? iterdynents(i) : NULL; }
++
+     bool duplicatename(fpsent *d, const char *name = NULL, const char *alt = NULL)
+     {
+         if(!name) name = d->name;
+@@ -806,7 +895,7 @@
+         else if(d->type==ENT_AI) suicidemonster((monster *)d);
+         else if(d->type==ENT_INANIMATE) suicidemovable((movable *)d);
+     }
+-    ICOMMAND(suicide, "", (), suicide(player1));
++    ICOMMAND(suicide, "", (), { if(!deferinput(INPUT_COMMAND, 0, "suicide")) suicide(player1); });
+ 
+     bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
+ 
+@@ -1093,9 +1182,13 @@
+ 
+         if(!m_edit && !m_sp)
+         {
+-            if(gameclock) drawgameclock(w, h);
++            if(gameclock && !racerules()) drawgameclock(w, h);
+             if(hudscore) drawhudscore(w, h);
+         }
++        drawruntimer(w, h);
++        drawsplits(w, h);
++        drawspeedometer(w, h);
++        drawinputtimers(w, h);
+     }
+ 
+     int clipconsole(int w, int h)
+@@ -1304,6 +1397,7 @@
+     const char *savedconfig() { return "config.cfg"; }
+     const char *restoreconfig() { return "restore.cfg"; }
+     const char *defaultconfig() { return "data/defaults.cfg"; }
++    const char *modconfig() { return "speedbraten.cfg"; }
+     const char *autoexec() { return "autoexec.cfg"; }
+     const char *savedservers() { return "servers.cfg"; }
+ 
+--- a/fpsgame/game.h
++++ b/fpsgame/game.h
+@@ -136,7 +136,10 @@
+ #define m_checkall(mode, flag) (m_valid(mode) && (gamemodes[(mode) - STARTGAMEMODE].flags&(flag)) == (flag))
+ #define m_checkonly(mode, flag, exclude) (m_valid(mode) && (gamemodes[(mode) - STARTGAMEMODE].flags&((flag)|(exclude))) == (flag))
+ 
+-#define m_noitems      (m_check(gamemode, M_NOITEMS))
++namespace server { extern bool flagrunactive(); }
++// flagrun in plain ctf: no items, no ammo and no attacks, movement only
++#define m_weaponless   (m_checkonly(gamemode, M_CTF, M_NOITEMS | M_INSTA | M_EFFICIENCY | M_PROTECT | M_HOLD) && server::flagrunactive())
++#define m_noitems      (m_check(gamemode, M_NOITEMS) || m_weaponless)
+ #define m_noammo       (m_check(gamemode, M_NOAMMO|M_NOITEMS))
+ #define m_insta        (m_check(gamemode, M_INSTA))
+ #define m_tactics      (m_check(gamemode, M_TACTICS))
+@@ -496,8 +499,8 @@
+         {
+             armourtype = A_BLUE;
+             armour = 50;
+-            ammo[GUN_PISTOL] = 40;
+-            ammo[GUN_GL] = 1;
++            ammo[GUN_PISTOL] = m_weaponless ? 0 : 40;
++            ammo[GUN_GL] = m_weaponless ? 0 : 1;
+         }
+         else if(m_sp)
+         {
+@@ -548,7 +551,8 @@
+     int lasttaunt;
+     int lastpickup, lastpickupmillis, lastbase, lastrepammo, flagpickup, tokens;
+     vec lastcollect;
+-    int frags, flags, deaths, totaldamage, totalshots;
++    int frags, flags, deaths, totaldamage, totalshots, suicides;
++    int lasthitpushgun;
+     editinfo *edit;
+     float deltayaw, deltapitch, deltaroll, newyaw, newpitch, newroll;
+     int smoothmillis;
+@@ -560,7 +564,7 @@
+ 
+     vec muzzle;
+ 
+-    fpsent() : weight(100), clientnum(-1), privilege(PRIV_NONE), lastupdate(0), plag(0), ping(0), lifesequence(0), respawned(-1), suicided(-1), lastpain(0), attacksound(-1), attackchan(-1), idlesound(-1), idlechan(-1), frags(0), flags(0), deaths(0), totaldamage(0), totalshots(0), edit(NULL), smoothmillis(-1), playermodel(-1), ai(NULL), ownernum(-1), muzzle(-1, -1, -1)
++    fpsent() : weight(100), clientnum(-1), privilege(PRIV_NONE), lastupdate(0), plag(0), ping(0), lifesequence(0), respawned(-1), suicided(-1), lastpain(0), attacksound(-1), attackchan(-1), idlesound(-1), idlechan(-1), frags(0), flags(0), deaths(0), totaldamage(0), totalshots(0), suicides(0), edit(NULL), smoothmillis(-1), playermodel(-1), ai(NULL), ownernum(-1), muzzle(-1, -1, -1)
+     {
+         name[0] = team[0] = info[0] = 0;
+         respawn();
+@@ -578,6 +582,7 @@
+         vec push(dir);
+         push.mul((actor==this && guns[gun].exprad ? EXP_SELFPUSH : 1.0f)*guns[gun].hitpush*damage/weight);
+         vel.add(push);
++        lasthitpushgun = gun;
+     }
+ 
+     void stopattacksound()
+@@ -661,6 +666,7 @@
+     extern void checkitems(fpsent *d);
+     extern void checkquad(int time, fpsent *d);
+     extern void resetspawns();
++    extern void clearheld();
+     extern void spawnitems(bool force = false);
+     extern void putitems(packetbuf &p);
+     extern void setspawn(int i, bool on);
+@@ -672,6 +678,8 @@
+     extern void repammo(fpsent *d, int type, bool local = true);
+ }
+ 
++#include "dethasher.h"
++
+ namespace game
+ {
+     struct clientmode
+@@ -747,6 +755,7 @@
+ 
+     // client
+     extern bool connected, remote, demoplayback;
++    extern int gamespeed;
+     extern string servdesc;
+     extern vector<uchar> messages;
+ 
+@@ -761,6 +770,10 @@
+     extern void sendmapinfo();
+     extern void stopdemo();
+     extern void changemap(const char *name, int mode);
++    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
++    extern bool hubchat(const char *text);
++    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
++    extern int spectatespeed();
+     extern void forceintermission();
+     extern void c2sinfo(bool force = false);
+     extern void sendposition(fpsent *d, bool reliable = false);
+@@ -770,9 +783,12 @@
+     extern vector<monster *> monsters;
+ 
+     extern void clearmonsters();
++    extern void dropmonsters();
++    extern void removemonsters();
+     extern void preloadmonsters();
+     extern void stackmonster(monster *d, physent *o);
+     extern void updatemonsters(int curtime);
++    extern void hashmonsters(dethasher &h);
+     extern void rendermonsters();
+     extern void suicidemonster(monster *m);
+     extern void hitmonster(int damage, monster *m, fpsent *at, const vec &vel, int gun);
+@@ -785,8 +801,10 @@
+     extern vector<movable *> movables;
+ 
+     extern void clearmovables();
++    extern void removemovables();
+     extern void stackmovable(movable *d, physent *o);
+     extern void updatemovables(int curtime);
++    extern void hashmovables(dethasher &h);
+     extern void rendermovables();
+     extern void suicidemovable(movable *m);
+     extern void hitmovable(int damage, movable *m, fpsent *at, const vec &vel, int gun);
+@@ -803,16 +821,19 @@
+     extern bool intersect(dynent *d, const vec &from, const vec &to, float &dist = intersectdist);
+     extern dynent *intersectclosest(const vec &from, const vec &to, fpsent *at, float &dist = intersectdist);
+     extern void clearbouncers();
++    extern void listbouncers(vector<physent *> &ents);
+     extern void updatebouncers(int curtime);
+     extern void removebouncers(fpsent *owner);
+     extern void renderbouncers();
+     extern void clearprojectiles();
+     extern void updateprojectiles(int curtime);
+     extern void removeprojectiles(fpsent *owner);
++    extern void removeshots(fpsent *d);
+     extern void renderprojectiles();
+     extern void preloadbouncers();
+     extern void removeweapons(fpsent *owner);
+     extern void updateweapons(int curtime);
++    #include "sbgame.h"
+     extern void gunselect(int gun, fpsent *d);
+     extern void weaponswitch(fpsent *d);
+     extern void avoidweapons(ai::avoidset &obstacles, float radius);
+@@ -841,6 +862,7 @@
+     extern void moveragdolls();
+     extern void changedplayermodel();
+     extern const playermodelinfo &getplayermodelinfo(fpsent *d);
++    extern void renderplayer(fpsent *d, const playermodelinfo &mdl, int team, float fade, bool mainpass);
+     extern int chooserandomplayermodel(int seed);
+     extern void swayhudgun(int curtime);
+     extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);
+@@ -856,6 +878,13 @@
+     extern const char *getdemofile(const char *file, bool init);
+     extern void forcemap(const char *map, int mode);
+     extern void forcepaused(bool paused);
++    extern void forcenextteam(const char *team);
++    extern bool flagrunactive();
++    extern void forcenextflagrun(int on);
++    extern bool racerulesactive();
++    extern void hashstate(dethasher &h);
++    extern void snapstate(snapio &s);
++    extern void forcenextracerules(int on);
+     extern void forcegamespeed(int speed);
+     extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
+     extern int msgsizelookup(int msg);
+@@ -863,5 +892,7 @@
+     extern bool delayspawn(int type);
+ }
+ 
+-#endif
++#define SPEEDBRATEN_CLIENT "speedbraten-vanilla"
++#define SPEEDBRATEN_VERSIONVAR "speedbratenversion"
+ 
++#endif
+--- a/fpsgame/render.cpp
++++ b/fpsgame/render.cpp
+@@ -35,6 +35,35 @@
+         ragdolls.deletecontents();
+     }
+ 
++    static vector<physent *> displayents;
++    static vector<vec> displaysaved;
++
++    // Under the fixed tick, positions only change every SIMTICK ms. While drawing, move
++    // entities between their last two tick positions (alpha = fraction of the next tick
++    // already elapsed) and put ragdolled ones at the ragdoll's eye; enddisplay() puts the
++    // simulation positions back.
++    void begindisplay(float alpha)
++    {
++        displayents.setsize(0);
++        loopi(numdynents()) if(dynent *d = iterdynents(i)) displayents.add(d);
++        loopv(ragdolls) displayents.add(ragdolls[i]);
++        listbouncers(displayents);
++        displaysaved.setsize(0);
++        loopv(displayents)
++        {
++            physent *d = displayents[i];
++            displaysaved.add(d->o);
++            if(d->type != ENT_BOUNCE && getragdolleye((dynent *)d, d->o)) continue;
++            if(d->interpmillis == lastmillis) d->o.add(vec(d->deltapos).mul(1 - alpha));
++        }
++    }
++
++    void enddisplay()
++    {
++        loopv(displayents) displayents[i]->o = displaysaved[i];
++        displayents.setsize(0);
++    }
++
+     void moveragdolls()
+     {
+         loopv(ragdolls)
+@@ -341,6 +370,8 @@
+             renderplayer(d, getplayermodelinfo(d), team, fade, mainpass);
+         } 
+         if(isthirdperson() && !followingplayer() && (player1->state!=CS_DEAD || hidedead != 1)) renderplayer(player1, getplayermodelinfo(player1), teamskins || m_teammode ? 1 : 0, 1, mainpass);
++        renderghost(mainpass);
++        if(mainpass) rendersplitzones();
+         rendermonsters();
+         rendermovables();
+         entities::renderentities();
+--- a/fpsgame/scoreboard.cpp
++++ b/fpsgame/scoreboard.cpp
+@@ -434,6 +434,8 @@
+             }
+         }
+     }
++
++    extern bool hubscoreboard(g3d_gui &g);
+ 
+     struct scoreboardgui : g3d_callback
+     {
+@@ -456,7 +458,8 @@
+         void gui(g3d_gui &g, bool firstpass)
+         {
+             g.start(menustart, 0.03f, NULL, false);
+-            renderscoreboard(g, firstpass);
++            if(hubscoreboard(g)) {}
++            else renderscoreboard(g, firstpass);
+             g.end();
+         }
+ 
+--- a/fpsgame/server.cpp
++++ b/fpsgame/server.cpp
+@@ -38,12 +38,19 @@
+ 
+         virtual bool flush(clientinfo *ci, int fmillis);
+         virtual void process(clientinfo *ci) {}
++        virtual void hash(dethasher &h) const { h.i(0); }
++        // savestates: the type id selects the class when the event is restored
++        virtual int snaptype() const { return 0; }
++        virtual void snap(snapio &s) {}
+ 
+         virtual bool keepable() const { return false; }
+     };
+ 
+     struct timedevent : gameevent
+     {
++        void hash(dethasher &h) const { h.i(1); h.i(millis); }
++        int snaptype() const { return 1; }
++        void snap(snapio &s) { s.i(millis); }
+         int millis;
+ 
+         bool flush(clientinfo *ci, int fmillis);
+@@ -56,10 +63,22 @@
+         int rays;
+         float dist;
+         vec dir;
++
++        void snap(snapio &s) { s.i(target); s.i(lifesequence); s.i(rays); s.f(dist); s.v(dir); }
+     };
+ 
++    static inline void snaphits(snapio &s, vector<hitinfo> &hits)
++    {
++        int n = s.count(hits.length(), 1<<16);
++        if(s.loading) { hits.setsize(0); loopi(n) hits.add(); }
++        loopv(hits) hits[i].snap(s);
++    }
++
+     struct shotevent : timedevent
+     {
++        void hash(dethasher &h) const { h.i(2); h.i(millis); h.i(id); h.i(gun); h.v(from); h.v(to); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
++        int snaptype() const { return 2; }
++        void snap(snapio &s) { timedevent::snap(s); s.i(id); s.i(gun); s.v(from); s.v(to); snaphits(s, hits); }
+         int id, gun;
+         vec from, to;
+         vector<hitinfo> hits;
+@@ -69,6 +88,9 @@
+ 
+     struct explodeevent : timedevent
+     {
++        void hash(dethasher &h) const { h.i(3); h.i(millis); h.i(id); h.i(gun); h.i(hits.length()); loopv(hits) { h.i(hits[i].target); h.i(hits[i].lifesequence); h.i(hits[i].rays); h.f(hits[i].dist); h.v(hits[i].dir); } }
++        int snaptype() const { return 3; }
++        void snap(snapio &s) { timedevent::snap(s); s.i(id); s.i(gun); snaphits(s, hits); }
+         int id, gun;
+         vector<hitinfo> hits;
+ 
+@@ -79,11 +101,16 @@
+ 
+     struct suicideevent : gameevent
+     {
++        void hash(dethasher &h) const { h.i(4); }
++        int snaptype() const { return 4; }
+         void process(clientinfo *ci);
+     };
+ 
+     struct pickupevent : gameevent
+     {
++        void hash(dethasher &h) const { h.i(5); h.i(ent); }
++        int snaptype() const { return 5; }
++        void snap(snapio &s) { s.i(ent); }
+         int ent;
+ 
+         void process(clientinfo *ci);
+@@ -293,7 +320,7 @@
+             events.deletecontents();
+             overflow = 0;
+             timesync = false;
+-            lastevent = 0;
++            gameoffset = lastevent = 0;
+             exceeded = 0;
+             pushed = 0;
+             clientmap[0] = '\0';
+@@ -307,7 +334,7 @@
+             state.reassign();
+             events.deletecontents();
+             timesync = false;
+-            lastevent = 0;
++            gameoffset = lastevent = 0;
+         }
+ 
+         void cleanclipboard(bool fullclean = true)
+@@ -854,6 +881,15 @@
+ 
+     bool canspawnitem(int type) { return !m_noitems && (type>=I_SHELLS && type<=I_QUAD && (!m_noammo || type<I_SHELLS || type>I_CARTRIDGES)); }
+ 
++    // Race rules for ffa and coop edit: picked-up items are back at once, your own shots do
++    // no damage to you (they still push you) and there is no time limit. Latched at each map
++    // change.
++    VARP(racerules, 0, 1, 1);
++    static bool raceruleson = false;
++    static int nextracerules = -1;
++    bool racerulesactive() { return raceruleson; }
++    void forcenextracerules(int on) { nextracerules = on; }
++
+     int spawntime(int type)
+     {
+         if(m_classicsp) return INT_MAX;
+@@ -877,8 +913,10 @@
+         return sec*1000;
+     }
+ 
++    // race rules: every item is there from the start
+     bool delayspawn(int type)
+     {
++        if(raceruleson) return false;
+         switch(type)
+         {
+             case I_GREENARMOUR:
+@@ -903,7 +941,7 @@
+             return false;
+         }
+         sents[i].spawned = false;
+-        sents[i].spawntime = spawntime(sents[i].type);
++        sents[i].spawntime = raceruleson ? 1 : spawntime(sents[i].type);
+         sendf(-1, 1, "ri3", N_ITEMACC, i, sender);
+         ci->state.pickup(sents[i].type);
+         return true;
+@@ -955,6 +993,22 @@
+     }
+ 
+     VAR(persistteams, 0, 0, 1);
++
++    static string nextteam = "";
++
++    // Flagrun practice rules for CTF: a dropped flag returns at once, respawn is immediate,
++    // either flag can be taken and scored at the other one, and there is no capture limit.
++    // Latched at each map change, so a game keeps the rules it started with.
++    VARP(flagrun, 0, 1, 1);
++    static bool flagrunon = false;
++    static int nextflagrun = -1;
++    bool flagrunactive() { return flagrunon; }
++    void forcenextflagrun(int on) { nextflagrun = on; }
++
++    #include "serverstate.h"
++
++    // the next map change puts every client on this team instead of balancing teams
++    void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
+ 
+     void autoteam()
+     {
+@@ -1876,7 +1930,7 @@
+         sendstring(smapname, p);
+         putint(p, gamemode);
+         putint(p, notgotitems ? 1 : 0);
+-        if(!ci || (m_timed && smapname[0]))
++        if(!raceruleson && (!ci || (m_timed && smapname[0])))
+         {
+             putint(p, N_TIMEUP);
+             putint(p, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
+@@ -2041,8 +2095,13 @@
+         aiman::clearai();
+ 
+         gamemode = mode;
++        // before N_MAPCHANGE: a local client handles that message at once and reads this
++        flagrunon = m_ctf_only && (nextflagrun >= 0 ? nextflagrun : flagrun) != 0;
++        nextflagrun = -1;
++        raceruleson = (gamemode == 0 || gamemode == 1) && (nextracerules >= 0 ? nextracerules : racerules) != 0;
++        nextracerules = -1;
+         gamemillis = 0;
+-        gamelimit = 10*60000;
++        gamelimit = raceruleson ? INT_MAX/2 : 10*60000;
+         interm = 0;
+         nextexceeded = 0;
+         copystring(smapname, s);
+@@ -2058,22 +2117,36 @@
+ 
+         if(!m_mp(gamemode)) kicknonlocalclients(DISC_LOCAL);
+ 
+-        sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
+-
+         if(m_capture) smode = &capturemode;
+         else if(m_ctf) smode = &ctfmode;
+         else if(m_collect) smode = &collectmode;
+         else smode = NULL;
+ 
++        // teams go out before the map change: an offline client spawns while handling
++        // N_MAPCHANGE and picks its spawn group from its team
+         clearteaminfo();
+-        if(m_teammode) autoteam();
++        if(m_teammode && nextteam[0])
++        {
++            addteaminfo(nextteam);
++            loopv(clients) if(strcmp(clients[i]->team, nextteam))
++            {
++                copystring(clients[i]->team, nextteam, MAXTEAMLEN+1);
++                sendf(-1, 1, "riisi", N_SETTEAM, clients[i]->clientnum, nextteam, -1);
++            }
++        }
++        else if(m_teammode) autoteam();
++        // a forced team is kept for a local client that connects after this map change
++        if(clients.length()) nextteam[0] = '\0';
+ 
+-        if(m_timed && smapname[0]) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
++        sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
++
++        if(m_timed && smapname[0] && !raceruleson) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
+         loopv(clients)
+         {
+             clientinfo *ci = clients[i];
+             ci->mapchange();
+             ci->state.lasttimeplayed = lastmillis;
++            if(ci->local) ci->state.lifesequence = 0;
+             if(m_mp(gamemode) && ci->state.state!=CS_SPECTATOR) sendspawn(ci);
+         }
+ 
+@@ -2092,6 +2165,21 @@
+         if(smode) smode->setup();
+     }
+ 
++    // single player: the end of a run's intermission loads the run's first map again
++    static bool restartsp()
++    {
++#ifndef STANDALONE
++        if(!m_sp) return false;
++        int mode = gamemode;
++        const char *map = game::sprestartmap(mode);
++        if(!map || !map[0]) return false;
++        changemap(map, mode);
++        return true;
++#else
++        return false;
++#endif
++    }
++
+     void rotatemap(bool next)
+     {
+         if(!maprotations.inrange(curmaprotation))
+@@ -2261,6 +2349,7 @@
+     void dodamage(clientinfo *target, clientinfo *actor, int damage, int gun, const vec &hitpush = vec(0, 0, 0))
+     {
+         gamestate &ts = target->state;
++        if(target==actor && raceruleson) damage = 0;
+         ts.dodamage(damage);
+         if(target!=actor && !isteam(target->team, actor->team)) actor->state.damage += damage;
+         sendf(-1, 1, "ri6", N_DAMAGE, target->clientnum, actor->clientnum, damage, ts.armour, ts.health);
+@@ -2362,7 +2451,7 @@
+     {
+         gamestate &gs = ci->state;
+         int wait = millis - gs.lastshot;
+-        if(!gs.isalive(gamemillis) ||
++        if(!gs.isalive(gamemillis) || m_weaponless ||
+            wait<gs.gunwait ||
+            gun<GUN_FIST || gun>GUN_PISTOL ||
+            gs.ammo[gun]<=0 || (guns[gun].range && from.dist(to) > guns[gun].range + 1))
+@@ -2491,7 +2580,7 @@
+                             sents[i].spawned = true;
+                             sendf(-1, 1, "ri2", N_ITEMSPAWN, i);
+                         }
+-                        else if(sents[i].spawntime<=10000 && oldtime>10000 && (sents[i].type==I_QUAD || sents[i].type==I_BOOST))
++                        else if(!raceruleson && sents[i].spawntime<=10000 && oldtime>10000 && (sents[i].type==I_QUAD || sents[i].type==I_BOOST))
+                         {
+                             sendf(-1, 1, "ri2", N_ANNOUNCE, sents[i].type);
+                         }
+@@ -2526,7 +2615,7 @@
+             {
+                 if(demorecord) enddemorecord();
+                 interm = -1;
+-                checkvotes(true);
++                if(!restartsp()) checkvotes(true);
+             }
+         }
+ 
+@@ -2937,8 +3026,9 @@
+         if(mastermode>=MM_LOCKED) ci->state.state = CS_SPECTATOR;
+         ci->state.lasttimeplayed = lastmillis;
+ 
+-        const char *worst = m_teammode ? chooseworstteam(NULL, ci) : NULL;
++        const char *worst = m_teammode ? (ci->local && nextteam[0] ? nextteam : chooseworstteam(NULL, ci)) : NULL;
+         copystring(ci->team, worst ? worst : "good", MAXTEAMLEN+1);
++        if(ci->local) nextteam[0] = '\0';
+ 
+         sendwelcome(ci);
+         if(restorescore(ci)) sendresume(ci);
+@@ -3813,5 +3903,7 @@
+     }
+ 
+     #include "aiman.h"
++
++    static void snapaiman(snapio &s) { s.n(aiman::dorefresh); s.n(aiman::botbalance); }
+ }
+ 
+--- a/fpsgame/waypoint.cpp
++++ b/fpsgame/waypoint.cpp
+@@ -418,13 +418,14 @@
+     }
+ 
+     static inline float heapscore(waypoint *q) { return q->score(); }
++
++    static ushort routeid = 1;
+ 
+     bool route(fpsent *d, int node, int goal, vector<int> &route, const avoidset &obstacles, int retries)
+     {
+         if(waypoints.empty() || !iswaypoint(node) || !iswaypoint(goal) || goal == node || !waypoints[node].links[0])
+             return false;
+ 
+-        static ushort routeid = 1;
+         static vector<waypoint *> queue;
+ 
+         if(!routeid)
+@@ -804,5 +805,34 @@
+         clearwpcache();
+     }
+     ICOMMAND(movewaypoints, "iii", (int *dx, int *dy, int *dz), movewaypoints(vec(*dx, *dy, *dz)));
+-}
+ 
++    // Waypoints grow while the player runs a map without a waypoint file, and the search caches
++    // and route stamps change what later searches find, so all of them are saved as they are.
++    void snapwaypoints(snapio &s)
++    {
++        s.str(loadedwaypoints, sizeof(loadedwaypoints));
++        int n = s.count(waypoints.length(), MAXWAYPOINTS);
++        if(s.loading) { waypoints.setsize(0); loopi(n) waypoints.add(waypoint(vec(0, 0, 0))); }
++        loopv(waypoints)
++        {
++            waypoint &wp = waypoints[i];
++            s.v(wp.o); s.f(wp.curscore); s.f(wp.estscore); s.i(wp.weight); s.n(wp.route); s.n(wp.prev);
++            loopk(MAXWAYPOINTLINKS) s.n(wp.links[k]);
++        }
++        s.n(routeid);
++        loopi(NUMWPCACHES)
++        {
++            wpcache &c = wpcaches[i];
++            int nodes = s.count(c.nodes.length(), 1<<24);
++            if(s.loading) { c.nodes.setsize(0); loopj(nodes) c.nodes.add(); }
++            loopvj(c.nodes)
++            {
++                wpcache::node &nd = c.nodes[j];
++                s.f(nd.split[0]); s.f(nd.split[1]); s.u(nd.child[0]); s.u(nd.child[1]);
++            }
++            s.i(c.firstwp); s.i(c.lastwp); s.v(c.bbmin); s.v(c.bbmax);
++        }
++        s.i(invalidatedwpcaches); s.i(clearedwpcaches); s.i(numinvalidatewpcaches); s.i(lastwpcache);
++        snapavoidset(s, wpavoid);
++    }
++}
+--- a/fpsgame/weapon.cpp
++++ b/fpsgame/weapon.cpp
+@@ -21,6 +21,7 @@
+ 
+     void gunselect(int gun, fpsent *d)
+     {
++        if(m_weaponless && gun != GUN_PISTOL) return;
+         if(gun!=d->gunselect)
+         {
+             addmsg(N_GUNSELECT, "rci", d, gun);
+@@ -42,7 +43,11 @@
+         if(gun != player1->gunselect) gunselect(gun, player1);
+         else playsound(S_NOAMMO);
+     }
+-    ICOMMAND(nextweapon, "ii", (int *dir, int *force), nextweapon(*dir, *force!=0));
++    ICOMMAND(nextweapon, "ii", (int *dir, int *force),
++    {
++        defformatstring(cmd, "nextweapon %d %d", *dir, *force);
++        if(!deferinput(INPUT_COMMAND, 0, cmd)) nextweapon(*dir, *force!=0);
++    });
+ 
+     int getweapon(const char *name)
+     {
+@@ -59,8 +64,26 @@
+         if(force || player1->ammo[gun]) gunselect(gun, player1);
+         else playsound(S_NOAMMO);
+     }
+-    ICOMMAND(setweapon, "si", (char *name, int *force), setweapon(name, *force!=0));
++    ICOMMAND(setweapon, "si", (char *name, int *force),
++    {
++        defformatstring(cmd, "setweapon %s %d", escapestring(name), *force);
++        if(!deferinput(INPUT_COMMAND, 0, cmd)) setweapon(name, *force!=0);
++    });
+ 
++    static bool deferweaponcommand(const char *name, tagval *args, int numargs)
++    {
++        vector<char> buf;
++        buf.put(name, strlen(name));
++        loopi(numargs)
++        {
++            buf.add(' ');
++            const char *arg = escapestring(args[i].getstr());
++            buf.put(arg, strlen(arg));
++        }
++        buf.add('\0');
++        return deferinput(INPUT_COMMAND, 0, buf.getbuf());
++    }
++
+     void cycleweapon(int numguns, int *guns, bool force = false)
+     {
+         if(numguns<=0 || player1->state!=CS_ALIVE) return;
+@@ -79,6 +102,7 @@
+     }
+     ICOMMAND(cycleweapon, "V", (tagval *args, int numargs),
+     {
++         if(deferweaponcommand("cycleweapon", args, numargs)) return;
+          int numguns = min(numargs, 7);
+          int guns[7];
+          loopi(numguns) guns[i] = getweapon(args[i].getstr());
+@@ -102,6 +126,7 @@
+ 
+     ICOMMAND(weapon, "V", (tagval *args, int numargs),
+     {
++        if(deferweaponcommand("weapon", args, numargs)) return;
+         if(player1->state!=CS_ALIVE) return;
+         loopi(7)
+         {
+@@ -195,8 +220,8 @@
+         switch(type)
+         {
+             case BNC_GRENADE: bnc.collidetype = COLLIDE_ELLIPSE_PRECISE; break;
+-            case BNC_DEBRIS: case BNC_BARRELDEBRIS: bnc.variant = rnd(4); break;
+-            case BNC_GIBS: bnc.variant = rnd(3); break;
++            case BNC_DEBRIS: case BNC_BARRELDEBRIS: bnc.variant = crnd(4); break;
++            case BNC_GIBS: bnc.variant = crnd(3); break;
+         }
+ 
+         vec dir(to);
+@@ -225,7 +250,7 @@
+         bouncer *b = (bouncer *)d;
+         if(b->bouncetype != BNC_GIBS || b->bounces >= 2) return;
+         b->bounces++;
+-        adddecal(DECAL_BLOOD, vec(b->o).sub(vec(surface).mul(b->radius)), surface, 2.96f/b->bounces, bvec(0x60, 0xFF, 0xFF), rnd(4));
++        adddecal(DECAL_BLOOD, vec(b->o).sub(vec(surface).mul(b->radius)), surface, 2.96f/b->bounces, bvec(0x60, 0xFF, 0xFF), crnd(4));
+     }
+         
+     void updatebouncers(int time)
+@@ -243,12 +268,15 @@
+             if(bnc.bouncetype==BNC_GRENADE) stopped = bounce(&bnc, 0.6f, 0.5f, 0.8f) || (bnc.lifetime -= time)<0;
+             else
+             {
+-                // cheaper variable rate physics for debris, gibs, etc.
++                // cheaper variable rate physics for debris, gibs, etc.; they are cosmetic and
++                // spawned from the unseeded cosmetic RNG, so they must not touch players or
++                // monsters: that would go through the shared dynent cache and change what the
++                // simulation sees
+                 for(int rtime = time; rtime > 0;)
+                 {
+                     int qtime = min(30, rtime);
+                     rtime -= qtime;
+-                    if((bnc.lifetime -= qtime)<0 || bounce(&bnc, qtime/1000.0f, 0.6f, 0.5f, 1)) { stopped = true; break; }
++                    if((bnc.lifetime -= qtime)<0 || bounce(&bnc, qtime/1000.0f, 0.6f, 0.5f, 1, false)) { stopped = true; break; }
+                 }
+             }
+             if(stopped)
+@@ -281,6 +309,8 @@
+ 
+     void clearbouncers() { bouncers.deletecontents(); }
+ 
++    void listbouncers(vector<physent *> &ents) { loopv(bouncers) ents.add(bouncers[i]); }
++
+     struct projectile
+     {
+         vec dir, o, to, offset;
+@@ -335,11 +365,11 @@
+ 
+     void spawnbouncer(const vec &p, const vec &vel, fpsent *d, int type, entitylight *light = NULL)
+     {
+-        vec to(rnd(100)-50, rnd(100)-50, rnd(100)-50);
++        vec to(crnd(100)-50, crnd(100)-50, crnd(100)-50);
+         if(to.iszero()) to.z += 1;
+         to.normalize();
+         to.add(p);
+-        newbouncer(p, to, true, 0, d, type, rnd(1000)+1000, rnd(100)+20, light);
++        newbouncer(p, to, true, 0, d, type, crnd(1000)+1000, crnd(100)+20, light);
+     }
+ 
+     void gibeffect(int damage, const vec &vel, fpsent *d)
+@@ -390,7 +420,7 @@
+                     damagecompass(damage, at ? at->o : f->o);
+                     playsound(S_PAIN6);
+                 }
+-                else playsound(S_PAIN1+rnd(5), &f->o);
++                else playsound(S_PAIN1+crnd(5), &f->o);
+             }
+         }
+     }
+@@ -405,7 +435,7 @@
+         vec middle = o->o;
+         middle.z += (o->aboveeye-o->eyeheight)/2;
+         float dist = middle.dist(v, dir);
+-        dir.div(dist);
++        if(dist > 0) dir.div(dist);
+         if(dist<0) dist = 0;
+         return dist;
+     }
+@@ -435,7 +465,7 @@
+         if(gun==GUN_RL) adddynlight(v, 1.15f*guns[gun].exprad, vec(2, 1.5f, 1), 700, 100, 0, guns[gun].exprad/2, vec(1, 0.75f, 0.5f));
+         else if(gun==GUN_GL) adddynlight(v, 1.15f*guns[gun].exprad, vec(0.5f, 1.5f, 2), 600, 100, 0, 8, vec(0.25f, 1, 1));
+         else adddynlight(v, 1.15f*guns[gun].exprad, vec(2, 1.5f, 1), 700, 100);
+-        int numdebris = gun==GUN_BARREL ? rnd(max(maxbarreldebris-5, 1))+5 : rnd(maxdebris-5)+5;
++        int numdebris = gun==GUN_BARREL ? crnd(max(maxbarreldebris-5, 1))+5 : crnd(maxdebris-5)+5;
+         vec debrisvel = vec(owner->o).sub(v).safenormalize(), debrisorigin(v);
+         if(gun==GUN_RL) debrisorigin.add(vec(debrisvel).mul(8));
+         if(numdebris)
+@@ -778,6 +808,7 @@
+         if(attacktime<d->gunwait) return;
+         d->gunwait = 0;
+         if((d==player1 || d->ai) && !d->attacking) return;
++        if(m_weaponless) return;
+         d->lastaction = lastmillis;
+         d->lastattackgun = d->gunselect;
+         if(!d->ammo[d->gunselect])
+@@ -970,10 +1001,28 @@
+         removeprojectiles(d);
+     }
+ 
++    void removeshots(fpsent *d)
++    {
++        removeprojectiles(d);
++        loopv(bouncers) if(bouncers[i]->owner==d && bouncers[i]->bouncetype==BNC_GRENADE) { delete bouncers[i]; bouncers.remove(i--); }
++    }
++
++    // The renderer's worldpos is only refreshed on drawn frames and follows the camera, so
++    // offline the aim point is traced from the player's own view instead.
++    static vec simaimpos()
++    {
++        if(multiplayer(false)) return worldpos;
++        vec dir, target;
++        vecfromyawpitch(player1->yaw, player1->pitch, 1, 0, dir);
++        if(raycubepos(player1->o, dir, target, 0, RAY_CLIPMAT|RAY_SKIPFIRST) == -1)
++            target = vec(dir).mul(2*getworldsize()).add(player1->o);
++        return target;
++    }
++
+     void updateweapons(int curtime)
+     {
+         updateprojectiles(curtime);
+-        if(player1->clientnum>=0 && player1->state==CS_ALIVE) shoot(player1, worldpos); // only shoot when connected to server
++        if(player1->clientnum>=0 && player1->state==CS_ALIVE) shoot(player1, simaimpos()); // only shoot when connected to server
+         updatebouncers(curtime); // need to do this after the player shoots so grenades don't end up inside player's BB next frame
+         fpsent *following = followingplayer();
+         if(!following) following = player1;
+@@ -999,5 +1048,81 @@
+             obstacles.avoidnear(NULL, bnc.o.z + guns[GUN_GL].exprad + 1, bnc.o, radius + guns[GUN_GL].exprad);
+         }
+     }
++
++    // shot ids are matched against the server's record of live rockets and grenades
++    void hashshotids(dethasher &h)
++    {
++        loopv(projs) { h.i(projs[i].id); h.i(projs[i].local); }
++        loopv(bouncers) if(bouncers[i]->bouncetype == BNC_GRENADE) { h.i(bouncers[i]->id); h.i(bouncers[i]->local); }
++    }
++
++    enum { MAXSNAPSHOTS = 1<<16 };
++
++    // shot owners are stored as their iterdynents index
++    static void snapowner(snapio &s, fpsent *&owner)
++    {
++        int i = s.loading ? -1 : dynentindex(owner);
++        s.i(i);
++        if(s.loading) owner = (fpsent *)dynentat(i);
++    }
++
++    void snapshots(snapio &s)
++    {
++        int n = s.count(projs.length(), MAXSNAPSHOTS);
++        if(s.loading) { projs.setsize(0); loopi(n) projs.add(); }
++        loopv(projs)
++        {
++            projectile &p = projs[i];
++            s.v(p.dir); s.v(p.o); s.v(p.to); s.v(p.offset); s.f(p.speed);
++            snapowner(s, p.owner);
++            s.i(p.gun); s.n(p.local); s.i(p.offsetmillis); s.i(p.id);
++        }
++        n = s.count(bouncers.length(), MAXSNAPSHOTS);
++        if(s.loading) { clearbouncers(); loopi(n) bouncers.add(new bouncer); }
++        loopv(bouncers)
++        {
++            bouncer &b = *bouncers[i];
++            s.phys(b);
++            s.i(b.lifetime); s.i(b.bounces); s.f(b.lastyaw); s.f(b.roll); s.n(b.local);
++            snapowner(s, b.owner);
++            s.i(b.bouncetype); s.i(b.variant); s.v(b.offset); s.i(b.offsetmillis); s.f(b.offsetheight); s.i(b.id);
++        }
++    }
++
++    // The shots that matter to play (projectiles and grenades; gibs and debris are only
++    // drawn), for checking a life's start against a fresh map start.
++    uint lifeshotsdigest()
++    {
++        dethasher h;
++        loopv(projs)
++        {
++            projectile &p = projs[i];
++            h.v(p.o); h.v(p.to); h.v(p.dir); h.f(p.speed); h.i(p.gun); h.i(p.owner == player1);
++        }
++        loopv(bouncers) if(bouncers[i]->bouncetype == BNC_GRENADE)
++        {
++            bouncer &b = *bouncers[i];
++            h.v(b.o); h.v(b.vel); h.i(b.lifetime); h.i(b.owner == player1);
++        }
++        return h.h;
++    }
++
++    void hashprojectiles(dethasher &h)
++    {
++        loopv(projs)
++        {
++            projectile &p = projs[i];
++            // offset is cosmetic: it starts at the rendered muzzle position
++            h.v(p.o); h.v(p.to); h.v(p.dir); h.f(p.speed);
++            h.i(p.gun); h.i(p.offsetmillis); h.i(p.owner == player1);
++        }
++        loopv(bouncers)
++        {
++            bouncer &b = *bouncers[i];
++            if(b.bouncetype != BNC_GRENADE) continue;
++            h.phys(&b);
++            h.i(b.lifetime); h.i(b.bounces); h.i(b.offsetmillis); h.i(b.owner == player1);
++        }
++    }
+ };
+ 
+--- a/shared/command.h
++++ b/shared/command.h
+@@ -40,7 +40,7 @@
+ 
+ enum { ID_VAR, ID_FVAR, ID_SVAR, ID_COMMAND, ID_ALIAS, ID_LOCAL };
+ 
+-enum { IDF_PERSIST = 1<<0, IDF_OVERRIDE = 1<<1, IDF_HEX = 1<<2, IDF_READONLY = 1<<3, IDF_OVERRIDDEN = 1<<4, IDF_UNKNOWN = 1<<5, IDF_ARG = 1<<6, IDF_EMUVAR = 1<<7 };
++enum { IDF_PERSIST = 1<<0, IDF_OVERRIDE = 1<<1, IDF_HEX = 1<<2, IDF_READONLY = 1<<3, IDF_OVERRIDDEN = 1<<4, IDF_UNKNOWN = 1<<5, IDF_ARG = 1<<6, IDF_EMUVAR = 1<<7, IDF_MOD = 1<<15 };
+ 
+ struct ident;
+ 
+@@ -334,3 +334,7 @@
+ #define ICOMMANDSNAME _icmds_
+ #define ICOMMANDS(name, nargs, proto, b) ICOMMANDNS(name, ICOMMANDSNAME, nargs, proto, b)
+  
++extern int setmodidentflag();
++#define MOD(macro, name, ...) \
++    macro(name, ##__VA_ARGS__); \
++    UNUSED static int setmodident ## name = setmodidentflag();
+--- a/shared/cube.h
++++ b/shared/cube.h
+@@ -32,12 +32,14 @@
+     #include <dbghelp.h>
+     #include <intrin.h>
+   #endif
+-  #define ZLIB_DLL
++  #ifndef HEADLESS
++    #define ZLIB_DLL
++  #endif
+ #endif
+ 
+ #ifndef STANDALONE
+   #ifdef __APPLE__
+-    #include "SDL.h"
++    #include <SDL2/SDL.h>
+     #define GL_GLEXT_LEGACY
+     #define __glext_h_
+     #include <OpenGL/gl.h>
+@@ -52,6 +54,7 @@
+ #include <zlib.h>
+ 
+ #include "tools.h"
++#include "detmath.h"
+ #include "geom.h"
+ #include "ents.h"
+ #include "command.h"
+--- a/shared/ents.h
++++ b/shared/ents.h
+@@ -31,7 +31,8 @@
+     EF_RENDER    = 1<<5,
+     EF_SOUND     = 1<<6,
+     EF_SPAWNED   = 1<<7,
+-    EF_NOPICKUP  = 1<<8
++    EF_NOPICKUP  = 1<<8,
++    EF_HELD      = 1<<9  // race rules: player1 took it and has not left it yet
+ };
+ 
+ struct extentity : entity                       // part of the entity that doesn't get saved to disk
+@@ -69,6 +70,7 @@
+ {
+     vec o, vel, falling;                        // origin, velocity
+     vec deltapos, newpos;                       // movement interpolation
++    int interpmillis;                           // lastmillis when deltapos was last set
+     float yaw, pitch, roll;
+     float maxspeed;                             // cubes per second, 100 for player
+     float radius, eyeheight, aboveeye;          // bounding box size
+@@ -77,8 +79,8 @@
+ 
+     ushort timeinair;
+     uchar inwater;
+-    bool jumping;
+-    schar move, strafe;
++    bool jumping, hovering;
++    schar move, strafe, vertical;
+ 
+     uchar physstate;                            // one of PHYS_* above
+     uchar state, editstate;                     // one of CS_* above
+@@ -87,7 +89,7 @@
+ 
+     bool blocked;                               // used by physics to signal ai
+ 
+-    physent() : o(0, 0, 0), deltapos(0, 0, 0), newpos(0, 0, 0), yaw(0), pitch(0), roll(0), maxspeed(100), 
++    physent() : o(0, 0, 0), deltapos(0, 0, 0), newpos(0, 0, 0), interpmillis(0), yaw(0), pitch(0), roll(0), maxspeed(100), 
+                radius(4.1f), eyeheight(14), aboveeye(1), xradius(4.1f), yradius(4.1f), zmargin(0),
+                state(CS_ALIVE), editstate(CS_ALIVE), type(ENT_PLAYER),
+                collidetype(COLLIDE_ELLIPSE),
+@@ -105,10 +107,12 @@
+         inwater = 0;
+         timeinair = 0;
+         jumping = false;
+-        strafe = move = 0;
++        hovering = false;
++        strafe = move = vertical =0;
+         physstate = PHYS_FALL;
+         vel = falling = vec(0, 0, 0);
+         floor = vec(0, 0, 1);
++        blocked = false;
+     }
+ 
+     vec feetpos(float offset = 0) const { return vec(o).add(vec(0, 0, offset - eyeheight)); }
+@@ -196,7 +200,7 @@
+ 
+ struct dynent : physent                         // animated characters, or characters that can receive input
+ {
+-    bool k_left, k_right, k_up, k_down;         // see input code
++    bool k_left, k_right, k_forward, k_backward, k_up, k_down;  // see input code
+ 
+     entitylight light;
+     animinterpinfo animinterp[MAXANIMPARTS];
+@@ -220,8 +224,8 @@
+                
+     void stopmoving()
+     {
+-        k_left = k_right = k_up = k_down = jumping = false;
+-        move = strafe = 0;
++        k_left = k_right = k_forward = k_backward = k_up = k_down = jumping = hovering = false;
++        move = strafe = vertical = 0;
+     }
+         
+     void reset()
+--- a/shared/iengine.h
++++ b/shared/iengine.h
+@@ -1,9 +1,10 @@
+ // the interface the game uses to access the engine
+ 
+-extern int curtime;                     // current frame time
+-extern int lastmillis;                  // last time
+-extern int elapsedtime;                 // elapsed frame time
+-extern int totalmillis;                 // total elapsed time
++extern int curtime;          // scaled duration since last step
++extern int lastmillis;       // totalmillis value at last step
++extern int elapsedtime;      // wall clock duration since last step
++extern int totalmillis;      // total elapsed wall clock duration since engine start
++extern int curframetime;     // scaled duration since last frame
+ extern uint totalsecs;
+ extern int gamespeed, paused;
+ 
+@@ -239,7 +240,15 @@
+ extern void findents(int low, int high, bool notspawned, const vec &pos, const vec &radius, vector<int> &found);
+ extern void mpeditent(int i, const vec &o, int type, int attr1, int attr2, int attr3, int attr4, int attr5, bool local);
+ extern vec getselpos();
++extern bool getselbox(vec &lo, vec &hi);
++extern int getenthover();
+ extern int getworldsize();
++
++// main
++enum { SIMTICK = 5 };
++extern bool simticking, insimtick;
++extern bool hasfocus;
++extern void resetsimclock(int base);
+ extern int getmapversion();
+ extern void renderentcone(const extentity &e, const vec &dir, float radius, float angle);
+ extern void renderentarrow(const extentity &e, const vec &dir, float radius);
+@@ -307,6 +316,9 @@
+ extern void damageblend(int n);
+ extern void damagecompass(int n, const vec &loc);
+ extern void cleardamagescreen();
++extern void clearparticles();
++extern void cleardecals();
++extern void cleardynlights();
+ 
+ extern vec minimapcenter, minimapradius, minimapscale;
+ extern void bindminimap();
+@@ -371,7 +383,17 @@
+ extern void fixmapname(char *name);
+ extern void getmapfilenames(const char *fname, const char *cname, char *pakname, char *mapname, char *cfgname);
+ extern uint getmapcrc();
++extern uint getmapcfgcrc();
+ extern void clearmapcrc();
++// a file load_world read: role 0 the map, 1 a map cfg; path as the game names it
++struct mapdatafile
++{
++    int role;
++    uint size;
++    string path;
++    uchar hash[32]; // BLAKE3
++};
++extern const vector<mapdatafile> &getmapdatafiles();
+ extern bool loadents(const char *fname, vector<entity> &ents, uint *crc = NULL);
+ 
+ // physics
+@@ -382,12 +404,20 @@
+ extern void moveplayer(physent *pl, int moveres, bool local);
+ extern bool moveplayer(physent *pl, int moveres, bool local, int curtime);
+ extern bool collide(physent *d, const vec &dir = vec(0, 0, 0), float cutoff = 0.0f, bool playercol = true, bool insideplayercol = false);
+-extern bool bounce(physent *d, float secs, float elasticity, float waterfric, float grav);
++extern bool bounce(physent *d, float secs, float elasticity, float waterfric, float grav, bool playercol = true);
+ extern bool bounce(physent *d, float elasticity, float waterfric, float grav);
+ extern void avoidcollision(physent *d, const vec &dir, physent *obstacle, float space);
+ extern bool overlapsdynent(const vec &o, float radius);
+ extern bool movecamera(physent *pl, const vec &dir, float dist, float stepdist);
+ extern void physicsframe();
++extern void hashphysicsstate(uint &h);
++extern bool savedynentcache(vector<int> &v);
++extern bool loaddynentcache(const vector<int> &v);
++extern void savescriptstate(vector<char> &b);
++extern bool loadscriptstate(const vector<char> &b);
++extern void shiftusersleeps(int delta);
++extern void hashsleeps(uint &h);
++extern void fakephysicsframe();
+ extern void dropenttofloor(entity *e);
+ extern bool droptofloor(vec &o, float radius, float height);
+ 
+@@ -449,6 +479,7 @@
+ 
+ extern void moveragdoll(dynent *d);
+ extern void cleanragdoll(dynent *d);
++extern bool getragdolleye(dynent *d, vec &eye);
+ 
+ // server
+ #define MAXCLIENTS 128                 // DO NOT set this any higher
+@@ -582,5 +613,6 @@
+ extern bool g3d_movecursor(int dx, int dy);
+ extern void g3d_cursorpos(float &x, float &y);
+ extern void g3d_resetcursor();
++#include "sbengine.h"
+ extern void g3d_limitscale(float scale);
+ 
+--- a/shared/igame.h
++++ b/shared/igame.h
+@@ -25,6 +25,14 @@
+ namespace game
+ {
+     extern void parseoptions(vector<const char *> &args);
++#ifdef HEADLESS
++    extern bool resimstart(const char *file);
++    extern void resimverify(const char *witnesskey);
++    extern void resimlivemode();
++    extern void resimwait();
++    extern bool resimdone();
++    extern int resimreport();
++#endif
+ 
+     extern void gamedisconnect(bool cleanup);
+     extern void parsepacketclient(int chan, packetbuf &p);
+@@ -38,13 +46,17 @@
+     extern void changemap(const char *name);
+     extern void forceedit(const char *name);
+     extern bool ispaused();
++    extern bool holdsim();
+     extern int scaletime(int t);
+     extern bool allowmouselook();
++    extern bool inputlocked();
++    extern bool queuemenuinput(const char *cmd, bool scripted);
+ 
+     extern const char *gameident();
+     extern const char *savedconfig();
+     extern const char *restoreconfig();
+     extern const char *defaultconfig();
++    extern const char *modconfig();
+     extern const char *autoexec();
+     extern const char *savedservers();
+     extern void loadconfigs();
+@@ -69,11 +81,20 @@
+     extern float abovegameplayhud(int w, int h);
+     extern void gameplayhud(int w, int h);
+     extern bool canjump();
++    extern bool canhover();
+     extern bool allowmove(physent *d);
+     extern void doattack(bool on);
+     extern dynent *iterdynents(int i);
+     extern int numdynents();
+     extern void rendergame(bool mainpass);
++    extern void begindisplay(float alpha);
++    // a pass of the main loop in offline play took us microseconds of wall time, ran ticks sim
++    // ticks and drew the screen or not
++    extern void frametimed(int us, int ticks, bool drawn);
++    extern void rawinput(const rawevent &e);
++    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
++    extern void begintick();
++    extern void enddisplay();
+     extern void renderavatar();
+     extern void renderplayerpreview(int model, int team, int weap);
+     extern void writegamedata(vector<char> &extras);
+--- a/shared/stream.cpp
++++ b/shared/stream.cpp
+@@ -286,7 +286,7 @@
+ #include <dirent.h>
+ #endif
+ 
+-string homedir = "";
++string homedir = "", overridedir = "";
+ struct packagedir
+ {
+     char *dir, *filter;
+@@ -450,8 +450,46 @@
+     if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
+     copystring(homedir, pdir);
+     return homedir;
++}
++
++// Files in the override dir replace the same files in the home dir and the game folders.
++const char *setoverridedir(const char *dir)
++{
++    string pdir;
++    copystring(pdir, dir);
++    if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir) || !fileexists(pdir, "d")) return NULL;
++    copystring(overridedir, pdir);
++    return overridedir;
++}
++
++static bool samecontents(const char *a, const char *b)
++{
++    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
++    bool same = fa && fb;
++    while(same)
++    {
++        char ba[4096], bb[4096];
++        size_t na = fread(ba, 1, sizeof(ba), fa), nb = fread(bb, 1, sizeof(bb), fb);
++        if(na != nb || memcmp(ba, bb, na)) same = false;
++        else if(!na) break;
++    }
++    if(fa) fclose(fa);
++    if(fb) fclose(fb);
++    return same;
+ }
+ 
++static vector<char *> checkedoverrides;
++
++static void warnshadowedhome(const char *filename, const char *override)
++{
++    if(!homedir[0]) return;
++    loopv(checkedoverrides) if(!strcmp(checkedoverrides[i], filename)) return;
++    checkedoverrides.add(newstring(filename));
++    defformatstring(home, "%s%s", homedir, filename);
++    if(fileexists(home, "r") && !samecontents(home, override))
++        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
++}
++
+ const char *addpackagedir(const char *dir)
+ {
+     string pdir;
+@@ -477,6 +515,15 @@
+ const char *findfile(const char *filename, const char *mode)
+ {
+     static string s;
++    if(overridedir[0] && mode[0]!='w' && mode[0]!='a')
++    {
++        formatstring(s, "%s%s", overridedir, filename);
++        if(fileexists(s, mode) && (mode[0]=='d' || !fileexists(s, "d")))
++        {
++            if(mode[0]!='d') warnshadowedhome(filename, s);
++            return s;
++        }
++    }
+     if(homedir[0])
+     {
+         formatstring(s, "%s%s", homedir, filename);
+@@ -575,6 +622,11 @@
+         formatstring(s, "%s%s", homedir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
++    if(overridedir[0])
++    {
++        formatstring(s, "%s%s", overridedir, dirname);
++        if(listdir(s, false, ext, files)) dirs++;
++    }
+     loopv(packagedirs)
+     {
+         packagedir &pf = packagedirs[i];
+--- a/shared/tools.cpp
++++ b/shared/tools.cpp
+@@ -66,8 +66,34 @@
+     for(uint i = 1; i < N; i++)
+         state[i] = seed = 1812433253U * (seed ^ (seed >> 30)) + i;
+     next = 0;
++}
++
++uint cosmeticrandom()
++{
++    static uint s = 0;
++    if(!s) s = uint(time(NULL)) | 1;
++    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
++    return s;
++}
++
++uint hashMT(uint h)
++{
++    loopi(N) h = (h ^ state[i]) * 16777619U;
++    return (h ^ uint(next)) * 16777619U;
+ }
+ 
++void saveMT(uint *dst, int &cur)
++{
++    memcpy(dst, state, sizeof(state));
++    cur = next;
++}
++
++void loadMT(const uint *src, int cur)
++{
++    memcpy(state, src, sizeof(state));
++    next = cur;
++}
++
+ uint randomMT()
+ {
+     int cur = next;
+--- a/shared/tools.h
++++ b/shared/tools.h
+@@ -99,6 +99,9 @@
+ 
+ #define rnd(x) ((int)(randomMT()&0x7FFFFFFF)%(x))
+ #define rndscale(x) (float((randomMT()&0x7FFFFFFF)*double(x)/double(0x7FFFFFFF)))
++// Separate stream for effects that must not consume the seeded gameplay sequence.
++#define crnd(x) ((int)(cosmeticrandom()&0x7FFFFFFF)%(x))
++#define crndscale(x) (float((cosmeticrandom()&0x7FFFFFFF)*double(x)/double(0x7FFFFFFF)))
+ #define detrnd(s, x) ((int)(((((uint)(s))*1103515245+12345)>>16)%(x)))
+ 
+ #define loop(v,m) for(int v = 0; v < int(m); ++v)
+@@ -1359,7 +1362,7 @@
+ static inline bool cubecaseequal(const char *s1, const char *s2, int n = INT_MAX) { return !cubecasecmp(s1, s2, n); }
+ extern char *cubecasefind(const char *haystack, const char *needle);
+ 
+-extern string homedir;
++extern string homedir, overridedir;
+ 
+ extern char *makerelpath(const char *dir, const char *file, const char *prefix = NULL, const char *cmd = NULL);
+ extern char *path(char *s);
+@@ -1369,6 +1372,7 @@
+ extern bool createdir(const char *path);
+ extern size_t fixpackagedir(char *dir);
+ extern const char *sethomedir(const char *dir);
++extern const char *setoverridedir(const char *dir);
+ extern const char *addpackagedir(const char *dir);
+ extern const char *findfile(const char *filename, const char *mode);
+ extern bool findzipfile(const char *filename);
+@@ -1384,6 +1388,11 @@
+ extern int listzipfiles(const char *dir, const char *ext, vector<char *> &files);
+ extern void seedMT(uint seed);
+ extern uint randomMT();
++extern uint hashMT(uint h);
++enum { MTSTATESIZE = 624 };
++extern void saveMT(uint *dst, int &cur);
++extern void loadMT(const uint *src, int cur);
++extern uint cosmeticrandom();
+ 
+ extern void putint(ucharbuf &p, int n);
+ extern void putint(packetbuf &p, int n);

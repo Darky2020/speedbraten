@@ -2,6 +2,9 @@
 # relative to src/; a line ending in / means every tracked file under it). tools/corecheck.sh
 # compares a build's tree against this repo's copies.
 
+# the build: BASE=vanilla leaves out p1xbraten's objects
+Makefile
+
 # simulation files the supported clients don't change
 engine/physics.cpp
 fpsgame/monster.cpp

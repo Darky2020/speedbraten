@@ -166,7 +166,10 @@ CLIENT_OBJS= \
 	fpsgame/splits.o \
 	fpsgame/spawns.o \
 	fpsgame/replayio.o \
-	fpsgame/tells.o \
+	fpsgame/tells.o
+
+# BASE=vanilla builds speedbraten on plain Sauerbraten source (ports/vanilla), without p1xbraten's files
+P1XBRATEN_CLIENT_OBJS= \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
 	p1xbraten/clientdemo.o \
@@ -183,6 +186,9 @@ CLIENT_OBJS= \
 	p1xbraten/serverbrowser.o \
 	p1xbraten/version.o \
 	p1xbraten/weaponstats.o
+ifneq ($(BASE),vanilla)
+	CLIENT_OBJS+= $(P1XBRATEN_CLIENT_OBJS)
+endif
 ifdef ANTICHEAT
 	override CLIENT_OBJS+= anticheat/anticheat.o
 endif
@@ -195,12 +201,16 @@ SERVER_OBJS= \
 	engine/server-standalone.o \
 	engine/worldio-standalone.o \
 	fpsgame/entities-standalone.o \
-	fpsgame/server-standalone.o \
+	fpsgame/server-standalone.o
+P1XBRATEN_SERVER_OBJS= \
 	p1xbraten/bans-standalone.o \
 	p1xbraten/demo_info_message-standalone.o \
 	p1xbraten/managed_games-standalone.o \
 	p1xbraten/proxy_real_ip-standalone.o \
 	p1xbraten/remote_commands-standalone.o
+ifneq ($(BASE),vanilla)
+	SERVER_OBJS+= $(P1XBRATEN_SERVER_OBJS)
+endif
 ifdef ANTICHEAT
 	override SERVER_OBJS+= anticheat/anticheat-standalone.o
 endif
