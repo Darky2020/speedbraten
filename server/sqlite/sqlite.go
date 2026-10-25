@@ -27,6 +27,9 @@ type DB struct {
 // Open opens an existing database; it waits up to 5 s for a lock the witness holds.
 func Open(path string) (*DB, error) { return open(path, C.SQLITE_OPEN_READWRITE) }
 
+// OpenReadOnly opens an existing database another program writes, only to read it.
+func OpenReadOnly(path string) (*DB, error) { return open(path, C.SQLITE_OPEN_READONLY) }
+
 // Create opens a database, making the file if there is none.
 func Create(path string) (*DB, error) { return open(path, C.SQLITE_OPEN_READWRITE|C.SQLITE_OPEN_CREATE) }
 
