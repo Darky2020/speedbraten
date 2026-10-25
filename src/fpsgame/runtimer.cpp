@@ -293,19 +293,16 @@ namespace game
             pophudmatrix();
         }
 
-        // a campaign run's deaths in the bottom right corner, above the fps counter
+    }
+
+    // a campaign run's deaths, on top of the bottom right stack
+    void hudstack(int right, int top)
+    {
         int ndeaths = runtimerdeaths();
-        if(runtimerdeathcount && ndeaths > 0)
-        {
-            defformatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
-            const float scale = 0.4f;
-            int dw = 0, dh = 0;
-            text_bounds(deaths, dw, dh);
-            pushhudmatrix();
-            hudmatrix.scale(scale, scale, 1);
-            flushhudmatrix();
-            draw_text(deaths, int(w/scale - dw - dh), int(h/scale - 3*dh), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
-            pophudmatrix();
-        }
+        if(!runtimerdeathcount || ndeaths <= 0) return;
+        defformatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
+        int tw = 0, th = 0;
+        text_bounds(deaths, tw, th);
+        draw_text(deaths, right - tw, top, (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
     }
 }
