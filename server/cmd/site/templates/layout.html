@@ -5,7 +5,7 @@
 :root { --bg: #f4f6fa; --card: #fff; --fg: #1f2937; --dim: #6b7280; --faint: #9ca3af; --line: #e5e7eb; --head: #f9fafb;
   --accent: #2563eb; --gold: #d97706; --ctf: #9333ea; --ictf: #16a34a; --ectf: #dc2626; --race: #0284c7; --sp: #ea580c; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
 .bar { background: var(--card); border-bottom: 1px solid var(--line); }
 .bar .in { max-width: 1140px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 24px; min-height: 56px; flex-wrap: wrap; }
@@ -15,7 +15,7 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .tabs a { color: var(--dim); padding: 16px 12px 14px; border-bottom: 2px solid transparent; font-weight: 500; }
 .tabs a:hover { color: var(--fg); text-decoration: none; }
 .tabs a.on { color: var(--fg); border-bottom-color: var(--accent); }
-main { max-width: 1140px; margin: 0 auto; padding: 24px 16px 8px; }
+main { flex: 1; width: 100%; max-width: 1140px; margin: 0 auto; padding: 24px 16px 8px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
 h2 { font-size: 16px; margin: 0; }
 .sub { color: var(--dim); margin: 0 0 20px; }
@@ -54,7 +54,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .prose h2 { font-size: 18px; margin: 26px 0 8px; }
 .prose code, td code { background: var(--head); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 13px; }
 svg.graph { width: 100%; height: auto; display: block; }
-footer { max-width: 1140px; margin: 12px auto 32px; padding: 0 16px; color: var(--faint); font-size: 13px; }
+footer { width: 100%; max-width: 1140px; margin: 12px auto 0; padding: 0 16px 32px; color: var(--faint); font-size: 13px; }
+body.admin main, body.admin footer { max-width: 1240px; }
 form.inline { display: inline; margin: 0; }
 input[type=text], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); }
 button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); cursor: pointer; }
