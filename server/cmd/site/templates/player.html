@@ -8,7 +8,7 @@
 </div>
 <div class="cols2">
 <div class="card"><header><h2>Map completion</h2></header><div class="body">
-{{range .Completion}}<div class="bar-row"><div class="bar-label">{{template "badge" .Badge}} {{.Label}}</div><div class="bar"><div class="fill {{(badge .Badge).Class}}" style="width: {{.Percent}}%"></div></div><div class="bar-num">{{.Done}} / {{.Of}}</div></div>
+{{range .Completion}}<div class="meter-row"><div>{{template "badge" .Badge}} {{.Label}}</div><div class="meter"><div class="fill {{(badge .Badge).Class}}" style="width: {{.Percent}}%"></div></div><div class="meter-num">{{.Done}} / {{.Of}}</div></div>
 {{end}}</div></div>
 {{template "recentcard" .Recent}}
 </div>
