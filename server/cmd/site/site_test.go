@@ -123,8 +123,18 @@ func TestPublicPages(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `slower">+0:00.500`) || strings.Contains(body, "0:08.000") || !strings.Contains(body, "<svg class=\"graph\"") {
 		t.Fatalf("map page %d: gap or graph missing, or the rejected run shown", code)
 	}
-	if code, _ = get(t, s, "/map?map=forge&kind=flagrun&mode=11"); code != 404 {
-		t.Fatalf("an empty board: %d", code)
+	// a flagrun map has a page for each ctf mode, runs or not; other boards without runs don't exist
+	if code, body = get(t, s, "/map?map=forge&kind=flagrun&mode=11"); code != 200 || !strings.Contains(body, "No runs in this mode yet") || !strings.Contains(body, "insta ctf") {
+		t.Fatalf("a flagrun mode without runs: %d", code)
+	}
+	if code, _ = get(t, s, "/map?map=forge&kind=flagrun&mode=3"); code != 404 {
+		t.Fatalf("a mode that isn't a ctf mode: %d", code)
+	}
+	if code, _ = get(t, s, "/map?map=nosuchmap&kind=flagrun&mode=11"); code != 404 {
+		t.Fatalf("a map with no runs at all: %d", code)
+	}
+	if code, _ = get(t, s, "/map?map=forge&kind=race&mode=0"); code != 404 {
+		t.Fatalf("an empty race board: %d", code)
 	}
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, httptest.NewRequest("GET", "/board?map=forge&kind=flagrun&mode=17", nil))

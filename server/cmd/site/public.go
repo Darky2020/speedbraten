@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -375,17 +376,27 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	if b == nil {
-		http.NotFound(w, r)
-		return
-	}
-	// the same map's other boards of this kind, for the mode tabs
+	// the same map's other boards of this kind, for the mode tabs; a flagrun map has a tab (and
+	// a page) for each of the three ctf modes, runs or not
 	siblings, _ := s.boardsOf(k.Kind)
 	var others []board.Key
 	for _, o := range siblings {
 		if o.Key.Map == k.Map {
 			others = append(others, o.Key)
 		}
+	}
+	if k.Kind == "flagrun" && len(others) > 0 {
+		others = others[:0]
+		for _, m := range flagrunModes {
+			others = append(others, board.Key{Map: k.Map, Kind: k.Kind, Mode: m})
+		}
+		if b == nil && slices.Contains(flagrunModes, k.Mode) {
+			b = &board.Board{Key: k}
+		}
+	}
+	if b == nil {
+		http.NotFound(w, r)
+		return
 	}
 	history, _ := s.store.History(k)
 	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
