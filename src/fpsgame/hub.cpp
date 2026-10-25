@@ -3,6 +3,7 @@
 // time an address is used, as the witness's are; the hub also names the witness to use.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 #include "replayio.h"
 #include "hubproto.h"
@@ -592,7 +593,7 @@ namespace game
         if(strcmp(target, hubtarget))
         {
             copystring(hubtarget, target);
-            hubconnect("", hubport, NULL, "speedbraten");
+            hubconnect("", hubport, NULL, SPEEDBRATEN_CLIENT);
             hubreset();
             hubasking = hubchecking = false;
             hubretry = totalmillis;
@@ -615,9 +616,9 @@ namespace game
             {
                 hubasking = !known;
                 hubchecking = known;
-                hubconnect(hubhost, hubport, NULL, "speedbraten");
+                hubconnect(hubhost, hubport, NULL, SPEEDBRATEN_CLIENT);
             }
-            else hubconnect(hubhost, hubport, key, "speedbraten");
+            else hubconnect(hubhost, hubport, key, SPEEDBRATEN_CLIENT);
             hubretry = totalmillis + HUBRETRY;
         }
         hubmessages();

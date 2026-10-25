@@ -5,6 +5,7 @@
 // The HUD compares them with the PB run's splits and the best time of each segment.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 
 namespace game

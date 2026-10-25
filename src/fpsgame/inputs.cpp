@@ -3,6 +3,7 @@
 // per tick, so the current attempt can be replayed exactly.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 
 extern int identflags;

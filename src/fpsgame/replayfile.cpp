@@ -3,6 +3,7 @@
 // the rolling cleanup of unfinished attempts).
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 #include "replayio.h"
 #include "blake3.h"
@@ -1572,7 +1573,7 @@ namespace game
         info.simversion = SIMVERSION;
         info.date = first.date ? first.date : uint(time(NULL));
         info.live = true;
-        copystring(info.client, "speedbraten");
+        copystring(info.client, SPEEDBRATEN_CLIENT);
         copystring(info.player, first.player[0] ? first.player : player1->name);
         info.mode = first.mode;
         info.flagrun = first.flagrun;
@@ -1770,7 +1771,7 @@ namespace game
             copystring(witnesstarget, target);
             witnessseeds.setsize(0);
             DELETEP(live);
-            witnessconnect("", port, NULL, "speedbraten");
+            witnessconnect("", port, NULL, SPEEDBRATEN_CLIENT);
             witnessasking = witnesschecking = false;
             witnessretry = totalmillis;
             state = witnessstate();
@@ -1793,9 +1794,9 @@ namespace game
             {
                 witnessasking = !known;
                 witnesschecking = known;
-                witnessconnect(host, port, NULL, "speedbraten");
+                witnessconnect(host, port, NULL, SPEEDBRATEN_CLIENT);
             }
-            else witnessconnect(host, port, key, "speedbraten");
+            else witnessconnect(host, port, key, SPEEDBRATEN_CLIENT);
             witnessretry = totalmillis + WITNESSRETRY;
         }
         if(state != WITNESS_OPEN && live) DELETEP(live);

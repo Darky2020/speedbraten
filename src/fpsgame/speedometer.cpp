@@ -2,6 +2,7 @@
 // full 3D speed next to it.
 
 #include "game.h"
+#include "sbcompat.h"
 
 namespace game
 {

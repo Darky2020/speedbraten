@@ -3,6 +3,7 @@
 // command, so replays respawn at the same point. Races: racestart picks a fixed playerstart.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 
 namespace game

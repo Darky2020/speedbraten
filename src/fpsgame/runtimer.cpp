@@ -9,6 +9,7 @@
 // touch any flag entity; entering edit mode voids the attempt.
 
 #include "game.h"
+#include "sbcompat.h"
 
 namespace game
 {

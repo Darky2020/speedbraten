@@ -3,6 +3,7 @@
 // runs. Nothing here reads or changes simulation state beyond what the finished run reports.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 #ifndef HEADLESS
 #include "sqlite3.h"

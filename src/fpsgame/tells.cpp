@@ -3,6 +3,7 @@
 // of it affects playback; it lets a verifier see runs that don't look like ordinary live play.
 
 #include "game.h"
+#include "sbcompat.h"
 #include "inputs.h"
 #include "replayio.h"
 #include "blake3.h"
@@ -239,7 +240,7 @@ namespace game
         const tellcounters &run = savinglife ? life : game::run;
         uchar hash[32];
         sbr2::kvwriter client;
-        ident *version = getident("p1xbratenversion");
+        ident *version = getident(SPEEDBRATEN_VERSIONVAR);
         client.str("build", version && version->type == ID_SVAR ? *version->storage.s : "");
         client.str("commit", SPEEDBRATEN_COMMIT);
         client.boolean("dirty", SPEEDBRATEN_DIRTY != 0);
