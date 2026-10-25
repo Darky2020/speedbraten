@@ -21,6 +21,8 @@ namespace game
     static bool liferan = false;  // the run of player1's current life started (flagrun/race)
     enum { RACESTARTEDTICKS = 200 };
     static int runbase = 0, runstart = 0, runend = 0, runflag = -1;
+    // a campaign run's deaths on the maps before this one; this map's are player1's own count
+    static int rundeathsbefore = 0;
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
 
@@ -89,6 +91,7 @@ namespace game
         finishedatmapstart = runstate == RUN_FINISHED;
         bool chained = sp && runkind == RUNTIMER_SP && (runstate == RUN_RUNNING || runstate == RUN_SPLIT) && mapchained(mode);
         runbase = chained ? runbase + (runstate == RUN_SPLIT ? runend : inputtick()) - runstart : 0;
+        rundeathsbefore = chained ? rundeathsbefore + player1->deaths : 0;
         runstart = runend = 0;
         runflag = -1;
         if(sp) { runkind = RUNTIMER_SP; runstate = RUN_RUNNING; }
@@ -231,7 +234,10 @@ namespace game
         return runticks()*SIMTICK;
     }
 
+    int runtimerdeaths() { return runkind == RUNTIMER_SP ? rundeathsbefore + player1->deaths : 0; }
+
     ICOMMAND(runtime, "", (), intret(runticks()*SIMTICK));
+    ICOMMAND(rundeaths, "", (), intret(runtimerdeaths()));
     ICOMMAND(runstate, "", (), intret(runkind == RUNTIMER_NONE ? -1 : runstate));
 
     MOD(VARP, runtimer, 0, 1, 1);
@@ -245,6 +251,7 @@ namespace game
     MOD(HVARP, runtimerslowercolour, 0, 0xFF8040, 0xFFFFFF);
     MOD(VARP, runtimerrecord, 0, 1, 1);
     MOD(HVARP, runtimerrecordcolour, 0, 0xB0B0B0, 0xFFFFFF);
+    MOD(VARP, runtimerdeathcount, 0, 1, 1);
     ICOMMAND(hexcolour, "i", (int *colour), { defformatstring(hex, "%06X", *colour & 0xFFFFFF); result(hex); });
 
     void drawruntimer(int w, int h)
@@ -271,17 +278,25 @@ namespace game
         draw_text(buf, int(offset.x), int(offset.y), (color>>16)&0xFF, (color>>8)&0xFF, color&0xFF, 255);
         pophudmatrix();
 
-        // the board's best under the timer, at half its size
+        // under the timer at half its size: the board's best, a campaign run's deaths
+        float scale = runtimerscale*0.5f, y = runtimery*h + th*runtimerscale*0.55f;
         const char *rec = runtimerrecord ? hubboardhud() : NULL;
-        if(!rec) return;
-        float scale = runtimerscale*0.5f;
-        int rw = 0, rh = 0;
-        text_bounds(rec, rw, rh);
-        vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);
-        pushhudmatrix();
-        hudmatrix.scale(scale, scale, 1);
-        flushhudmatrix();
-        draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
-        pophudmatrix();
+        string deaths = "";
+        int ndeaths = runtimerdeaths();
+        if(runtimerdeathcount && ndeaths > 0) formatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
+        loopi(2)
+        {
+            const char *line = i ? deaths : rec;
+            if(!line || !line[0]) continue;
+            int rw = 0, rh = 0;
+            text_bounds(line, rw, rh);
+            vec2 at = vec2(runtimerx*w, y).div(scale);
+            pushhudmatrix();
+            hudmatrix.scale(scale, scale, 1);
+            flushhudmatrix();
+            draw_text(line, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
+            pophudmatrix();
+            y += rh*scale;
+        }
     }
 }
