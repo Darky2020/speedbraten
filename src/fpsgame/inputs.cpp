@@ -28,7 +28,10 @@ namespace game
     // A replay the player opened to watch (from the replay list or the stats) can be paused, moved
     // back and forth and restarted, and it holds on its last frame until the player leaves it.
     MOD(VARP, replayseekstep, 1, 5, 60);
-    static bool replayviewing = false, replayviewpaused = false;
+    MOD(VARP, replayfastspeed, 2, 4, 20); // while space is held
+    MOD(VARP, replayviewhud, 0, 1, 1);
+    static bool replayviewing = false, replayviewpaused = false, replayviewfast = false;
+    static int replayfastrest = 0; // game time owed to the fast-forward, below one tick
     static inputrun replayviewrun;
     static string replayviewfile = "", replayreturnmap = "";
     static int replayreturnmode = INT_MAX, replayseektarget = -1;
@@ -676,7 +679,8 @@ namespace game
 
     static void stopviewing()
     {
-        replayviewing = replayviewpaused = false;
+        replayviewing = replayviewpaused = replayviewfast = false;
+        replayfastrest = 0;
         replayseektarget = -1;
         clearviewstates();
     }
@@ -760,6 +764,44 @@ namespace game
         }
     }
 
+    // the extra game time a held space adds to a frame of us microseconds
+    static void replayfastframe(int us)
+    {
+        if(!replayviewing || !replayviewfast || !replaying || replayviewhold()) { replayfastrest = 0; return; }
+        replayfastrest += int(min((long long)us*(replayfastspeed-1)/1000, 1000LL));
+        int ms = replayfastrest - replayfastrest%SIMTICK;
+        if(ms <= 0) return;
+        replayfastrest -= ms;
+        simfastforward(ms);
+    }
+
+    static void drawreplayview(int w, int h)
+    {
+        if(!replayviewing || !replayviewhud || !replaying) return;
+        int ticks = replaycur().ticks, t = min(curtick, ticks);
+        string pos, state, keys;
+        formatstring(pos, "%d:%04.1f / %d:%04.1f", t*SIMTICK/60000, (t*SIMTICK%60000)/1000.0f, ticks*SIMTICK/60000, (ticks*SIMTICK%60000)/1000.0f);
+        if(replaydata.attempts.length() > 1) concformatstring(pos, "  (map %d of %d)", replayattempt+1, replaydata.attempts.length());
+        if(replayviewended()) copystring(state, "\f3ended");
+        else if(replayviewpaused) copystring(state, "\f2paused");
+        else if(replayviewfast) formatstring(state, "\f0x%d", replayfastspeed);
+        else copystring(state, "\f7playing");
+        formatstring(keys, "\f7P %s   \f7left/right %ds   \f7hold space x%d   \f7R restart   \f7Backspace leave", replayviewpaused ? "play" : "pause", replayseekstep, replayfastspeed);
+        defformatstring(line, "\f7replay %s   %s", pos, state);
+        const float scale = 0.4f;
+        int lw = 0, lh = 0, kw = 0, kh = 0;
+        text_bounds(line, lw, lh);
+        text_bounds(keys, kw, kh);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        int y = int(h*0.78f/scale) - lh;
+        draw_text(line, int(w/2.0f/scale - lw/2.0f), y, 255, 255, 255, 230);
+        draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
+        pophudmatrix();
+    }
+
+    ICOMMAND(replayfast, "i", (int *on), replayviewfast = replayviewing && *on != 0);
     ICOMMAND(replaypause, "", (), { if(replayviewing && replaying && !replayviewended()) replayviewpaused = !replayviewpaused; });
     ICOMMAND(replayseek, "i", (int *seconds), seekreplay(*seconds));
     ICOMMAND(replayrestart, "", (), restartreplayview());
@@ -1360,7 +1402,12 @@ namespace game
 
     void rawinput(const rawevent &e)
     {
-        if(replayviewing && e.kind == rawevent::KEYDOWN && !(e.flags&rawevent::TEXT)) replayviewkey(e.keycode);
+        if(replayviewing && !(e.flags&rawevent::TEXT))
+        {
+            if(e.kind == rawevent::KEYDOWN && e.keycode == SDLK_SPACE) replayviewfast = true;
+            else if((e.kind == rawevent::KEYUP && e.keycode == SDLK_SPACE) || e.kind == rawevent::FOCUS) replayviewfast = false;
+            else if(e.kind == rawevent::KEYDOWN) replayviewkey(e.keycode);
+        }
         if(!simticking || replaying || recordingoff || recording.attempts.empty() || !connected) return;
         rawevent &r = recording.last().raw.add(e);
         r.tick = curtick + 1;
@@ -1387,6 +1434,7 @@ namespace game
 
     void frametimed(int us, int ticks, bool drawn)
     {
+        replayfastframe(us);
         witnessupdate();
         hubupdate();
         int aids = tellsframe(us);
@@ -1587,8 +1635,7 @@ namespace game
             formatstring(buf, "resetting in %.1f s", max(speedrunresetidle - (curtick - resetarmtick)*SIMTICK, 0)/1000.0f);
         else if(spawncountdown(buf)) {}
         else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
-        else if(replayviewing && replayviewended()) copystring(buf, "replay ended: R to watch again, Backspace to leave");
-        else if(replayviewing && replayviewpaused) copystring(buf, "paused: P to play, left/right to move, Backspace to leave");
+        drawreplayview(w, h);
         if(!buf[0]) return;
         const float scale = 0.4f;
         int tw = 0, th = 0;
