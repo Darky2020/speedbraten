@@ -23,16 +23,15 @@ case $target in
     x86_64-windows-gnu) host=x86_64-w64-mingw32; os=windows ;;
     x86_64-linux-gnu)   host=x86_64-pc-linux-gnu; os=linux; ztarget=$target.2.31 ;;
     aarch64-linux-gnu)  host=aarch64-unknown-linux-gnu; os=linux; ztarget=$target.2.31 ;;
-    x86_64-macos)       host=x86_64-apple-darwin; os=macos ;;
-    aarch64-macos)      host=aarch64-apple-darwin; os=macos ;;
+    x86_64-macos)       host=x86_64-apple-darwin; os=macos; ztarget=$target.11.0 ;;
+    aarch64-macos)      host=aarch64-apple-darwin; os=macos; ztarget=$target.11.0 ;;
     *) echo "unsupported target $target" >&2; exit 1 ;;
 esac
-minver=""; [ $os = macos ] && minver="-mmacosx-version-min=11.0"
 # without a GNU-compatible linker libtool assumes MSVC's tools (link, lib) for a mingw target
 [ $os = windows ] && export LD="$zig ld.lld" NM=nm
 # curl's configure insists on a resource compiler, used only for its DLL
 [ $os = windows ] && export RC=true
-export CC="$zig cc -target $ztarget $minver" AR="$zig ar" RANLIB="$zig ranlib"
+export CC="$zig cc -target $ztarget" AR="$zig ar" RANLIB="$zig ranlib"
 export CFLAGS="-O2 -fPIC" CPPFLAGS="-I$out/include" LDFLAGS="-L$out/lib"
 # zig fortifies glibc calls at -O2 with checks (__inet_pton_chk) newer than the glibc 2.31 we target
 [ $os = linux ] && export CFLAGS="$CFLAGS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
