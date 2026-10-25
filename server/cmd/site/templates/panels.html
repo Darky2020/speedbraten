@@ -1,25 +1,25 @@
 {{define "recentcard"}}<div class="card"><header><h2>Recently submitted runs</h2></header><div class="scroll"><table>
 <tr><th>map</th><th>player</th><th class="num">time</th><th class="wide">when</th></tr>
-{{range .}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td>
+{{range .}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td>
 <td class="num time">{{if .Record}}<span class="rank1" title="a record">★ </span>{{end}}{{runtime .MS}}</td><td class="dim small wide">{{ago .When}}</td></tr>
 {{else}}<tr><td colspan="4" class="dim">No runs yet.</td></tr>{{end}}
 </table></div></div>{{end}}
 
 {{define "holderscard"}}<div class="card"><header><h2>Top record holders</h2></header><div class="scroll"><table>
 <tr><th>#</th><th>player</th><th class="num">records</th></tr>
-{{range $i, $h := .}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{$h.Name}}</a></td><td class="num">{{$h.Records}}</td></tr>
+{{range $i, $h := .}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{template "pname" $h}}</a></td><td class="num">{{$h.Records}}</td></tr>
 {{else}}<tr><td colspan="3" class="dim">Nobody yet.</td></tr>{{end}}
 </table></div></div>{{end}}
 
 {{define "oldestcard"}}<div class="card"><header><h2>Oldest standing records</h2><a class="more" href="{{.More}}">all records →</a></header><div class="scroll"><table>
 <tr><th>map</th><th>player</th><th class="num">time</th><th class="num">age</th></tr>
-{{range .Oldest}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Entry.Install}}">{{.Entry.Name}}</a></td><td class="num time">{{runtime .Entry.MS}}</td><td class="num dim small">{{age .Entry.When}}</td></tr>
+{{range .Oldest}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Entry.Install}}">{{template "pname" .Entry}}</a></td><td class="num time">{{runtime .Entry.MS}}</td><td class="num dim small">{{age .Entry.When}}</td></tr>
 {{else}}<tr><td colspan="4" class="dim">No records yet.</td></tr>{{end}}
 </table></div></div>{{end}}
 
 {{define "category"}}{{if .ModeHolders}}<div class="cols3">{{range .ModeHolders}}<div class="card modecard {{(badge .Key).Class}}-edge"><header><h2>{{template "badge" .Key}} Top {{modeName .Key}} runners</h2></header><table>
 <tr><th>#</th><th>player</th><th class="num">records</th></tr>
-{{range $i, $h := .Holders}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{$h.Name}}</a></td><td class="num">{{$h.Records}}</td></tr>
+{{range $i, $h := .Holders}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{template "pname" $h}}</a></td><td class="num">{{$h.Records}}</td></tr>
 {{else}}<tr><td colspan="3" class="dim">Nobody yet.</td></tr>{{end}}
 </table></div>{{end}}</div>
 {{template "recentoldest" .}}{{else}}{{template "holderscard" .Holders}}

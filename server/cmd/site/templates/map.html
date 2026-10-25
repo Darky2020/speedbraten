@@ -7,7 +7,7 @@
 <div class="card scroll"><header><h2>Leaderboard</h2></header><table>
 <tr><th class="num">#</th><th>player</th><th class="num">time</th><th class="num wide">gap</th><th class="wide">date</th><th></th></tr>
 {{$best := (index .Board.Entries 0).MS}}
-{{range .Board.Entries}}<tr><td class="num{{if eq .Rank 1}} rank1{{end}}">{{.Rank}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td><td class="num time">{{runtime .MS}}</td>
+{{range .Board.Entries}}<tr><td class="num{{if eq .Rank 1}} rank1{{end}}">{{.Rank}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td><td class="num time">{{runtime .MS}}</td>
 <td class="num small wide slower">{{if gt .Rank 1}}+{{gap .MS $best}}{{end}}</td><td class="dim small wide">{{date .When}}</td><td><a class="small" href="/replay?run={{.Run}}">replay</a></td></tr>{{end}}
 </table></div>
 <div>

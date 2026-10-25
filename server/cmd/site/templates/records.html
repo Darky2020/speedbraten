@@ -1,4 +1,4 @@
-{{define "recordrows"}}{{range .}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td>{{if .Install}}<a href="{{playerURL .Install}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</td><td class="num time">{{runtime .MS}}</td><td class="num small wide">{{if ge .Prev 0}}<span class="faster">−{{gap .Prev .MS}}</span>{{else}}<span class="dim">first</span>{{end}}</td><td class="dim small wide">{{ago .When}}</td></tr>
+{{define "recordrows"}}{{range .}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td><td class="num time">{{runtime .MS}}</td><td class="num small wide">{{if ge .Prev 0}}<span class="faster">−{{gap .Prev .MS}}</span>{{else}}<span class="dim">first</span>{{end}}</td><td class="dim small wide">{{ago .When}}</td></tr>
 {{else}}<tr><td colspan="6" class="dim">No records yet.</td></tr>{{end}}{{end}}
 {{define "recordspage"}}{{template "top" .}}
 <h1>Records</h1>

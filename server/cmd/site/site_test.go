@@ -172,7 +172,14 @@ func TestPublicPages(t *testing.T) {
 	if i, j := strings.Index(body, "<h2>Flagruns</h2>"), strings.Index(body, "<h2>Campaigns</h2>"); i < 0 || j < i || !strings.Contains(body, `<span class="silver">#2</span>`) {
 		t.Fatal("the player's places aren't grouped by category, or #2 isn't silver")
 	}
-	// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
+	// kb has no hub name: its replay name is marked as not registered; alice's hub name isn't
+	if !strings.Contains(body, `<span class="unreg"`) {
+		t.Fatal("an unregistered name isn't marked")
+	}
+	if _, alice := get(t, s, "/player?id=ka"); strings.Contains(alice, `<h1>alice<span class="unreg"`) || !strings.Contains(alice, "<h1>alice</h1>") {
+		t.Fatal("a hub name is marked as unregistered")
+	}
+		// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
 	for _, want := range []string{"Map completion", `<div class="meter-num">1 / 1</div>`, "1 gold</span> · <span class=\"silver\">1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("player stats lack %q", want)

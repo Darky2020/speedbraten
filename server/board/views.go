@@ -7,13 +7,14 @@ import (
 
 // Run is a valid finished run, for the list of recent runs.
 type Run struct {
-	Key     Key
-	Run     int64
-	Name    string
-	Install string
-	MS      int64
-	When    time.Time
-	Record  bool // it was its board's best when it was judged
+	Key        Key
+	Run        int64
+	Name       string
+	Registered bool
+	Install    string
+	MS         int64
+	When       time.Time
+	Record     bool // it was its board's best when it was judged
 }
 
 // Stats are the site's totals.
@@ -53,7 +54,7 @@ func (s *Store) RecentRuns(n int) ([]Run, error) {
 		}
 		for i := len(s.runs) - 1; i >= 0 && len(out) < n; i-- {
 			v := s.runs[i]
-			out = append(out, Run{Key: v.key, Run: v.run, Name: s.names[v.install], Install: v.install, MS: v.ms, When: time.UnixMilli(v.when), Record: records[v.run]})
+			out = append(out, Run{Key: v.key, Run: v.run, Name: s.names[v.install], Registered: s.named[v.install], Install: v.install, MS: v.ms, When: time.UnixMilli(v.when), Record: records[v.run]})
 		}
 	})
 	return out, err
@@ -99,23 +100,24 @@ func (s *Store) History(k Key) ([]Record, error) {
 // Holder is an install and how many boards it holds the best time on.
 type Holder struct {
 	Install, Name string
+	Registered    bool
 	Records       int
 }
 
 // TopHolders lists the installs holding the most bests.
 func (s *Store) TopHolders(n int) ([]Holder, error) {
 	counts := map[string]int{}
-	names := map[string]string{}
+	firsts := map[string]Entry{}
 	err := s.locked(func() {
 		for _, b := range s.boards {
 			e := b.Entries[0]
 			counts[e.Install]++
-			names[e.Install] = e.Name
+			firsts[e.Install] = e
 		}
 	})
 	var out []Holder
 	for k, c := range counts {
-		out = append(out, Holder{Install: k, Name: names[k], Records: c})
+		out = append(out, Holder{Install: k, Name: firsts[k].Name, Registered: firsts[k].Registered, Records: c})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Records > out[j].Records || out[i].Records == out[j].Records && out[i].Name < out[j].Name
@@ -142,7 +144,7 @@ func (s *Store) PlayerRuns(install string, n int) (recent []Run, total int, firs
 			total++
 			first = time.UnixMilli(v.when)
 			if len(recent) < n {
-				recent = append(recent, Run{Key: v.key, Run: v.run, Name: s.names[v.install], Install: v.install, MS: v.ms, When: time.UnixMilli(v.when), Record: records[v.run]})
+				recent = append(recent, Run{Key: v.key, Run: v.run, Name: s.names[v.install], Registered: s.named[v.install], Install: v.install, MS: v.ms, When: time.UnixMilli(v.when), Record: records[v.run]})
 			}
 		}
 	})
@@ -254,7 +256,7 @@ func (s *Store) PickedName(player string) string {
 
 // DefaultName is the name a player has without a picked one.
 func (s *Store) DefaultName(player string) string {
-	names, err := s.loadNames()
+	names, _, err := s.loadNames()
 	if err != nil {
 		return ""
 	}

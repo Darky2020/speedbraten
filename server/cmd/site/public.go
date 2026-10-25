@@ -497,7 +497,7 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		flagModes = append(flagModes, board.Key{Kind: "flagrun", Mode: m})
 	}
 	recent, total, first, _ := s.store.PlayerRuns(id, recentRuns)
-	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": medals[1],
+	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Registered": s.store.Registered(id), "Places": rows, "Records": medals[1],
 		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Maps": len(maps), "Runs": total, "Since": first,
 		"Completion": completion, "Recent": recent, "Flagruns": flagruns, "FlagModes": flagModes, "Sections": sections})
 }
@@ -632,15 +632,15 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 
 // topHolders lists who holds the most of these boards' bests.
 func topHolders(boards []*board.Board, n int) []board.Holder {
-	counts, names := map[string]int{}, map[string]string{}
+	counts, firsts := map[string]int{}, map[string]board.Entry{}
 	for _, b := range boards {
 		e := b.Entries[0]
 		counts[e.Install]++
-		names[e.Install] = e.Name
+		firsts[e.Install] = e
 	}
 	var out []board.Holder
 	for k, c := range counts {
-		out = append(out, board.Holder{Install: k, Name: names[k], Records: c})
+		out = append(out, board.Holder{Install: k, Name: firsts[k].Name, Registered: firsts[k].Registered, Records: c})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Records > out[j].Records || out[i].Records == out[j].Records && out[i].Name < out[j].Name

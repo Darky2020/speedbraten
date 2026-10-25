@@ -28,8 +28,11 @@ type Entry struct {
 	Run     int64
 	Install string // the witness's install key, hex
 	Name    string
-	MS      int64
-	When    time.Time // when the run was judged
+	// Registered: the name is the player's hub name or one picked on the dashboard, not just
+	// the name in their replays, which anyone can set
+	Registered bool
+	MS         int64
+	When       time.Time // when the run was judged
 }
 
 type Board struct {
@@ -39,13 +42,14 @@ type Board struct {
 
 // Record is a time that was the best on its board when it was set.
 type Record struct {
-	Key     Key
-	Run     int64
-	Install string
-	Name    string
-	MS      int64
-	Prev    int64 // the time it beat, -1 for the first time on the board
-	When    time.Time
+	Key        Key
+	Run        int64
+	Install    string
+	Name       string
+	Registered bool
+	MS         int64
+	Prev       int64 // the time it beat, -1 for the first time on the board
+	When       time.Time
 }
 
 // Place is an install's entry on one board, for its player page.
@@ -63,6 +67,7 @@ type Store struct {
 	built   time.Time
 	boards  map[Key]*Board
 	names   map[string]string
+	named   map[string]bool // players whose name is registered (see Entry)
 	listed  map[int64]bool
 	merged  map[string]string // install -> the install it was merged into
 	records []Record
@@ -154,15 +159,21 @@ func (s *Store) load() error {
 	for k := range banned {
 		banned[canon(k)] = true
 	}
-	names, err := s.loadNames()
+	names, named, err := s.loadNames()
 	if err != nil {
 		return err
+	}
+	// a merged player takes a hub name from any of its installs when its own has none
+	for k, into := range merged {
+		if named[k] && !named[into] {
+			names[into], named[into] = names[k], true
+		}
 	}
 	if rows, err = s.site.Query("SELECT install, name FROM names"); err != nil {
 		return err
 	}
 	for _, r := range rows {
-		names[r[0]] = r[1]
+		names[r[0]], named[r[0]] = r[1], true
 	}
 
 	// fastest first, so an install's first run on a board is its best; ties go to the earlier run
@@ -190,7 +201,7 @@ func (s *Store) load() error {
 		}
 		onboard[v.key][v.install] = true
 		b := boards[v.key]
-		b.Entries = append(b.Entries, Entry{Rank: len(b.Entries) + 1, Run: v.run, Install: v.install, Name: names[v.install], MS: v.ms, When: time.UnixMilli(v.when)})
+		b.Entries = append(b.Entries, Entry{Rank: len(b.Entries) + 1, Run: v.run, Install: v.install, Name: names[v.install], Registered: named[v.install], MS: v.ms, When: time.UnixMilli(v.when)})
 		listed[v.run] = true
 	}
 
@@ -209,42 +220,42 @@ func (s *Store) load() error {
 			prev = -1
 		}
 		best[v.key] = v.ms
-		records = append(records, Record{Key: v.key, Run: v.run, Install: v.install, Name: names[v.install], MS: v.ms, Prev: prev, When: time.UnixMilli(v.when)})
+		records = append(records, Record{Key: v.key, Run: v.run, Install: v.install, Name: names[v.install], Registered: named[v.install], MS: v.ms, Prev: prev, When: time.UnixMilli(v.when)})
 	}
-	s.boards, s.names, s.listed, s.records, s.runs, s.merged, s.built = boards, names, listed, records, runs, merged, time.Now()
+	s.boards, s.names, s.named, s.listed, s.records, s.runs, s.merged, s.built = boards, names, named, listed, records, runs, merged, time.Now()
 	return nil
 }
 
-// loadNames: an install's hub name, else the player name in its newest run.
-func (s *Store) loadNames() (map[string]string, error) {
-	names := map[string]string{}
+// loadNames: an install's hub name (named), else the player name in its newest run.
+func (s *Store) loadNames() (names map[string]string, named map[string]bool, err error) {
+	names, named = map[string]string{}, map[string]bool{}
 	rows, err := s.witness.Query("SELECT installkey, player FROM runs WHERE IFNULL(player, '') != '' ORDER BY id")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, r := range rows {
 		names[r[0]] = r[1]
 	}
 	if s.hub == nil {
-		return names, nil
+		return names, named, nil
 	}
 	hubnames := map[string]string{}
 	if rows, err = s.hub.Query("SELECT key, name FROM installs WHERE IFNULL(name, '') != ''"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, r := range rows {
 		hubnames[r[0]] = r[1]
 	}
 	// the hub knows an install by its Noise key, which the witness's sessions record as installpub
 	if rows, err = s.witness.Query("SELECT DISTINCT installkey, installpub FROM sessions WHERE IFNULL(installpub, '') != ''"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, r := range rows {
 		if n := hubnames[r[1]]; n != "" {
-			names[r[0]] = n
+			names[r[0]], named[r[0]] = n, true
 		}
 	}
-	return names, nil
+	return names, named, nil
 }
 
 func (s *Store) locked(f func()) error {
@@ -415,6 +426,13 @@ func (s *Store) SetName(player, name string) error {
 	}
 	s.changed()
 	return err
+}
+
+// Registered tells whether a player's name is registered (see Entry).
+func (s *Store) Registered(player string) bool {
+	var ok bool
+	s.locked(func() { ok = s.named[player] })
+	return ok
 }
 
 // Name is an install's name on the boards, "" when unknown.
