@@ -1,6 +1,6 @@
 name: witness release
 
-# Builds the witness server and the hub for Linux x86_64 (sauer_witness, sauer_resim, witnessdash, hub) against
+# Builds the witness server, the hub and the leaderboard site for Linux x86_64 (sauer_witness, sauer_resim, witnessdash, hub, site) against
 # glibc 2.31, so it runs on older distributions too, and publishes it as a pre-release asset.
 on:
   push:
@@ -41,6 +41,9 @@ jobs:
       - name: hub
         working-directory: server
         run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/hub ./cmd/hub
+      - name: site
+        working-directory: server
+        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target $TARGET" go build -o ../out/site ./cmd/site
       - name: package
         run: |
           mkdir -p pkg/speedbraten-witness
@@ -48,9 +51,10 @@ jobs:
           cp out/sauer_resim-$TARGET pkg/speedbraten-witness/sauer_resim
           cp out/witnessdash pkg/speedbraten-witness/
           cp out/hub pkg/speedbraten-witness/
+          cp out/site pkg/speedbraten-witness/
           cp -R data/overrides pkg/speedbraten-witness/overrides
           git rev-parse HEAD > pkg/speedbraten-witness/COMMIT
-          for f in sauer_witness sauer_resim witnessdash hub; do
+          for f in sauer_witness sauer_resim witnessdash hub site; do
             need=$(objdump -T pkg/speedbraten-witness/$f | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
             echo "$f needs $need"
             printf '%s\n%s\n' "$need" GLIBC_2.31 | sort -CV || { echo "$f needs a newer glibc than 2.31"; exit 1; }
@@ -82,6 +86,15 @@ jobs:
           echo "witnessdash sets a password"
           echo "a long enough password" | $d/witnessdash setpass pass
           grep -q '^\$2' pass
+          echo "the site serves the boards and asks for the dashboard's password"
+          echo "a long enough password" | $d/site setpass sitepass
+          $d/site -witnessdb wdata/witness.db -hubdb hub.db -sitedb site.db -pass sitepass -listen 127.0.0.1:28797 > site.log 2>&1 &
+          spid=$!
+          sleep 2
+          cat site.log
+          curl -fsS http://127.0.0.1:28797/ | grep -q "Leaderboards"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:28797/admin/runs)" = 401
+          kill $spid
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -92,5 +105,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "witness server ($TAG)" --notes "Linux x86_64 build of the witness server and the hub (sauer_witness, sauer_resim, witnessdash, hub), glibc 2.31 or newer."
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "witness server ($TAG)" --notes "Linux x86_64 build of the witness server and the hub (sauer_witness, sauer_resim, witnessdash, hub, site), glibc 2.31 or newer."
           gh release upload "$TAG" --clobber speedbraten-witness-linux-x86_64.tar.gz speedbraten-witness-linux-x86_64.tar.gz.sha256
