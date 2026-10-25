@@ -1,0 +1,14 @@
+{{template "top" .}}
+<h1>Server</h1>
+{{with .D}}<div class="tiles">
+<div class="tile"><div class="k">free</div><div class="v">{{bytes .Free}}</div><div class="small dim">of {{bytes .Total}}</div></div>
+<div class="tile"><div class="k">used</div><div class="v">{{.UsedPercent}}%</div><div class="meter" style="margin-top: 8px"><div class="fill {{if ge .UsedPercent 90}}b-ectf{{else if ge .UsedPercent 75}}b-sp{{else}}b-ictf{{end}}" style="width: {{.UsedPercent}}%"></div></div></div>
+<div class="tile"><div class="k">speedbraten</div><div class="v">{{bytes .Ours}}</div><div class="small dim">{{percent .Ours .Total}} of the disk</div></div>
+<div class="tile"><div class="k">measured</div><div class="v">{{ago .At}}</div><div class="small dim">every 10 minutes at most</div></div>
+</div>
+<div class="card scroll"><header><h2>Speedbraten's folders</h2></header><table>
+<tr><th>what</th><th>folder</th><th class="num">files</th><th class="num">size</th><th class="num">share</th></tr>
+{{range .Folders}}<tr><td>{{.Name}}</td><td class="small"><code>{{.Path}}</code>{{if .Err}} <span class="rejected small">{{.Err}}</span>{{end}}</td><td class="num dim">{{.Files}}</td><td class="num time">{{bytes .Size}}</td><td class="num dim small">{{percent .Size $.D.Ours}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No folders given (-disk).</td></tr>{{end}}
+</table></div>{{end}}
+{{template "bottom" .}}

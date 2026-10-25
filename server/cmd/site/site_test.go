@@ -134,7 +134,7 @@ func TestPublicPages(t *testing.T) {
 		t.Fatalf("a listed map without runs: %d", code)
 	}
 
-		// search, filter and sort
+	// search, filter and sort
 	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
 		t.Fatal("search by a holder's name, any case, doesn't find forge")
 	}

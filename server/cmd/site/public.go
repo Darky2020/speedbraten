@@ -83,7 +83,14 @@ var funcs = template.FuncMap{
 	"mapImage":  func(m string) string { return "/mapimg/" + url.PathEscape(m) },
 	"playerURL": func(install string) string { return "/player?id=" + url.QueryEscape(install) },
 	"short":     shortKey,
-	"join":      func(s []string) string { return strings.Join(s, ", ") },
+	"bytes":     bytesize,
+	"percent": func(a, b uint64) string {
+		if b == 0 {
+			return "—"
+		}
+		return fmt.Sprintf("%.1f%%", float64(a)*100/float64(b))
+	},
+	"join": func(s []string) string { return strings.Join(s, ", ") },
 }
 
 func page(files ...string) *template.Template {

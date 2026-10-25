@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +54,7 @@ func main() {
 	shots := flag.String("mapshots", "", "pictures of maps chosen by hand: <map>.jpg or <map>.png")
 	previews := flag.String("mappreviews", "", "the game's packages/base, whose <map>.jpg previews stand in for maps without a picture")
 	hubAddr := flag.String("hubaddr", "141.95.67.191", "the hub's address as the info page gives it")
+	disk := flag.String("disk", "", "more folders for the dashboard's disk page, name=path,name=path (the witness's and hub's data folders are always there)")
 	flag.Parse()
 	if *witnessDB == "" {
 		log.Fatal("-witnessdb is needed")
@@ -69,7 +71,17 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		newAdmin(store, []byte(strings.TrimSpace(string(hash))), *rejudgeDir).register(s.mux)
+		a := newAdmin(store, []byte(strings.TrimSpace(string(hash))), *rejudgeDir)
+		folders := []folderSize{{Name: "witness data (replays, witness.db)", Path: filepath.Dir(*witnessDB)}}
+		if *hubDB != "" && filepath.Dir(*hubDB) != filepath.Dir(*witnessDB) {
+			folders = append(folders, folderSize{Name: "hub data (hub.db, site.db)", Path: filepath.Dir(*hubDB)})
+		}
+		more, err := parseFolders(*disk)
+		if err != nil {
+			log.Fatal(err)
+		}
+		a.disk = &diskWatch{folders: append(folders, more...), ttl: 10 * time.Minute}
+		a.register(s.mux)
 	}
 	srv := &http.Server{Addr: *listen, Handler: s, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 120 * time.Second}
 	log.Printf("site on http://%s", *listen)

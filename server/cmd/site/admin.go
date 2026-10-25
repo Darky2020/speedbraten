@@ -33,6 +33,7 @@ var (
 	moderationAdmin = page("admin_moderation.html")
 	playersAdmin    = page("admin_players.html")
 	playerAdmin     = page("admin_player.html")
+	serverAdmin     = page("admin_server.html")
 )
 
 // admin is the dashboard under /admin: HTTP basic auth against a bcrypt hash (any user name), with
@@ -41,6 +42,7 @@ type admin struct {
 	store      *board.Store
 	hash       []byte
 	rejudgeDir string // the witness's <data dir>/rejudge
+	disk       *diskWatch
 	token      string
 	now        func() time.Time
 
@@ -68,6 +70,7 @@ func (a *admin) register(mux *http.ServeMux) {
 	mux.Handle("/admin/moderation", a.auth(http.HandlerFunc(a.moderation)))
 	mux.Handle("/admin/players", a.auth(http.HandlerFunc(a.players)))
 	mux.Handle("/admin/player", a.auth(http.HandlerFunc(a.player)))
+	mux.Handle("/admin/server", a.auth(http.HandlerFunc(a.server)))
 	mux.Handle("/admin/file", a.auth(http.HandlerFunc(a.file)))
 	mux.Handle("/admin/act", a.auth(http.HandlerFunc(a.act)))
 }
@@ -263,6 +266,14 @@ func (a *admin) player(w http.ResponseWriter, r *http.Request) {
 	picked := a.store.PickedName(id)
 	render(w, playerAdmin, "admin_player.html", map[string]any{"Title": me.Name, "Tab": "players", "Admin": true, "Token": a.token, "P": me, "Others": others,
 		"Picked": picked, "Default": a.store.DefaultName(id)})
+}
+
+func (a *admin) server(w http.ResponseWriter, r *http.Request) {
+	var d *diskReport
+	if a.disk != nil {
+		d = a.disk.report()
+	}
+	render(w, serverAdmin, "admin_server.html", map[string]any{"Title": "Server", "Tab": "server", "Admin": true, "Token": a.token, "D": d})
 }
 
 func shortKey(k string) string {

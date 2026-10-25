@@ -86,7 +86,7 @@ button:hover { border-color: var(--accent); }
 @media (max-width: 600px) { .wide { display: none; } td, th { padding: 8px 10px; } .thumb { width: 48px; height: 27px; } .banner { height: 170px; } .banner h1 { font-size: 24px; } }
 </style></head><body>
 <div class="bar"><div class="in"><a class="logo" href="/">speed<span>braten</span></a>
-<nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/">Public site</a>
+<nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/admin/server"{{if eq .Tab "server"}} class="on"{{end}}>Server</a><a href="/">Public site</a>
 {{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav></div></div>
 <main>{{end}}
 {{define "bottom"}}</main>

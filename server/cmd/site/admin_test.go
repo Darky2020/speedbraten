@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -204,5 +205,27 @@ func TestAdminPlayers(t *testing.T) {
 	f.act(url.Values{"do": {"remove"}, "run": {"1"}, "note": {"x"}})
 	if body := f.do("GET", "/admin/runs", password, nil, "10.0.0.1").Body.String(); !strings.Contains(body, "undelete") {
 		t.Fatal("a deleted run can be undeleted")
+	}
+}
+
+func TestAdminServer(t *testing.T) {
+	f := newAdminFixture(t)
+	folders, err := parseFolders("replays=" + f.dir + ", nothing=" + filepath.Join(f.dir, "missing"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.a.disk = &diskWatch{folders: folders, ttl: time.Minute}
+	body := f.do("GET", "/admin/server", password, nil, "10.0.0.1").Body.String()
+	for _, want := range []string{"Speedbraten's folders", "replays", "of the disk", "free"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("server page lacks %q", want)
+		}
+	}
+	r := f.a.disk.report()
+	if r.Total == 0 || r.Free == 0 || r.Folders[0].Files < 4 || r.Folders[0].Size == 0 || r.Folders[1].Size != 0 {
+		t.Fatalf("disk report %+v", r)
+	}
+	if _, err := parseFolders("noequals"); err == nil {
+		t.Fatal("a folder without a name")
 	}
 }
