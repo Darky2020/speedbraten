@@ -168,6 +168,9 @@ func TestPublicPages(t *testing.T) {
 	if !strings.Contains(body, `<nav class="tabs"><a href="/">Home</a>`) || strings.Contains(body, `class="bar"><div class="fill`) {
 		t.Fatal("the player page's menu, or a progress bar sharing the menu's class")
 	}
+	if i, j := strings.Index(body, "<h2>Flagruns</h2>"), strings.Index(body, "<h2>Campaigns</h2>"); i < 0 || j < i || !strings.Contains(body, `<span class="silver">#2</span>`) {
+		t.Fatal("the player's places aren't grouped by category, or #2 isn't silver")
+	}
 		// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
 	for _, want := range []string{"Map completion", `<div class="meter-num">1 / 1</div>`, "1 gold</span> · <span class=\"silver\">1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
 		if !strings.Contains(body, want) {

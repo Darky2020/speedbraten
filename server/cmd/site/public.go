@@ -453,10 +453,47 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		}
 		completion = append(completion, completionRow{Label: g.Label, Badge: g.Badge, Done: mine[g.Key], Of: totals[g.Key], Percent: 100 * mine[g.Key] / totals[g.Key]})
 	}
+	// places by category, like the site's tabs: flagruns as one row per map with a cell per mode
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Key.MapLabel() < rows[j].Key.MapLabel() })
+	var flagruns []playerFlagRow
+	flagIndex := map[string]int{}
+	races := placeSection{Title: "Races"}
+	campaigns := placeSection{Title: "Campaigns"}
+	for _, p := range rows {
+		switch p.Key.Kind {
+		case "flagrun":
+			col := slices.Index(flagrunModes, p.Key.Mode)
+			if col < 0 {
+				continue
+			}
+			i, ok := flagIndex[p.Key.Map]
+			if !ok {
+				i = len(flagruns)
+				flagIndex[p.Key.Map] = i
+				flagruns = append(flagruns, playerFlagRow{Key: p.Key, Cells: make([]playerFlagCell, len(flagrunModes))})
+			}
+			pp := p
+			flagruns[i].Cells[col].Place = &pp
+		case "race":
+			races.Places = append(races.Places, p)
+		default:
+			campaigns.Places = append(campaigns.Places, p)
+		}
+	}
+	var sections []placeSection
+	for _, sec := range []placeSection{races, campaigns} {
+		if len(sec.Places) > 0 {
+			sections = append(sections, sec)
+		}
+	}
+	var flagModes []board.Key
+	for _, m := range flagrunModes {
+		flagModes = append(flagModes, board.Key{Kind: "flagrun", Mode: m})
+	}
 	recent, total, first, _ := s.store.PlayerRuns(id, recentRuns)
 	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": medals[1],
 		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Maps": len(maps), "Runs": total, "Since": first,
-		"Completion": completion, "Recent": recent})
+		"Completion": completion, "Recent": recent, "Flagruns": flagruns, "FlagModes": flagModes, "Sections": sections})
 }
 
 func (s *site) info(w http.ResponseWriter, r *http.Request) {
@@ -629,3 +666,15 @@ var completionGroups = []struct {
 }
 
 func completionGroup(k board.Key) string { return modeOf(k) }
+
+type playerFlagCell struct{ Place *placeRow }
+
+type playerFlagRow struct {
+	Key   board.Key
+	Cells []playerFlagCell
+}
+
+type placeSection struct {
+	Title  string
+	Places []placeRow
+}
