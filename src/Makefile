@@ -116,6 +116,7 @@ CLIENT_OBJS= \
 	engine/lightmap.o \
 	engine/main.o \
 	engine/witnessnet.o \
+	engine/simloop.o \
 	engine/material.o \
 	engine/menus.o \
 	engine/movie.o \

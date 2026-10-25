@@ -1345,27 +1345,7 @@ int getclockmillis()
 VARF(fixedframe, 0, 0, 100, clockreset());
 VAR(fixedframedraw, 1, 1, 1000);
 
-// Offline, the game advances in fixed SIMTICK steps of game time, decoupled from frame
-// rate, so identical inputs give identical results on any machine and frame pacing.
-bool simticking = false, insimtick = false;
 int inputsource = INPUTSRC_OTHER;
-static bool simrestarted = false;
-static int simaccum = 0;
-static bool simclockskip = false;
-
-// Puts the game clock at a fixed value and drops the time spent until the next frame
-// (e.g. map loading), so a new local game always starts from the same clock state.
-void resetsimclock(int base)
-{
-    extern int lastphysframe;
-    int delta = base - lastmillis;
-    lastmillis = base;
-    lastphysframe = base;
-    rebasesleeps(delta);
-    simaccum = 0;
-    simclockskip = true;
-    simrestarted = true;
-}
 
 VAR(numcpus, 1, 1, 16);
 MOD(VARP, minimizedframes, 0, 0, 1);
@@ -1612,17 +1592,11 @@ int main(int argc, char **argv)
         else ratelimit(millis, lastdrawmillis, draw);
         elapsedtime = millis - totalmillis;
         static int timeerr = 0;
-        simticking = !multiplayer(false);
-        if(simticking && simclockskip) { elapsedtime = 0; timeerr = 0; simclockskip = false; }
+        simframestart(timeerr);
         int scaledtime = game::scaletime(elapsedtime) + timeerr;
         curtime = scaledtime/100;
         timeerr = scaledtime%100;
-        if(simticking)
-        {
-            if(curtime>200) curtime = 200;
-            if(!game::ispaused() && !game::holdsim()) simaccum += curtime;
-        }
-        else if(!game::ispaused()) lastmillis += curtime;
+        simadvanceclock();
         totalmillis = millis;
         updatetime();
  
@@ -1634,51 +1608,14 @@ int main(int argc, char **argv)
         }
         tryedit();
 
-        if(simticking)
-        {
-            int simulated = 0;
-            while(simaccum >= SIMTICK && !game::ispaused() && !game::holdsim())
-            {
-                simaccum -= SIMTICK;
-                curtime = SIMTICK;
-                lastmillis += SIMTICK;
-                simulated += SIMTICK;
-                // a map start inside a tick abandons the rest of it, so every way of
-                // starting a game leads to the same first tick
-                simrestarted = false;
-                insimtick = true;
-                detfpmode();
-                game::begintick();
-                if(!simrestarted) game::updateworld();
-                if(!simrestarted) checksleep(lastmillis);
-                if(!simrestarted) serverslice(false, 0);
-                insimtick = false;
-                if(simrestarted || !simticking) break;
-            }
-            curtime = simulated;
-#ifndef HEADLESS
-            static Uint64 lastframe = 0;
-            Uint64 now = SDL_GetPerformanceCounter();
-            if(lastframe) game::frametimed(int(min((now - lastframe)*1000000/SDL_GetPerformanceFrequency(), Uint64(1)<<30)), simulated/SIMTICK, draw);
-            lastframe = now;
-#endif
-        }
-        else
-        {
-            if(lastmillis) game::updateworld();
-
-            checksleep(lastmillis);
-
-            serverslice(false, 0);
-        }
+        simupdate(draw);
 
 #ifdef HEADLESS
         if(game::resimdone()) exit(game::resimreport());
         draw = false;
 #endif
 
-        bool display = simticking && !mainmenu;
-        if(display) game::begindisplay(simaccum/float(SIMTICK));
+        bool display = simdisplaystart();
 
         // miscellaneous general game effects
         recomputecamera();

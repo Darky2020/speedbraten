@@ -411,6 +411,12 @@ extern void writecfg(const char *name = NULL);
 
 extern void checksleep(int millis);
 extern void rebasesleeps(int delta);
+
+// simloop
+extern void simframestart(int &timeerr);
+extern void simadvanceclock();
+extern void simupdate(bool draw);
+extern bool simdisplaystart();
 extern void clearsleep(bool clearoverrides = true);
 
 extern int naturalsort(const char *a, const char *b);
