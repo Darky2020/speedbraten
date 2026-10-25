@@ -64,6 +64,7 @@ type Store struct {
 	boards  map[Key]*Board
 	names   map[string]string
 	listed  map[int64]bool
+	merged  map[string]string // install -> the install it was merged into
 	records []Record
 	runs    []validRun // the runs that count, in the order they were judged
 }
@@ -88,6 +89,8 @@ func Open(witnessDB, hubDB, siteDB string, ttl time.Duration) (*Store, error) {
 		"CREATE TABLE IF NOT EXISTS removed(run INTEGER PRIMARY KEY, note TEXT, at INTEGER)",
 		"CREATE TABLE IF NOT EXISTS banned(install TEXT PRIMARY KEY, note TEXT, at INTEGER)",
 		"CREATE TABLE IF NOT EXISTS flagreviews(flag INTEGER PRIMARY KEY, note TEXT, at INTEGER)",
+		"CREATE TABLE IF NOT EXISTS merged(install TEXT PRIMARY KEY, player TEXT NOT NULL, at INTEGER)",
+		"CREATE TABLE IF NOT EXISTS names(install TEXT PRIMARY KEY, name TEXT NOT NULL)",
 	} {
 		if _, err := s.site.Exec(q); err != nil {
 			return nil, err
@@ -134,9 +137,32 @@ func (s *Store) load() error {
 	for _, r := range rows {
 		banned[r[0]] = true
 	}
+	merged := map[string]string{}
+	if rows, err = s.site.Query("SELECT install, player FROM merged"); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		merged[r[0]] = r[1]
+	}
+	canon := func(k string) string {
+		if into, ok := merged[k]; ok {
+			return into
+		}
+		return k
+	}
+	// a ban on any of a player's installs bans the player
+	for k := range banned {
+		banned[canon(k)] = true
+	}
 	names, err := s.loadNames()
 	if err != nil {
 		return err
+	}
+	if rows, err = s.site.Query("SELECT install, name FROM names"); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		names[r[0]] = r[1]
 	}
 
 	// fastest first, so an install's first run on a board is its best; ties go to the earlier run
@@ -150,7 +176,7 @@ func (s *Store) load() error {
 	onboard := map[Key]map[string]bool{}
 	var runs []validRun
 	for _, r := range rows {
-		v := validRun{key: Key{Map: r[2], Kind: r[3], Mode: int(atoi(r[4]))}, run: atoi(r[0]), install: r[1], ms: atoi(r[5]), when: atoi(r[6])}
+		v := validRun{key: Key{Map: r[2], Kind: r[3], Mode: int(atoi(r[4]))}, run: atoi(r[0]), install: canon(r[1]), ms: atoi(r[5]), when: atoi(r[6])}
 		if removed[v.run] || banned[v.install] {
 			continue
 		}
@@ -185,7 +211,7 @@ func (s *Store) load() error {
 		best[v.key] = v.ms
 		records = append(records, Record{Key: v.key, Run: v.run, Install: v.install, Name: names[v.install], MS: v.ms, Prev: prev, When: time.UnixMilli(v.when)})
 	}
-	s.boards, s.names, s.listed, s.records, s.runs, s.built = boards, names, listed, records, runs, time.Now()
+	s.boards, s.names, s.listed, s.records, s.runs, s.merged, s.built = boards, names, listed, records, runs, merged, time.Now()
 	return nil
 }
 
@@ -326,7 +352,69 @@ func (s *Store) InstallOfPub(pub string) string {
 	if err != nil || len(rows) == 0 {
 		return ""
 	}
-	return rows[0][0]
+	return s.Canonical(rows[0][0])
+}
+
+// Canonical is the player an install belongs to: the install it was merged into, or itself.
+func (s *Store) Canonical(install string) string {
+	k := install
+	s.locked(func() {
+		if into, ok := s.merged[install]; ok {
+			k = into
+		}
+	})
+	return k
+}
+
+// Keys lists a player's installs: its own key first, then those merged into it.
+func (s *Store) Keys(player string) []string {
+	keys := []string{player}
+	s.locked(func() {
+		var more []string
+		for k, into := range s.merged {
+			if into == player {
+				more = append(more, k)
+			}
+		}
+		sort.Strings(more)
+		keys = append(keys, more...)
+	})
+	return keys
+}
+
+// Merge makes install (and every install merged into it) part of the player into.
+func (s *Store) Merge(install, into string) error {
+	into = s.Canonical(into)
+	install = s.Canonical(install)
+	if install == into || install == "" || into == "" {
+		return errors.New("that's the same player")
+	}
+	now := time.Now().Unix()
+	if _, err := s.site.Exec("UPDATE merged SET player = ? WHERE player = ?", into, install); err != nil {
+		return err
+	}
+	_, err := s.site.Exec("INSERT OR REPLACE INTO merged(install, player, at) VALUES(?, ?, ?)", install, into, now)
+	s.changed()
+	return err
+}
+
+// Split takes an install back out of the player it was merged into.
+func (s *Store) Split(install string) error {
+	_, err := s.site.Exec("DELETE FROM merged WHERE install = ?", install)
+	s.changed()
+	return err
+}
+
+// SetName sets a player's name on the boards; "" goes back to its hub or replay name.
+func (s *Store) SetName(player, name string) error {
+	var err error
+	if name == "" {
+		_, err = s.site.Exec("DELETE FROM names WHERE install = ?", player)
+	} else {
+		_, err = s.site.Exec("INSERT OR REPLACE INTO names(install, name) VALUES(?, ?)", player, name)
+	}
+	s.changed()
+	return err
 }
 
 // Name is an install's name on the boards, "" when unknown.

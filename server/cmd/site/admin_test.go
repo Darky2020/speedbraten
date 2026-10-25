@@ -171,3 +171,38 @@ func TestAdminModeration(t *testing.T) {
 		t.Fatal("review not kept")
 	}
 }
+
+func TestAdminPlayers(t *testing.T) {
+	f := newAdminFixture(t)
+	// an unfinished run shows how long it was streamed
+	w := f.do("GET", "/admin/runs?verdict=unfinished", password, nil, "10.0.0.1")
+	if body := w.Body.String(); !strings.Contains(body, "0:12.500") || !strings.Contains(body, "a state was loaded") || strings.Contains(body, "0:09.000") {
+		t.Fatal("unfinished runs with their length")
+	}
+	w = f.do("GET", "/admin/players", password, nil, "10.0.0.1")
+	if body := w.Body.String(); !strings.Contains(body, "alice") || !strings.Contains(body, "carl") || !strings.Contains(body, "&lt;script&gt;bob&lt;/script&gt;, bob") {
+		t.Fatal("players with aliases")
+	}
+	// kb is alice's other install: merged, the boards have one entry with kb's runs under alice
+	f.act(url.Values{"do": {"merge"}, "install": {"kb"}, "into": {"ka"}})
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); strings.Count(body, `href="/player?id=`) != 1 || !strings.Contains(body, "alice") {
+		t.Fatal("merged players on the board")
+	}
+	w = f.do("GET", "/admin/player?id=kb", password, nil, "10.0.0.1")
+	if body := w.Body.String(); !strings.Contains(body, "<code>ka</code> <span class=\"dim\">main</span>") || !strings.Contains(body, "<code>kb</code>") {
+		t.Fatal("the merged player's keys")
+	}
+	f.act(url.Values{"do": {"rename"}, "install": {"ka"}, "name": {"Alice A."}})
+	if _, body := get(t, f.s, "/singleplayer"); !strings.Contains(body, "Alice A.") {
+		t.Fatal("the picked name on the boards")
+	}
+	f.act(url.Values{"do": {"split"}, "install": {"kb"}})
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); strings.Count(body, `href="/player?id=`) != 2 {
+		t.Fatal("after splitting")
+	}
+	// deleting is called deleting
+	f.act(url.Values{"do": {"remove"}, "run": {"1"}, "note": {"x"}})
+	if body := f.do("GET", "/admin/runs", password, nil, "10.0.0.1").Body.String(); !strings.Contains(body, "undelete") {
+		t.Fatal("a deleted run can be undeleted")
+	}
+}

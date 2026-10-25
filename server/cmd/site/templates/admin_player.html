@@ -1,0 +1,25 @@
+{{template "top" .}}
+<h1>{{.P.Name}}{{if .P.Banned}} <span class="rejected small">banned</span>{{end}}</h1>
+<p class="sub">{{.P.Runs}} runs · last seen {{ago .P.LastSeen}} · <a href="/admin/runs?player={{.P.Player}}">runs</a> · <a href="/player?id={{.P.Player}}">public page</a></p>
+<div class="cols2">
+<div>
+<div class="card"><header><h2>Name on the boards</h2></header><div class="body">
+<form class="filters" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="install" value="{{.P.Player}}">
+<input type="text" name="name" value="{{.Picked}}" placeholder="{{.Default}}"><button name="do" value="rename">save</button></form>
+<div class="small dim">Empty: the hub name of its main key, else its newest replay's.</div>
+<div class="small" style="margin-top: 8px">Seen as: {{join .P.Aliases}}</div></div></div>
+<div class="card"><header><h2>Boards</h2></header><div class="body">
+<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="install" value="{{.P.Player}}">
+{{if .P.Banned}}<button name="do" value="unban">unban</button>{{else}}<input type="text" name="note" placeholder="why"> <button name="do" value="ban">ban from the boards</button>{{end}}</form></div></div>
+</div>
+<div>
+<div class="card"><header><h2>Install keys</h2><span class="dim small">{{len .P.Keys}}</span></header><div class="scroll"><table>
+{{range $i, $k := .P.Keys}}<tr><td class="small"><code>{{$k}}</code>{{if eq $i 0}} <span class="dim">main</span>{{end}}</td>
+<td>{{if ne $i 0}}<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="install" value="{{$k}}"><button name="do" value="split">split off</button></form>{{end}}</td></tr>{{end}}
+</table></div>
+<div class="body"><form class="filters" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="into" value="{{.P.Player}}">
+<select name="install"><option value="">merge another player in…</option>{{range .Others}}<option value="{{.Player}}">{{.Name}} · {{short .Player}} · {{.Runs}} runs</option>{{end}}</select>
+<button name="do" value="merge">merge</button></form></div></div>
+</div>
+</div>
+{{template "bottom" .}}

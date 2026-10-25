@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,8 @@ var (
 	runsAdmin       = page("admin_runs.html")
 	flagsAdmin      = page("admin_flags.html")
 	moderationAdmin = page("admin_moderation.html")
+	playersAdmin    = page("admin_players.html")
+	playerAdmin     = page("admin_player.html")
 )
 
 // admin is the dashboard under /admin: HTTP basic auth against a bcrypt hash (any user name), with
@@ -63,6 +66,8 @@ func (a *admin) register(mux *http.ServeMux) {
 	mux.Handle("/admin/runs", a.auth(http.HandlerFunc(a.runs)))
 	mux.Handle("/admin/flags", a.auth(http.HandlerFunc(a.flags)))
 	mux.Handle("/admin/moderation", a.auth(http.HandlerFunc(a.moderation)))
+	mux.Handle("/admin/players", a.auth(http.HandlerFunc(a.players)))
+	mux.Handle("/admin/player", a.auth(http.HandlerFunc(a.player)))
 	mux.Handle("/admin/file", a.auth(http.HandlerFunc(a.file)))
 	mux.Handle("/admin/act", a.auth(http.HandlerFunc(a.act)))
 }
@@ -128,19 +133,25 @@ func when(ms string) string {
 }
 
 type runRow struct {
-	ID, Started, Install, Name, Map, Kind, Time, Verdict, Reason, Stop, Lag string
-	Violations                                                              int64
-	Finished, Removed, Banned                                               bool
+	ID, Started, Install, Player, Name, Map, Kind, Length, Verdict, Reason, Stop, Lag string
+	Violations                                                                        int64
+	Finished, Deleted, Banned                                                         bool
 }
 
 type runFilter struct{ Player, Map, Verdict string }
+
+var runVerdicts = []option{{"", "any verdict"}, {"valid", "valid"}, {"rejected", "rejected"}, {"unverified", "unverified"}, {"none", "no verdict"}, {"unfinished", "unfinished"}}
 
 func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := runFilter{Player: strings.TrimSpace(q.Get("player")), Map: strings.TrimSpace(q.Get("map")), Verdict: q.Get("verdict")}
 	where, args := []string{"1"}, []any{}
 	if f.Player != "" {
-		keys := append([]string{f.Player}, a.store.Installs(f.Player)...)
+		// the player's own keys, or every install whose name contains the text
+		var keys []string
+		for _, k := range append([]string{f.Player}, a.store.Installs(f.Player)...) {
+			keys = append(keys, a.store.Keys(a.store.Canonical(k))...)
+		}
 		where = append(where, "installkey IN ("+strings.TrimSuffix(strings.Repeat("?,", len(keys)), ",")+")")
 		for _, k := range keys {
 			args = append(args, k)
@@ -155,18 +166,27 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		where = append(where, "verdict = ?")
 		args = append(args, f.Verdict)
 	case "none":
-		where = append(where, "verdict IS NULL")
+		where = append(where, "verdict IS NULL AND IFNULL(finished, 0) = 1")
+	case "unfinished":
+		where = append(where, "IFNULL(finished, 0) = 0")
 	}
 	if before, err := strconv.ParseInt(q.Get("before"), 10, 64); err == nil {
 		where = append(where, "id < ?")
 		args = append(args, before)
 	}
 	rows, err := a.store.Witness().Query(`SELECT id, IFNULL(started, 0), IFNULL(installkey, ''), IFNULL(map, ''), IFNULL(runkind, ''), IFNULL(mode, 0),
-		IFNULL(runtimems, 0), IFNULL(verdict, ''), IFNULL(reason, ''), IFNULL(stop, IFNULL(refused, '')), IFNULL(violations, 0), IFNULL(maxlagms, 0), IFNULL(finished, 0)
+		IFNULL(runtimems, 0), IFNULL(verdict, ''), IFNULL(reason, ''), IFNULL(stop, IFNULL(refused, '')), IFNULL(violations, 0), IFNULL(maxlagms, 0),
+		IFNULL(finished, 0), IFNULL(ended, 0)
 		FROM runs WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT `+strconv.Itoa(runsPerPage), args...)
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	banned := map[string]bool{}
+	if notes, err := a.store.BannedInstalls(); err == nil {
+		for _, n := range notes {
+			banned[a.store.Canonical(n.ID)] = true
+		}
 	}
 	var list []runRow
 	for _, v := range rows {
@@ -174,15 +194,23 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		mode, _ := strconv.Atoi(v[5])
 		ms, _ := strconv.ParseInt(v[6], 10, 64)
 		viol, _ := strconv.ParseInt(v[10], 10, 64)
+		started, _ := strconv.ParseInt(v[1], 10, 64)
+		ended, _ := strconv.ParseInt(v[13], 10, 64)
+		player := a.store.Canonical(v[2])
 		k := board.Key{Map: v[3], Kind: v[4], Mode: mode}
-		rr := runRow{ID: v[0], Started: when(v[1]), Install: v[2], Name: a.store.Name(v[2]), Map: k.MapLabel(), Kind: k.KindLabel(),
+		rr := runRow{ID: v[0], Started: when(v[1]), Install: v[2], Player: player, Name: a.store.Name(player), Map: k.MapLabel(), Kind: k.KindLabel(),
 			Verdict: v[7], Reason: v[8], Stop: v[9], Violations: viol, Lag: v[11], Finished: v[12] == "1",
-			Removed: a.store.IsRemoved(id), Banned: a.store.IsBanned(v[2])}
+			Deleted: a.store.IsRemoved(id), Banned: banned[player]}
 		if rr.Name == "" {
-			rr.Name = shortKey(v[2])
+			rr.Name = shortKey(player)
 		}
-		if ms > 0 {
-			rr.Time = board.Time(ms)
+		switch {
+		case ms > 0:
+			rr.Length = board.Time(ms)
+		case ended > started:
+			rr.Length = board.Time(ended - started)
+		default:
+			rr.Length = "—"
 		}
 		list = append(list, rr)
 	}
@@ -192,7 +220,49 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		more = "/admin/runs?" + v.Encode()
 	}
 	render(w, runsAdmin, "admin_runs.html", map[string]any{"Title": "Runs", "Tab": "runs", "Admin": true, "Token": a.token, "F": f, "Runs": list, "More": more,
-		"Verdicts": []string{"", "valid", "rejected", "unverified", "none"}})
+		"Verdicts": runVerdicts})
+}
+
+func (a *admin) players(w http.ResponseWriter, r *http.Request) {
+	all, err := a.store.Players()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	var shown []board.PlayerSummary
+	for _, p := range all {
+		if q == "" || strings.Contains(strings.ToLower(p.Name), q) || strings.Contains(strings.ToLower(strings.Join(p.Aliases, " ")), q) || strings.Contains(strings.ToLower(strings.Join(p.Keys, " ")), q) {
+			shown = append(shown, p)
+		}
+	}
+	render(w, playersAdmin, "admin_players.html", map[string]any{"Title": "Players", "Tab": "players", "Admin": true, "Token": a.token, "Players": shown, "Q": r.URL.Query().Get("q")})
+}
+
+func (a *admin) player(w http.ResponseWriter, r *http.Request) {
+	id := a.store.Canonical(r.URL.Query().Get("id"))
+	all, err := a.store.Players()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	var me *board.PlayerSummary
+	var others []board.PlayerSummary
+	for i, p := range all {
+		if p.Player == id {
+			me = &all[i]
+		} else {
+			others = append(others, p)
+		}
+	}
+	if me == nil {
+		http.NotFound(w, r)
+		return
+	}
+	sort.Slice(others, func(i, j int) bool { return strings.ToLower(others[i].Name) < strings.ToLower(others[j].Name) })
+	picked := a.store.PickedName(id)
+	render(w, playerAdmin, "admin_player.html", map[string]any{"Title": me.Name, "Tab": "players", "Admin": true, "Token": a.token, "P": me, "Others": others,
+		"Picked": picked, "Default": a.store.DefaultName(id)})
 }
 
 func shortKey(k string) string {
@@ -316,6 +386,20 @@ func (a *admin) act(w http.ResponseWriter, r *http.Request) {
 		err = a.store.Unban(install)
 	case "rejudge":
 		err = a.rejudge(run)
+	case "rename":
+		name := strings.TrimSpace(r.FormValue("name"))
+		if len(name) > 64 {
+			name = name[:64]
+		}
+		err = a.store.SetName(install, name)
+	case "merge":
+		if install == "" {
+			http.Error(w, "pick a player to merge in", http.StatusBadRequest)
+			return
+		}
+		err = a.store.Merge(install, strings.TrimSpace(r.FormValue("into")))
+	case "split":
+		err = a.store.Split(install)
 	case "review":
 		flag, _ := strconv.ParseInt(r.FormValue("flag"), 10, 64)
 		err = a.store.ReviewFlag(flag, note)

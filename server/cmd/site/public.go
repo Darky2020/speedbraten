@@ -82,6 +82,8 @@ var funcs = template.FuncMap{
 	"boardURL":  mapURL,
 	"mapImage":  func(m string) string { return "/mapimg/" + url.PathEscape(m) },
 	"playerURL": func(install string) string { return "/player?id=" + url.QueryEscape(install) },
+	"short":     shortKey,
+	"join":      func(s []string) string { return strings.Join(s, ", ") },
 }
 
 func page(files ...string) *template.Template {
@@ -415,6 +417,10 @@ type placeRow struct {
 
 func (s *site) player(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
+	if c := s.store.Canonical(id); c != id {
+		http.Redirect(w, r, "/player?id="+url.QueryEscape(c), http.StatusMovedPermanently)
+		return
+	}
 	places, name, err := s.store.Player(id)
 	if err != nil {
 		fail(w, err)

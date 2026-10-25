@@ -9,11 +9,11 @@
 <td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="install" value="{{.ID}}"><button name="do" value="unban">unban</button></form></td></tr>
 {{else}}<tr><td colspan="4" class="dim">Nobody.</td></tr>{{end}}
 </table></div>
-<h2>Runs removed from the boards</h2>
+<h2>Deleted runs</h2>
 <div class="card"><table>
-<tr><th class="num">run</th><th>why</th><th>removed</th><th></th></tr>
-{{range .Removed}}<tr><td class="num"><a href="/admin/file?run={{.ID}}">{{.ID}}</a></td><td>{{.Note}}</td><td class="dim">{{.At}}</td>
-<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="restore">restore</button></form></td></tr>
+<tr><th>run</th><th>why</th><th>deleted</th><th></th></tr>
+{{range .Removed}}<tr><td><a href="/admin/file?run={{.ID}}">{{.ID}}</a></td><td>{{.Note}}</td><td class="dim">{{.At}}</td>
+<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="restore">undelete</button></form></td></tr>
 {{else}}<tr><td colspan="4" class="dim">None.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}

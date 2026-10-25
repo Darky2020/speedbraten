@@ -173,3 +173,52 @@ func TestLabels(t *testing.T) {
 		t.Fatal(l)
 	}
 }
+
+func TestMerge(t *testing.T) {
+	f := newFixture(t)
+	forge := Key{"forge", "flagrun", 17}
+	f.run(1, "ka", "a-replay", "forge", "flagrun", 17, 10000, "valid")
+	f.run(2, "kb", "b-replay", "forge", "flagrun", 17, 9000, "valid")
+	f.run(3, "kc", "carol", "forge", "flagrun", 17, 9500, "valid")
+	s := f.open()
+
+	// kb is alice's second install: one entry with the better time, under alice's name
+	if err := s.Merge("kb", "ka"); err != nil {
+		t.Fatal(err)
+	}
+	got := entries(t, s, forge)
+	if len(got) != 2 || got[0].Install != "ka" || got[0].MS != 9000 || got[0].Name != "alice" || got[1].Install != "kc" {
+		t.Fatalf("after merging: %+v", got)
+	}
+	if k := s.Canonical("kb"); k != "ka" {
+		t.Fatalf("canonical of kb: %q", k)
+	}
+	if keys := s.Keys("ka"); len(keys) != 2 || keys[1] != "kb" {
+		t.Fatalf("keys %v", keys)
+	}
+	// merging ka (with kb) into kc moves both
+	if err := s.Merge("ka", "kc"); err != nil {
+		t.Fatal(err)
+	}
+	if got = entries(t, s, forge); len(got) != 1 || got[0].Install != "kc" || got[0].MS != 9000 {
+		t.Fatalf("after merging into kc: %+v", got)
+	}
+	if err := s.Merge("kb", "kc"); err == nil {
+		t.Fatal("merging a player into itself")
+	}
+	s.SetName("kc", "Carol")
+	if got = entries(t, s, forge); got[0].Name != "Carol" {
+		t.Fatalf("picked name: %+v", got)
+	}
+	// a ban on any key covers the player
+	s.Ban("kb", "test")
+	if got = entries(t, s, forge); len(got) != 0 {
+		t.Fatalf("ban on a merged key: %+v", got)
+	}
+	s.Unban("kb")
+	s.Split("ka")
+	s.Split("kb")
+	if got = entries(t, s, forge); len(got) != 3 {
+		t.Fatalf("after splitting: %+v", got)
+	}
+}

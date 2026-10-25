@@ -36,7 +36,7 @@ func fixture(t *testing.T) (*board.Store, string) {
 		args []any
 	}{
 		{"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)", nil},
-		{"CREATE TABLE runs(id INTEGER PRIMARY KEY, session INTEGER, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER, file TEXT, started INTEGER, reason TEXT, stop TEXT, refused TEXT, violations INTEGER, maxlagms INTEGER, finished INTEGER DEFAULT 1)", nil},
+		{"CREATE TABLE runs(id INTEGER PRIMARY KEY, session INTEGER, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER, file TEXT, started INTEGER, reason TEXT, stop TEXT, refused TEXT, violations INTEGER, maxlagms INTEGER, finished INTEGER DEFAULT 1, ended INTEGER)", nil},
 		{"CREATE TABLE flags(id INTEGER PRIMARY KEY, run INTEGER, kind TEXT, other INTEGER, matched INTEGER, total INTEGER, created INTEGER, reviewed INTEGER DEFAULT 0, note TEXT)", nil},
 		{"INSERT INTO flags(run, kind, other, matched, total, created) VALUES(2, 'copy', 1, 58, 156, 1700000200000)", nil},
 		{"INSERT INTO sessions(installkey, installpub) VALUES('ka', 'pubA')", nil},
@@ -44,6 +44,7 @@ func fixture(t *testing.T) (*board.Store, string) {
 		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(2, 2, 'kb', 'forge', '<script>bob</script>', 'flagrun', 17, 9500, 'valid', 1792900001000, ?)", []any{file("b.sbr")}},
 		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file, reason) VALUES(3, 2, 'kb', 'forge', 'bob', 'flagrun', 17, 8000, 'rejected', 1792900002000, ?, 'the replay desynced at tick 50')", []any{file("c.sbr")}},
 		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(4, 2, 'kb', 'mpsp6a', '<script>bob</script>', 'campaign', -3, 369260, 'valid', 1792900003000, ?)", []any{file("d.sbr")}},
+		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, started, ended, finished, stop) VALUES(5, 3, 'kc', 'forge', 'carl', 'flagrun', 17, 1792900004000, 1792900016500, 0, 'a state was loaded')", nil},
 	} {
 		if _, err := w.Exec(q.sql, q.args...); err != nil {
 			t.Fatal(err)
@@ -171,7 +172,7 @@ func TestPublicPages(t *testing.T) {
 	if i, j := strings.Index(body, "<h2>Flagruns</h2>"), strings.Index(body, "<h2>Campaigns</h2>"); i < 0 || j < i || !strings.Contains(body, `<span class="silver">#2</span>`) {
 		t.Fatal("the player's places aren't grouped by category, or #2 isn't silver")
 	}
-		// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
+	// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
 	for _, want := range []string{"Map completion", `<div class="meter-num">1 / 1</div>`, "1 gold</span> · <span class=\"silver\">1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("player stats lack %q", want)

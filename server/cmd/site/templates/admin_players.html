@@ -1,0 +1,10 @@
+{{template "top" .}}
+<h1>Players</h1>
+<form class="filters" method="get" action="/admin/players"><input type="search" name="q" value="{{.Q}}" placeholder="name, alias or install key"><button>search</button>{{if .Q}} <a class="small" href="/admin/players">clear</a>{{end}}</form>
+<div class="card scroll"><table>
+<tr><th>player</th><th>aliases</th><th class="num">keys</th><th class="num">runs</th><th>last seen</th></tr>
+{{range .Players}}<tr><td><a href="/admin/player?id={{.Player}}">{{.Name}}</a>{{if .Banned}} <span class="rejected small">banned</span>{{end}}<div class="kind">{{short .Player}}</div></td>
+<td class="small">{{join .Aliases}}</td><td class="num">{{len .Keys}}</td><td class="num">{{.Runs}}</td><td class="dim small">{{ago .LastSeen}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No players match.</td></tr>{{end}}
+</table></div>
+{{template "bottom" .}}

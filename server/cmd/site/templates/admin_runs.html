@@ -1,20 +1,22 @@
 {{template "top" .}}
 <h1>Runs</h1>
 <form class="filters" method="get" action="/admin/runs">
-<input type="text" name="player" value="{{.F.Player}}" placeholder="player or install key">
-<input type="text" name="map" value="{{.F.Map}}" placeholder="map">
-<select name="verdict">{{range .Verdicts}}<option value="{{.}}"{{if eq . $.F.Verdict}} selected{{end}}>{{if .}}{{.}}{{else}}any verdict{{end}}</option>{{end}}</select>
-<button>filter</button></form>
-<div class="card"><table>
-<tr><th class="num">run</th><th>started</th><th>player</th><th>map</th><th class="num">time</th><th>verdict</th><th class="num">lag</th><th></th></tr>
-{{range .Runs}}<tr><td class="num">{{.ID}}</td><td class="dim">{{.Started}}</td><td><a href="/admin/runs?player={{.Install}}">{{.Name}}</a>{{if .Banned}} <span class="rejected">banned</span>{{end}}</td>
-<td>{{.Map}}<div class="kind">{{.Kind}}</div></td><td class="num">{{.Time}}</td>
-<td><span class="{{.Verdict}}">{{if .Verdict}}{{.Verdict}}{{else}}{{.Stop}}{{end}}</span>{{if .Removed}} <span class="rejected">removed</span>{{end}}<div class="kind">{{.Reason}}</div></td>
-<td class="num dim">{{if .Violations}}{{.Violations}} viol. {{end}}{{.Lag}} ms</td>
-<td><a href="/admin/file?run={{.ID}}">file</a>
+<input type="search" name="player" value="{{.F.Player}}" placeholder="player name or install key">
+<input type="search" name="map" value="{{.F.Map}}" placeholder="map">
+<select name="verdict">{{range .Verdicts}}<option value="{{.Value}}"{{if eq .Value $.F.Verdict}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<button>filter</button>{{if or .F.Player .F.Map .F.Verdict}} <a class="small" href="/admin/runs">clear</a>{{end}}</form>
+<div class="card scroll"><table>
+<tr><th class="num">run</th><th>started</th><th>player</th><th>map</th><th class="num">length</th><th>verdict</th><th class="num">lag</th><th></th></tr>
+{{range .Runs}}<tr{{if .Deleted}} class="faint"{{end}}><td class="num">{{.ID}}</td><td class="dim small">{{.Started}}</td>
+<td><a href="/admin/player?id={{.Player}}">{{.Name}}</a>{{if .Banned}} <span class="rejected small">banned</span>{{end}}</td>
+<td>{{.Map}}<div class="kind">{{.Kind}}</div></td>
+<td class="num">{{if .Finished}}<span class="time">{{.Length}}</span>{{else}}<span class="dim">{{.Length}}</span><div class="kind">unfinished</div>{{end}}</td>
+<td>{{if .Verdict}}<span class="{{.Verdict}}">{{.Verdict}}</span>{{else}}<span class="dim">{{if .Finished}}not judged yet{{else}}stopped{{end}}</span>{{end}}{{if .Deleted}} <span class="rejected small">deleted</span>{{end}}<div class="kind">{{if .Reason}}{{.Reason}}{{else}}{{.Stop}}{{end}}</div></td>
+<td class="num dim small">{{if .Violations}}{{.Violations}} viol.<br>{{end}}{{.Lag}} ms</td>
+<td class="small"><a href="/admin/file?run={{.ID}}">file</a>
 {{if .Finished}}<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="rejudge">re-judge</button></form>{{end}}
-{{if eq .Verdict "valid"}}<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}">{{if .Removed}}<button name="do" value="restore">restore</button>{{else}}<input type="text" name="note" placeholder="why" size="8"> <button name="do" value="remove">remove</button>{{end}}</form>{{end}}</td></tr>
+{{if eq .Verdict "valid"}}{{if .Deleted}}<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="restore">undelete</button></form>{{else}}<details class="inline"><summary>delete…</summary><form method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><input type="text" name="note" placeholder="why"> <button name="do" value="remove">delete</button></form></details>{{end}}{{end}}</td></tr>
 {{else}}<tr><td colspan="8" class="dim">No runs match.</td></tr>{{end}}
 </table></div>
-{{if .More}}<p><a href="{{.More}}">older runs</a></p>{{end}}
+{{if .More}}<p><a href="{{.More}}">older runs →</a></p>{{end}}
 {{template "bottom" .}}

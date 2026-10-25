@@ -148,3 +148,115 @@ func (s *Store) PlayerRuns(install string, n int) (recent []Run, total int, firs
 	})
 	return
 }
+
+// PlayerSummary is a player for the dashboard: every install merged into it, every name it was seen
+// under, and its runs (all of them, finished or not).
+type PlayerSummary struct {
+	Player   string // the player's own install key
+	Name     string
+	Keys     []string
+	Aliases  []string
+	Runs     int
+	LastSeen time.Time
+	Banned   bool
+}
+
+// Players lists every install that has sent a run, grouped into players, newest first.
+func (s *Store) Players() ([]PlayerSummary, error) {
+	rows, err := s.witness.Query("SELECT installkey, COUNT(*), IFNULL(MAX(started), 0) FROM runs GROUP BY installkey")
+	if err != nil {
+		return nil, err
+	}
+	aliases, err := s.aliases()
+	if err != nil {
+		return nil, err
+	}
+	banned, _ := s.BannedInstalls()
+	isBanned := map[string]bool{}
+	for _, b := range banned {
+		isBanned[s.Canonical(b.ID)] = true
+	}
+	byPlayer := map[string]*PlayerSummary{}
+	for _, r := range rows {
+		key := r[0]
+		p := s.Canonical(key)
+		ps := byPlayer[p]
+		if ps == nil {
+			ps = &PlayerSummary{Player: p, Name: s.Name(p), Keys: s.Keys(p), Banned: isBanned[p]}
+			byPlayer[p] = ps
+		}
+		ps.Runs += int(atoi(r[1]))
+		if t := time.UnixMilli(atoi(r[2])); t.After(ps.LastSeen) {
+			ps.LastSeen = t
+		}
+		ps.Aliases = mergeNames(ps.Aliases, aliases[key])
+	}
+	var out []PlayerSummary
+	for _, ps := range byPlayer {
+		out = append(out, *ps)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+	return out, nil
+}
+
+// aliases: the names each install was seen under, from its runs and from the hub.
+func (s *Store) aliases() (map[string][]string, error) {
+	out := map[string][]string{}
+	rows, err := s.witness.Query("SELECT DISTINCT installkey, player FROM runs WHERE IFNULL(player, '') != ''")
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r[0]] = mergeNames(out[r[0]], []string{r[1]})
+	}
+	if s.hub == nil {
+		return out, nil
+	}
+	hubnames := map[string]string{}
+	if rows, err = s.hub.Query("SELECT key, name FROM installs WHERE IFNULL(name, '') != ''"); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		hubnames[r[0]] = r[1]
+	}
+	if rows, err = s.witness.Query("SELECT DISTINCT installkey, installpub FROM sessions WHERE IFNULL(installpub, '') != ''"); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		if n := hubnames[r[1]]; n != "" {
+			out[r[0]] = mergeNames(out[r[0]], []string{n})
+		}
+	}
+	return out, nil
+}
+
+func mergeNames(a, b []string) []string {
+	for _, n := range b {
+		found := false
+		for _, m := range a {
+			found = found || m == n
+		}
+		if !found {
+			a = append(a, n)
+		}
+	}
+	return a
+}
+
+// PickedName is the name picked for a player on the dashboard, "" if none.
+func (s *Store) PickedName(player string) string {
+	rows, err := s.site.Query("SELECT name FROM names WHERE install = ?", player)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	return rows[0][0]
+}
+
+// DefaultName is the name a player has without a picked one.
+func (s *Store) DefaultName(player string) string {
+	names, err := s.loadNames()
+	if err != nil {
+		return ""
+	}
+	return names[player]
+}
