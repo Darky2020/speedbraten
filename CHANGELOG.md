@@ -3,7 +3,7 @@
 ## v0.3.2alpha
 
 - A spectator can play along with the player they watch, and leaving the lobby stops spectating.
-- The lobby scoreboard shows every player's map.
+- The lobby scoreboard shows every player's map, and its "best" column is called "session".
 - The witness and hub tabs fit on one page.
 - Runs on maps whose cfg has Windows line endings (crnsp1, skrsp1, level9) verify again.
 - No more short stutter once a minute while playing a run map.

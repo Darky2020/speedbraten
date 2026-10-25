@@ -635,7 +635,7 @@ namespace game
         g.space(2);
         g.pushlist();
         g.strut(6);
-        rightjustified(g.text("best", COL_GRAY));
+        rightjustified(g.text("session", COL_GRAY));
         loopv(rows) rightjustified(g.text(rows[i]->best >= 0 ? formatruntime(rows[i]->best) : "-", rowcolor(rows[i])));
         g.poplist();
 
