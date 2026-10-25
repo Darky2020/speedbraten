@@ -21,8 +21,6 @@ namespace game
     static bool liferan = false;  // the run of player1's current life started (flagrun/race)
     enum { RACESTARTEDTICKS = 200 };
     static int runbase = 0, runstart = 0, runend = 0, runflag = -1;
-    // a campaign run's deaths on the maps before this one; this map's are player1's own count
-    static int rundeathsbefore = 0;
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
 
@@ -91,7 +89,6 @@ namespace game
         finishedatmapstart = runstate == RUN_FINISHED;
         bool chained = sp && runkind == RUNTIMER_SP && (runstate == RUN_RUNNING || runstate == RUN_SPLIT) && mapchained(mode);
         runbase = chained ? runbase + (runstate == RUN_SPLIT ? runend : inputtick()) - runstart : 0;
-        rundeathsbefore = chained ? rundeathsbefore + player1->deaths : 0;
         runstart = runend = 0;
         runflag = -1;
         if(sp) { runkind = RUNTIMER_SP; runstate = RUN_RUNNING; }
@@ -234,8 +231,6 @@ namespace game
         return runticks()*SIMTICK;
     }
 
-    int runtimerdeaths() { return runkind == RUNTIMER_SP ? rundeathsbefore + player1->deaths : 0; }
-
     ICOMMAND(runtime, "", (), intret(runticks()*SIMTICK));
     ICOMMAND(runstate, "", (), intret(runkind == RUNTIMER_NONE ? -1 : runstate));
 
@@ -278,17 +273,15 @@ namespace game
 
         // the board's best under the timer, at half its size
         const char *rec = runtimerrecord ? hubboardhud() : NULL;
-        if(rec)
-        {
-            float scale = runtimerscale*0.5f;
-            int rw = 0, rh = 0;
-            text_bounds(rec, rw, rh);
-            vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);
-            pushhudmatrix();
-            hudmatrix.scale(scale, scale, 1);
-            flushhudmatrix();
-            draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
-            pophudmatrix();
-        }
+        if(!rec) return;
+        float scale = runtimerscale*0.5f;
+        int rw = 0, rh = 0;
+        text_bounds(rec, rw, rh);
+        vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
+        pophudmatrix();
     }
 }

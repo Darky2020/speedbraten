@@ -100,8 +100,6 @@ namespace game
                 dbexec("DELETE FROM meta WHERE key IN ('historyhead', 'historycount')");
             // a run with gamespeed, pause or fixedframe never counts as a PB or best segment
             sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN assisted INTEGER NOT NULL DEFAULT 0", NULL, NULL, NULL);
-            // a campaign run's deaths, NULL for other runs and runs recorded before
-            sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN deaths INTEGER", NULL, NULL, NULL);
         }
         return db;
     }
@@ -162,8 +160,8 @@ namespace game
 
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content)
     {
-        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content, assisted, deaths) "
-                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content, assisted) "
+                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if(!st) return;
         const inputattempt &first = *run.attempts[0];
         sqlite3_bind_int64(st, 1, info.date);
@@ -185,8 +183,6 @@ namespace game
         else sqlite3_bind_null(st, 14);
         // a campaign run started after the campaign's first map doesn't count for PBs
         sqlite3_bind_int(st, 15, tellsassisted(run) || (run.attempts.length() && campaignmap(run.attempts[0]->map, NULL) > 0) ? 1 : 0);
-        if(!strcmp(runkindname(info), "sp")) sqlite3_bind_int(st, 16, runtimerdeaths());
-        else sqlite3_bind_null(st, 16);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
@@ -597,7 +593,7 @@ namespace game
     struct attemptstats
     {
         int64_t date;
-        int finished, runtime, ticks, splices, idle, deaths;
+        int finished, runtime, ticks, splices, idle;
         string replay;
     };
     static vector<attemptstats> attemptlist;
@@ -606,7 +602,7 @@ namespace game
     ICOMMAND(statsattempts, "ssi", (char *map, char *kind, int *mode),
     {
         attemptlist.setsize(0);
-        sqlite3_stmt *st = prepare("SELECT date, finished, runtime, ticks, splices, idle, replay, deaths FROM attempts "
+        sqlite3_stmt *st = prepare("SELECT date, finished, runtime, ticks, splices, idle, replay FROM attempts "
                                    "WHERE map = ? AND kind = ? AND mode = ? ORDER BY date DESC, id DESC LIMIT 100");
         if(!st) { intret(0); return; }
         bindtext(st, 1, map);
@@ -623,7 +619,6 @@ namespace game
             a.idle = sqlite3_column_int(st, 5);
             const char *replay = (const char *)sqlite3_column_text(st, 6);
             copystring(a.replay, replay ? replay : "");
-            a.deaths = sqlite3_column_type(st, 7) == SQLITE_NULL ? -1 : sqlite3_column_int(st, 7);
         }
         sqlite3_finalize(st);
         intret(attemptlist.length());
@@ -648,7 +643,6 @@ namespace game
         else if(!strcmp(field, "splices")) intret(a.splices);
         else if(!strcmp(field, "idle")) result(formatduration(int64_t(a.idle)*SIMTICK));
         else if(!strcmp(field, "replay")) result(a.replay);
-        else if(!strcmp(field, "deaths")) { if(a.deaths >= 0) intret(a.deaths); else result(""); }
         else result("");
     });
 
