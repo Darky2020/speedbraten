@@ -1,5 +1,6 @@
 // monster.h: implements AI for single player monsters, currently client only
 #include "game.h"
+#include "sbcompat.h"
 
 extern int physsteps;
 

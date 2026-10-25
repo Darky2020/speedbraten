@@ -1,0 +1,54 @@
+# Files every speedbraten build carries unchanged, whichever client it is built into (paths
+# relative to src/; a line ending in / means every tracked file under it). tools/corecheck.sh
+# compares a build's tree against this repo's copies.
+
+# simulation files the supported clients don't change
+engine/physics.cpp
+fpsgame/monster.cpp
+fpsgame/movable.cpp
+
+# speedbraten's own sources
+engine/menubg.h
+engine/nullgl.cpp
+engine/nullsdl.cpp
+engine/simloop.cpp
+engine/sysinfo.cpp
+engine/varstate.h
+engine/witnessnet.cpp
+fpsgame/clientstate.h
+fpsgame/dethash.cpp
+fpsgame/dethasher.h
+fpsgame/ghost.cpp
+fpsgame/hub.cpp
+fpsgame/inputs.cpp
+fpsgame/inputs.h
+fpsgame/replayfile.cpp
+fpsgame/replayio.cpp
+fpsgame/replayio.h
+fpsgame/resim.cpp
+fpsgame/runtimer.cpp
+fpsgame/savestate.cpp
+fpsgame/sbgame.h
+fpsgame/serverstate.h
+fpsgame/spawns.cpp
+fpsgame/spectate.cpp
+fpsgame/speedometer.cpp
+fpsgame/splits.cpp
+fpsgame/stats.cpp
+fpsgame/tells.cpp
+shared/detmath.h
+shared/hubproto.h
+shared/noise.cpp
+shared/noise.h
+shared/noisetest.cpp
+shared/noisevectors.h
+shared/sbcompat.h
+shared/sbengine.h
+shared/stb_image.h
+shared/witnessproto.h
+
+# vendored libraries
+blake3/
+monocypher/
+sqlite/
+zstd/
