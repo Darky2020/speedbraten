@@ -539,27 +539,31 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 			recent = append(recent, r)
 		}
 	}
-	counts, names := map[string]int{}, map[string]string{}
 	var oldest []board.Standing
 	for _, b := range boards {
-		e := b.Entries[0]
-		counts[e.Install]++
-		names[e.Install] = e.Name
-		oldest = append(oldest, board.Standing{Key: b.Key, Entry: e})
+		oldest = append(oldest, board.Standing{Key: b.Key, Entry: b.Entries[0]})
 	}
-	var holders []board.Holder
-	for k, c := range counts {
-		holders = append(holders, board.Holder{Install: k, Name: names[k], Records: c})
-	}
-	sort.Slice(holders, func(i, j int) bool {
-		return holders[i].Records > holders[j].Records || holders[i].Records == holders[j].Records && holders[i].Name < holders[j].Name
-	})
+	holders := topHolders(boards, categoryPanel)
 	sort.Slice(oldest, func(i, j int) bool { return oldest[i].Entry.When.Before(oldest[j].Entry.When) })
-	if len(holders) > categoryPanel {
-		holders = holders[:categoryPanel]
-	}
 	if len(oldest) > categoryPanel {
 		oldest = oldest[:categoryPanel]
+	}
+	if kind == "flagrun" {
+		type modeHolders struct {
+			Key     board.Key
+			Holders []board.Holder
+		}
+		var split []modeHolders
+		for _, m := range flagrunModes {
+			var of []*board.Board
+			for _, b := range boards {
+				if b.Key.Mode == m {
+					of = append(of, b)
+				}
+			}
+			split = append(split, modeHolders{Key: board.Key{Kind: kind, Mode: m}, Holders: topHolders(of, 5)})
+		}
+		data["ModeHolders"] = split
 	}
 	more := map[string]string{"race": "race", "flagrun": "flagrun", "campaign": "sp"}[kind]
 	data["Records"], data["Recent"], data["Holders"], data["Oldest"] = records, recent, holders, oldest
@@ -567,4 +571,25 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 	if more != "" {
 		data["More"] = "/records?mode=" + more
 	}
+}
+
+// topHolders lists who holds the most of these boards' bests.
+func topHolders(boards []*board.Board, n int) []board.Holder {
+	counts, names := map[string]int{}, map[string]string{}
+	for _, b := range boards {
+		e := b.Entries[0]
+		counts[e.Install]++
+		names[e.Install] = e.Name
+	}
+	var out []board.Holder
+	for k, c := range counts {
+		out = append(out, board.Holder{Install: k, Name: names[k], Records: c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Records > out[j].Records || out[i].Records == out[j].Records && out[i].Name < out[j].Name
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
 }

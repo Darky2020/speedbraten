@@ -99,10 +99,16 @@ func TestPublicPages(t *testing.T) {
 
 	// each category page has its own newest records, recent runs, holders and oldest records
 	_, body = get(t, s, "/flagruns")
-	for _, want := range []string{"Newest records", "Recently submitted runs", "Top record holders", "Oldest standing records", `href="/records?mode=flagrun"`} {
+	for _, want := range []string{"Newest records", "Recently submitted runs", "Top ctf runners", "Top insta ctf runners", "Top effic ctf runners", "Oldest standing records", `href="/records?mode=flagrun"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("flagruns page lacks %q", want)
 		}
+	}
+	if strings.Index(body, "Newest records") > strings.Index(body, `<h2 class="section">Maps`) {
+		t.Fatal("the category lists aren't above the maps")
+	}
+	if _, body = get(t, s, "/races"); !strings.Contains(body, "Top record holders") {
+		t.Fatal("races page holders")
 	}
 	if strings.Contains(body, "6:09.260") {
 		t.Fatal("a campaign record on the flagruns page")
@@ -111,7 +117,7 @@ func TestPublicPages(t *testing.T) {
 		t.Fatal("the all-flagruns records filter")
 	}
 
-		// search, filter and sort
+	// search, filter and sort
 	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
 		t.Fatal("search by a holder's name, any case, doesn't find forge")
 	}

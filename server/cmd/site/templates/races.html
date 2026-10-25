@@ -1,5 +1,7 @@
 {{template "top" .}}
 <h1>Races</h1>
+{{template "category" .}}
+<h2 class="section">Maps</h2>
 {{template "filters" .}}
 <div class="card scroll"><table>
 <tr><th>map</th><th>mode</th><th class="num">record</th><th>holder</th><th class="num wide">players</th><th class="wide">set</th></tr>
@@ -7,5 +9,4 @@
 <td><a href="{{playerURL $e.Install}}">{{$e.Name}}</a></td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td></tr>
 {{else}}<tr><td colspan="6" class="dim">No races{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
-{{template "category" .}}
 {{template "bottom" .}}
