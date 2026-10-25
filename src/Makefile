@@ -213,14 +213,18 @@ ifeq ($(BASE),wcng)
 	BASE_LIBS= -L$(WCNGDEPS)/lib -lcurl -lssl -lcrypto -lmaxminddb
 	ifneq (,$(findstring windows,$(TARGET)))
 		BASE_CXXFLAGS+= -DCURL_STATICLIB
-		BASE_LIBS+= -lcrypt32 -lbcrypt -lws2_32
+		BASE_LIBS+= -ldl -lcrypt32 -lbcrypt -lws2_32
+		# wc-ng's enet, in place of the prebuilt one in windows/lib64
+		CLIENT_OBJS+= enet/callbacks.o enet/host.o enet/list.o enet/packet.o enet/peer.o enet/protocol.o enet/unix.o enet/win32.o
 	endif
 	ifneq (,$(findstring linux,$(TARGET)))
+		BASE_CXXFLAGS+= -U_FORTIFY_SOURCE
 		BASE_LIBS+= -lpthread -ldl
 	endif
 else ifneq ($(BASE),vanilla)
 	CLIENT_OBJS+= $(P1XBRATEN_CLIENT_OBJS)
 endif
+enet/%.o: CFLAGS += -Ienet/include
 ifdef ANTICHEAT
 	override CLIENT_OBJS+= anticheat/anticheat.o
 endif
