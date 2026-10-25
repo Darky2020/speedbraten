@@ -22,8 +22,8 @@
 {{range $i, $h := .Holders}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{$h.Name}}</a></td><td class="num">{{$h.Records}}</td></tr>
 {{else}}<tr><td colspan="3" class="dim">Nobody yet.</td></tr>{{end}}
 </table></div>{{end}}</div>
-{{template "recentoldest" .}}{{else}}{{template "recentoldest" .}}
-{{template "holderscard" .Holders}}{{end}}{{end}}
+{{template "recentoldest" .}}{{else}}{{template "holderscard" .Holders}}
+{{template "recentoldest" .}}{{end}}{{end}}
 
 {{define "recentoldest"}}<div class="cols2">
 <div>{{template "recentcard" .Recent}}</div>
