@@ -38,8 +38,10 @@ case $target in
         cp sauer_client "$out/speedbraten_${arch}_client"
         ;;
     *macos*)
-        make -C enet CC='zig cc' AR='zig ar' CFLAGS="--target=$target -O2 -fno-fast-math -ffp-contract=off -mmacosx-version-min=11.0"
-        make -j"$jobs" client RELEASE=1 USEZIG=1 TARGET="$target" OSXMIN=11.0 \
+        # zig ignores -mmacosx-version-min and takes the minimum macOS version from the target
+        t=$target.11.0
+        make -C enet CC='zig cc' AR='zig ar' CFLAGS="--target=$t -O2 -fno-fast-math -ffp-contract=off"
+        make -j"$jobs" client RELEASE=1 USEZIG=1 TARGET="$t" OSXMIN=11.0 \
             INCLUDES="-Ishared -Iengine -Ifpsgame -Ip1xbraten -Ienet/include -idirafter macos/sdk_11.3/usr/include" \
             LIBS="-Lmacos/sdk_11.3/usr/lib -lz -Lenet -lenet"
         cp sauer_client "$out/speedbraten_${arch}_client"
