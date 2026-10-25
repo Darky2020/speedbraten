@@ -18,8 +18,8 @@ import (
 
 	"github.com/flynn/noise"
 
-	"speedbraten/server/noisechan"
 	"speedbraten/server/board"
+	"speedbraten/server/noisechan"
 	"speedbraten/server/sqlite"
 )
 

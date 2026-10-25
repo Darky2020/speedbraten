@@ -5,6 +5,7 @@
 - When spectating ends, you stay on the map you were watching instead of going back.
 - The speedrun menu has a boards tab: the witnessed leaderboard of the map you play, and your place on it.
 - The board's best time shows under the run timer (`runtimerrecord`).
+- Lost, Meltdown, Missile Pass and Level 9 are called by their campaign names.
 
 ## v0.3.2alpha
 
