@@ -237,7 +237,6 @@ namespace game
     int runtimerdeaths() { return runkind == RUNTIMER_SP ? rundeathsbefore + player1->deaths : 0; }
 
     ICOMMAND(runtime, "", (), intret(runticks()*SIMTICK));
-    ICOMMAND(rundeaths, "", (), intret(runtimerdeaths()));
     ICOMMAND(runstate, "", (), intret(runkind == RUNTIMER_NONE ? -1 : runstate));
 
     MOD(VARP, runtimer, 0, 1, 1);
