@@ -256,6 +256,9 @@ namespace game
     MOD(VARP, autostateinterval, 0, 1000, 60000);
     MOD(VARP, autostatecount, 0, 30, 1000);
     static vector<statestart *> autostates;
+    struct doorstate { int ent, tag; statestart *st; };
+    static vector<doorstate> doorstates;
+    static int doorcurrent = -1, doorloadpending = -1;
     static bool autoloadpending = false;
 
     // After a state is loaded live, the simulation holds for loadstatedelay ms (wall clock) so
@@ -306,6 +309,7 @@ namespace game
     }
 
     static void loadautostate();
+    static void loaddoorstate();
 
     bool loadsavedstate() { return savedstart.valid() && loadlivestate(savedstart, inputsplice::SAVED); }
 
@@ -324,6 +328,7 @@ namespace game
             if(!replaying && !recordingoff) tellssave();
         }
         if(autoloadpending) { autoloadpending = false; loadautostate(); }
+        loaddoorstate();
     }
 
     static bool havebots()
@@ -336,6 +341,7 @@ namespace game
     {
         if(l == lifestart || l == savedstart.life) return true;
         loopv(autostates) if(autostates[i]->life == l) return true;
+        loopv(doorstates) if(doorstates[i].st->life == l) return true;
         return false;
     }
 
@@ -407,6 +413,64 @@ namespace game
         lifesaved = chainpending = false;
         lifepending = true;
     }
+
+    // Door checkpoints: the first time a door or switch of the map leaves its starting state in a
+    // run, a state is taken at the next tick boundary, so a practice can start from any door reached.
+    // A door that shares its tag with a door or switch already counted is the one it opened, and is
+    // left out. Loading one keeps the others: a practice never replaces the checkpoints of the run.
+    static void takedoorstates()
+    {
+        if(replaying || recordingoff || !connected || curtick <= 0) return;
+        loopv(entities::ents)
+        {
+            const fpsentity &e = *(const fpsentity *)entities::ents[i];
+            if(e.type != ET_MAPMODEL || e.triggerstate == TRIGGER_RESET) continue;
+            bool seen = false;
+            loopvj(doorstates) if(doorstates[j].ent == i || (e.attr4 && doorstates[j].tag == e.attr4)) { seen = true; break; }
+            if(seen) continue;
+            statestart *st = new statestart;
+            if(!takesnapshot(st->state)) { delete st; return; }
+            st->tick = curtick;
+            st->branch = curbranch;
+            st->life = lifestart;
+            readsettings(st->settings);
+            doorstate &d = doorstates.add();
+            d.ent = i;
+            d.tag = e.attr4;
+            d.st = st;
+            doorcurrent = doorstates.length()-1;
+        }
+    }
+
+    static void cleardoorstates()
+    {
+        loopv(doorstates) delete doorstates[i].st;
+        doorstates.setsize(0);
+        doorcurrent = doorloadpending = -1;
+    }
+
+    static void loaddoorstate()
+    {
+        if(doorloadpending < 0) return;
+        int i = doorloadpending;
+        doorloadpending = -1;
+        if(replaying || replaypending) { conoutf(CON_ERROR, "door checkpoints do not work during a replay"); return; }
+        if(!doorstates.inrange(i)) { conoutf(CON_ERROR, "no door checkpoint %d (%d so far)", i+1, doorstates.length()); return; }
+        if(!loadlivestate(*doorstates[i].st, inputsplice::AUTO)) return;
+        doorcurrent = i;
+        conoutf("door %d of %d", i+1, doorstates.length());
+        holdafterload();
+    }
+
+    static void requestdoor(int i)
+    {
+        doorloadpending = i;
+        if(!insimtick) runstateops();
+    }
+    ICOMMAND(doorcheckpoint, "i", (int *n), requestdoor(*n - 1));
+    ICOMMAND(nextdoor, "", (), requestdoor(doorcurrent + 1));
+    ICOMMAND(prevdoor, "", (), requestdoor(max(doorcurrent - 1, 0)));
+    ICOMMAND(doorcheckpoints, "", (), intret(doorstates.length()));
 
     static void takeautostate()
     {
@@ -1013,6 +1077,7 @@ namespace game
         runviewops();
         snapcycletick();
         takeautostate();
+        takedoorstates();
         hubkeyframe();
         if(replaying && replaychainhook && replayattempt == replaydata.attempts.length()-1 && curtick+1 > replaycur().ticks) replaychainhook();
         curtick++;
@@ -1221,6 +1286,7 @@ namespace game
         lifepending = lifesaved = chainpending = false;
         autostates.deletecontents();
         autoloadpending = false;
+        cleardoorstates();
         savedstart.clear();
         resetbranches();
         clearevents(pending);

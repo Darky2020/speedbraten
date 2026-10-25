@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Speedbraten also comes built on plain Sauerbraten and on wc-ng.
+- The macOS app runs on macOS 11 and newer again, not only 13.
+- Replays from the replay list or the stats can be paused (P), moved back and forth (left/right), restarted (R) and left (Backspace); they stop on their last frame.
+- Campaign door checkpoints: every door you open saves a state; practise from one with `nextdoor`, `prevdoor` or `doorcheckpoint <n>` (keys in the keys tab).
+
 ## v0.3.3alpha
 
 - When spectating ends, you stay on the map you were watching instead of going back.
