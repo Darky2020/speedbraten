@@ -351,4 +351,3 @@ func (a *admin) rejudge(run int64) error {
 	}
 	return os.WriteFile(filepath.Join(a.rejudgeDir, strconv.FormatInt(run, 10)), nil, 0644)
 }
-
