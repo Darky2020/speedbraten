@@ -21,11 +21,17 @@ th { color: var(--dim); font-weight: 500; font-size: 13px; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.rank1 { color: var(--gold); font-weight: 700; }
 .dim { color: var(--dim); }
+form.inline { display: inline; margin: 0; }
+input[type=text], select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: var(--fg); }
+button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); cursor: pointer; }
+.valid { color: #2e9d57; } .rejected { color: #d1453b; } .unverified { color: var(--gold); }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
 .kind { color: var(--dim); font-size: 13px; }
 @media (max-width: 600px) { .wide { display: none; } th, td { padding: 8px 8px; } }
 footer { max-width: 860px; margin: 32px auto; padding: 0 16px; color: var(--dim); font-size: 13px; }
-</style></head><body>
-<header><a class="home" href="/">speedbraten leaderboards</a><nav><a href="/">boards</a><a href="/records">records</a></nav></header>
+body.admin header, body.admin main, body.admin footer { max-width: 1240px; }
+</style></head><body{{if .Admin}} class="admin"{{end}}>
+<header><a class="home" href="/">speedbraten leaderboards</a><nav>{{if .Admin}}<a href="/admin/runs">runs</a><a href="/admin/flags">flags</a><a href="/admin/moderation">moderation</a><a href="/">public site</a>{{else}}<a href="/">boards</a><a href="/records">records</a>{{end}}</nav></header>
 <main>{{end}}
 {{define "bottom"}}</main>
 <footer>Times are witnessed: each run was streamed to the witness while it was played, re-simulated and signed.

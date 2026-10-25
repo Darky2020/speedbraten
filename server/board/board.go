@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,6 +85,7 @@ func Open(witnessDB, hubDB, siteDB string, ttl time.Duration) (*Store, error) {
 	for _, q := range []string{
 		"CREATE TABLE IF NOT EXISTS removed(run INTEGER PRIMARY KEY, note TEXT, at INTEGER)",
 		"CREATE TABLE IF NOT EXISTS banned(install TEXT PRIMARY KEY, note TEXT, at INTEGER)",
+		"CREATE TABLE IF NOT EXISTS flagreviews(flag INTEGER PRIMARY KEY, note TEXT, at INTEGER)",
 	} {
 		if _, err := s.site.Exec(q); err != nil {
 			return nil, err
@@ -300,6 +302,21 @@ func (s *Store) Listed(run int64) (bool, error) {
 	return ok, err
 }
 
+// Installs lists the installs whose name contains the text, ignoring case.
+func (s *Store) Installs(text string) []string {
+	var out []string
+	text = strings.ToLower(text)
+	s.locked(func() {
+		for k, n := range s.names {
+			if strings.Contains(strings.ToLower(n), text) {
+				out = append(out, k)
+			}
+		}
+	})
+	sort.Strings(out)
+	return out
+}
+
 // Name is an install's name on the boards, "" when unknown.
 func (s *Store) Name(install string) string {
 	var n string
@@ -372,4 +389,31 @@ func (s *Store) RemovedRuns() ([]Note, error) {
 
 func (s *Store) BannedInstalls() ([]Note, error) {
 	return s.notes("SELECT install, IFNULL(note, ''), at FROM banned ORDER BY at DESC")
+}
+
+// ReviewFlag marks a copy flag of the witness's as reviewed, with a note.
+func (s *Store) ReviewFlag(flag int64, note string) error {
+	_, err := s.site.Exec("INSERT OR REPLACE INTO flagreviews(flag, note, at) VALUES(?, ?, ?)", flag, note, time.Now().Unix())
+	return err
+}
+
+// FlagReviews are the reviews made here, by flag.
+func (s *Store) FlagReviews() (map[string]Note, error) {
+	notes, err := s.notes("SELECT flag, IFNULL(note, ''), at FROM flagreviews")
+	out := map[string]Note{}
+	for _, n := range notes {
+		out[n.ID] = n
+	}
+	return out, err
+}
+
+// IsRemoved and IsBanned tell the dashboard which actions to offer.
+func (s *Store) IsRemoved(run int64) bool {
+	rows, err := s.site.Query("SELECT 1 FROM removed WHERE run = ?", run)
+	return err == nil && len(rows) > 0
+}
+
+func (s *Store) IsBanned(install string) bool {
+	rows, err := s.site.Query("SELECT 1 FROM banned WHERE install = ?", install)
+	return err == nil && len(rows) > 0
 }

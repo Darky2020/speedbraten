@@ -1,0 +1,19 @@
+{{template "top" .}}
+<h1>Moderation</h1>
+<h2>Banned from the boards</h2>
+<form class="filters" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}">
+<input type="text" name="install" placeholder="install key (from the runs page)" size="30"><input type="text" name="note" placeholder="why"><button name="do" value="ban">ban</button></form>
+<div class="card"><table>
+<tr><th>player</th><th>why</th><th>since</th><th></th></tr>
+{{range .Banned}}<tr><td><a href="/admin/runs?player={{.ID}}">{{.Name}}</a><div class="kind">{{.ID}}</div></td><td>{{.Note}}</td><td class="dim">{{.At}}</td>
+<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="install" value="{{.ID}}"><button name="do" value="unban">unban</button></form></td></tr>
+{{else}}<tr><td colspan="4" class="dim">Nobody.</td></tr>{{end}}
+</table></div>
+<h2>Runs removed from the boards</h2>
+<div class="card"><table>
+<tr><th class="num">run</th><th>why</th><th>removed</th><th></th></tr>
+{{range .Removed}}<tr><td class="num"><a href="/admin/file?run={{.ID}}">{{.ID}}</a></td><td>{{.Note}}</td><td class="dim">{{.At}}</td>
+<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="restore">restore</button></form></td></tr>
+{{else}}<tr><td colspan="4" class="dim">None.</td></tr>{{end}}
+</table></div>
+{{template "bottom" .}}

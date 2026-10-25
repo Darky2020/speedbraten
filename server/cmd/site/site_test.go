@@ -36,12 +36,14 @@ func fixture(t *testing.T) (*board.Store, string) {
 		args []any
 	}{
 		{"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)", nil},
-		{"CREATE TABLE runs(id INTEGER PRIMARY KEY, session INTEGER, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER, file TEXT)", nil},
+		{"CREATE TABLE runs(id INTEGER PRIMARY KEY, session INTEGER, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER, file TEXT, started INTEGER, reason TEXT, stop TEXT, refused TEXT, violations INTEGER, maxlagms INTEGER, finished INTEGER DEFAULT 1)", nil},
+		{"CREATE TABLE flags(id INTEGER PRIMARY KEY, run INTEGER, kind TEXT, other INTEGER, matched INTEGER, total INTEGER, created INTEGER, reviewed INTEGER DEFAULT 0, note TEXT)", nil},
+		{"INSERT INTO flags(run, kind, other, matched, total, created) VALUES(2, 'copy', 1, 58, 156, 1700000200000)", nil},
 		{"INSERT INTO sessions(installkey, installpub) VALUES('ka', 'pubA')", nil},
-		{"INSERT INTO runs VALUES(1, 1, 'ka', 'forge', 'x', 'flagrun', 17, 9000, 'valid', 1792900000000, ?)", []any{file("a.sbr")}},
-		{"INSERT INTO runs VALUES(2, 2, 'kb', 'forge', '<script>bob</script>', 'flagrun', 17, 9500, 'valid', 1792900001000, ?)", []any{file("b.sbr")}},
-		{"INSERT INTO runs VALUES(3, 2, 'kb', 'forge', 'bob', 'flagrun', 17, 8000, 'rejected', 1792900002000, ?)", []any{file("c.sbr")}},
-		{"INSERT INTO runs VALUES(4, 2, 'kb', 'mpsp6a', '<script>bob</script>', 'campaign', -3, 369260, 'valid', 1792900003000, ?)", []any{file("d.sbr")}},
+		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(1, 1, 'ka', 'forge', 'x', 'flagrun', 17, 9000, 'valid', 1792900000000, ?)", []any{file("a.sbr")}},
+		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(2, 2, 'kb', 'forge', '<script>bob</script>', 'flagrun', 17, 9500, 'valid', 1792900001000, ?)", []any{file("b.sbr")}},
+		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file, reason) VALUES(3, 2, 'kb', 'forge', 'bob', 'flagrun', 17, 8000, 'rejected', 1792900002000, ?, 'the replay desynced at tick 50')", []any{file("c.sbr")}},
+		{"INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(4, 2, 'kb', 'mpsp6a', '<script>bob</script>', 'campaign', -3, 369260, 'valid', 1792900003000, ?)", []any{file("d.sbr")}},
 	} {
 		if _, err := w.Exec(q.sql, q.args...); err != nil {
 			t.Fatal(err)

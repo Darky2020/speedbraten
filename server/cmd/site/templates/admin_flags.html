@@ -1,0 +1,15 @@
+{{template "top" .}}
+<h1>Copy flags</h1>
+<p class="sub">{{len .Flags}} flags, {{.Open}} not reviewed. A flagged run's aim repeats an earlier run of another install; players never see flags.</p>
+<div class="card"><table>
+<tr><th>flag</th><th>run</th><th>matches run</th><th class="num">fingerprints</th><th>review</th></tr>
+{{range .Flags}}<tr{{if .Reviewed}} class="dim"{{end}}>
+<td>#{{.ID}}<div class="kind">{{.Created}}</div></td>
+<td>run {{.Run.ID}}: {{.Run.Map}}<div class="kind">{{.Run.Name}} · {{.Run.Verdict}} · <a href="/admin/file?run={{.Run.ID}}">file</a></div></td>
+<td>run {{.Other.ID}}: {{.Other.Map}}<div class="kind">{{.Other.Name}} · {{.Other.Verdict}} · <a href="/admin/file?run={{.Other.ID}}">file</a></div></td>
+<td class="num">{{.Matched}} of {{.Total}}</td>
+<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="flag" value="{{.ID}}">
+<input type="text" name="note" value="{{.Note}}" placeholder="note" size="12"> <button name="do" value="review">{{if .Reviewed}}update{{else}}reviewed{{end}}</button></form></td>
+</tr>{{else}}<tr><td colspan="5" class="dim">No flags.</td></tr>{{end}}
+</table></div>
+{{template "bottom" .}}

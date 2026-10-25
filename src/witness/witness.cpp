@@ -30,6 +30,7 @@
 #include <sys/wait.h>
 #include <sys/statvfs.h>
 #include <sys/resource.h>
+#include <dirent.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -1316,6 +1317,32 @@ namespace witness
         if(resimqueue.length()) conoutf("%d finished runs queued for re-simulation", resimqueue.length());
     }
 
+    // Runs to judge again on request: an empty file named after the run in <data dir>/rejudge
+    // (the leaderboard's dashboard writes them). Checked every few seconds; the file goes once the
+    // run is queued.
+    static void pollrejudge()
+    {
+        static int last = 0;
+        int now = int(nowus() / 1000);
+        if(now - last < 5000) return;
+        last = now;
+        defformatstring(dir, "%s/rejudge", datadir);
+        DIR *d = opendir(dir);
+        if(!d) return;
+        while(dirent *e = readdir(d))
+        {
+            char *end = NULL;
+            long long row = strtoll(e->d_name, &end, 10);
+            if(!e->d_name[0] || *end || row <= 0) continue;
+            defformatstring(file, "%s/%s", dir, e->d_name);
+            unlink(file);
+            if(!scalar("SELECT COUNT(*) FROM runs WHERE id = ? AND finished = 1", "i", row)) { conoutf("run %lld can't be judged again: it isn't a finished run", row); continue; }
+            if(resimqueue.find(row) < 0) resimqueue.add(row);
+            conoutf("run %lld queued to be judged again (asked from the dashboard)", row);
+        }
+        closedir(d);
+    }
+
     static bool loadhexfile(const char *file, uchar *out, int n, bool create)
     {
         stream *f = openrawfile(file, "rb");
@@ -1376,7 +1403,7 @@ namespace witness
                 if(c.out.length()) ENET_SOCKETSET_ADD(writeset, c.sock);
                 maxsock = max(maxsock, c.sock);
             }
-            if(resimexe[0]) resimslice();
+            if(resimexe[0]) { pollrejudge(); resimslice(); }
             bool anyopen = false;
             loopv(clients) if(clients[i]->open) anyopen = true;
             if(enet_socketset_select(maxsock, &readset, &writeset, resimjobs.length() || resimqueue.length() ? 100 : anyopen ? WITNESSBEATMS : 1000) < 0) continue;
