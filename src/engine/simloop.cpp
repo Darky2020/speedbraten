@@ -81,6 +81,12 @@ void simupdate(bool draw)
     }
 }
 
+// lets the next frames simulate ms of game time on top of the time that passed, e.g. to move a replay ahead
+void simfastforward(int ms)
+{
+    if(simticking && ms > 0) simaccum += ms - ms%SIMTICK;
+}
+
 // true when the frame shows the simulation between ticks; then game::enddisplay must follow
 bool simdisplaystart()
 {

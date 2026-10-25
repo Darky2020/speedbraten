@@ -2368,7 +2368,7 @@ namespace game
         inputrun run;
         replayinfo info;
         if(!readreplay(replaylist[*i].file, &run, info)) { conoutf(CON_ERROR, "could not read %s", replaylist[*i].file); return; }
-        playinputrun(run, replaylist[*i].file);
+        viewinputrun(run, replaylist[*i].file);
     });
 
     ICOMMAND(replaydelete, "i", (int *i),

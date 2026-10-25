@@ -12,6 +12,8 @@ extern int inputsource;
 extern int fixedframe;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
+extern void simfastforward(int ms);
+
 struct rawevent
 {
     enum { KEYDOWN = 0, KEYUP, BUTTONDOWN, BUTTONUP, MOTION, WHEEL, FOCUS };

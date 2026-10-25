@@ -25,6 +25,17 @@ namespace game
     static uint lastreplayhash[DETHASH_GROUPS];
     static string replayfilename = ""; // file of the replay that is playing, "" if not from a file
 
+    // A replay the player opened to watch (from the replay list or the stats) can be paused, moved
+    // back and forth and restarted, and it holds on its last frame until the player leaves it.
+    MOD(VARP, replayseekstep, 1, 5, 60);
+    static bool replayviewing = false, replayviewpaused = false;
+    static inputrun replayviewrun;
+    static string replayviewfile = "", replayreturnmap = "";
+    static int replayreturnmode = INT_MAX, replayseektarget = -1;
+    struct viewstate { int tick, attempt; vector<uchar> state; };
+    static vector<viewstate *> viewstates;
+    static bool replayviewhold();
+
     static void checkpendingreset();
 
     // movement, jump or attack input from the player (aim alone does not count)
@@ -261,7 +272,7 @@ namespace game
 
     bool holdsim()
     {
-        if(spectatehold()) return true;
+        if(spectatehold() || replayviewhold()) return true;
         if(!holduntil) return false;
         if(totalmillis - holduntil < 0) return true;
         holduntil = 0;
@@ -572,6 +583,127 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    static bool replayviewended()
+    {
+        return replayviewing && replaying && replayattempt == replaydata.attempts.length()-1 && curtick >= replaycur().ticks;
+    }
+
+    static bool replayviewhold() { return replayviewing && (replayviewpaused || replayviewended()); }
+
+    static void clearviewstates() { viewstates.deletecontents(); }
+
+    void viewinputrun(const inputrun &src, const char *file)
+    {
+        if(!replayviewing)
+        {
+            copystring(replayreturnmap, connected ? getclientmap() : "");
+            replayreturnmode = gamemode;
+        }
+        inputrun run;
+        src.copyto(run);
+        run.copyto(replayviewrun);
+        copystring(replayviewfile, file ? file : "");
+        clearviewstates();
+        playinputrun(run, file);
+        replayviewing = true;
+        replayviewpaused = false;
+        replayseektarget = -1;
+    }
+
+    static void stopviewing()
+    {
+        replayviewing = replayviewpaused = false;
+        replayseektarget = -1;
+        clearviewstates();
+    }
+
+    static void leavereplayview()
+    {
+        if(!replayviewing) return;
+        stopviewing();
+        if(replaying || replaypending)
+        {
+            replaying = replaypending = false;
+            recordingoff = true;
+            restoresettings();
+            releasecontrols();
+        }
+        if(replayreturnmap[0]) changemap(replayreturnmap, replayreturnmode);
+        else execute("disconnect");
+    }
+
+    static const viewstate *seekstate = NULL;
+    static bool restoreseekstate() { return seekstate && restorestate(const_cast<vector<uchar> &>(seekstate->state)); }
+
+    // at a tick boundary: the move back that seekreplay asked for, and the states that make it possible
+    static void runviewops()
+    {
+        if(!replayviewing) return;
+        if(!replaying && !replaypending) { stopviewing(); return; }
+        if(!replaying) return;
+        if(replayseektarget >= 0)
+        {
+            int target = replayseektarget;
+            replayseektarget = -1;
+            seekstate = NULL;
+            loopvrev(viewstates) if(viewstates[i]->attempt == replayattempt && viewstates[i]->tick <= target) { seekstate = viewstates[i]; break; }
+            if(seekstate && inputreplayfromstate(restoreseekstate)) simfastforward((target - curtick)*SIMTICK);
+            seekstate = NULL;
+        }
+        bool have = false;
+        loopv(viewstates) if(viewstates[i]->attempt == replayattempt) { have = true; break; }
+        if(have && curtick % (5000/SIMTICK)) return;
+        loopv(viewstates) if(viewstates[i]->attempt == replayattempt && viewstates[i]->tick == curtick) return;
+        viewstate *v = new viewstate;
+        v->tick = curtick;
+        v->attempt = replayattempt;
+        if(!takesnapshot(v->state)) { delete v; return; }
+        viewstates.add(v);
+    }
+
+    static void seekreplay(int seconds)
+    {
+        if(!replayviewing || !replaying) return;
+        replayviewpaused = false;
+        int ticks = seconds*1000/SIMTICK;
+        if(ticks > 0)
+        {
+            if(replayattempt == replaydata.attempts.length()-1) ticks = min(ticks, replaycur().ticks - curtick);
+            simfastforward(ticks*SIMTICK);
+        }
+        else replayseektarget = max(curtick + ticks, 0);
+    }
+
+    static void restartreplayview()
+    {
+        if(!replayviewing) return;
+        inputrun run;
+        replayviewrun.copyto(run);
+        string file;
+        copystring(file, replayviewfile);
+        viewinputrun(run, file[0] ? file : NULL);
+    }
+
+    static void replayviewkey(int keycode)
+    {
+        switch(keycode)
+        {
+            case SDLK_p: if(replaying && !replayviewended()) replayviewpaused = !replayviewpaused; break;
+            case SDLK_r: restartreplayview(); break;
+            case SDLK_LEFT: seekreplay(-replayseekstep); break;
+            case SDLK_RIGHT: seekreplay(replayseekstep); break;
+            case SDLK_BACKSPACE: leavereplayview(); break;
+        }
+    }
+
+    ICOMMAND(replaypause, "", (), { if(replayviewing && replaying && !replayviewended()) replayviewpaused = !replayviewpaused; });
+    ICOMMAND(replayseek, "i", (int *seconds), seekreplay(*seconds));
+    ICOMMAND(replayrestart, "", (), restartreplayview());
+    ICOMMAND(replayleave, "", (), leavereplayview());
+    ICOMMAND(replayviewing, "", (), intret(replayviewing ? 1 : 0));
+    ICOMMAND(replaytick, "", (), intret(replaying ? curtick : -1));
+    ICOMMAND(replayticks, "", (), intret(replaying ? replaycur().ticks : -1));
+
     bool replaylifecheck = false;
     string replaylifecheckresult = "skipped";
     enum { LIFECHECKWAIT = 400 };
@@ -878,6 +1010,7 @@ namespace game
         if(lifepending) { seedlife(); takelifestate(); }
         else if(chainpending) takechainstate();
         runstateops();
+        runviewops();
         snapcycletick();
         takeautostate();
         hubkeyframe();
@@ -1161,6 +1294,7 @@ namespace game
 
     void rawinput(const rawevent &e)
     {
+        if(replayviewing && e.kind == rawevent::KEYDOWN && !(e.flags&rawevent::TEXT)) replayviewkey(e.keycode);
         if(!simticking || replaying || recordingoff || recording.attempts.empty() || !connected) return;
         rawevent &r = recording.last().raw.add(e);
         r.tick = curtick + 1;
@@ -1387,6 +1521,8 @@ namespace game
             formatstring(buf, "resetting in %.1f s", max(speedrunresetidle - (curtick - resetarmtick)*SIMTICK, 0)/1000.0f);
         else if(spawncountdown(buf)) {}
         else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
+        else if(replayviewing && replayviewended()) copystring(buf, "replay ended: R to watch again, Backspace to leave");
+        else if(replayviewing && replayviewpaused) copystring(buf, "paused: P to play, left/right to move, Backspace to leave");
         if(!buf[0]) return;
         const float scale = 0.4f;
         int tw = 0, th = 0;

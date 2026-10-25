@@ -342,6 +342,7 @@ namespace game
     extern void spectateupdate();
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);
+    extern void viewinputrun(const inputrun &run, const char *file);
     extern bool inputreplayactive();
     extern bool (*replaywaitattempt)();
     extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
