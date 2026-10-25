@@ -18,6 +18,9 @@ func ModeName(mode int) string {
 var campaigns = map[string]string{"mpsp6a": "An Army Of One", "mpsp9a": "Private Stan Sauer",
 	"lost": "Lost", "skrsp1": "Meltdown", "crnsp1": "Missile Pass", "level9": "Level 9"}
 
+// CampaignCount is how many campaigns there are.
+func CampaignCount() int { return len(campaigns) }
+
 // MapLabel is the board's map as players know it: a campaign's name, else the map.
 func (k Key) MapLabel() string {
 	if k.Kind == "campaign" {

@@ -452,10 +452,13 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, placeRow{Place: p, Best: best})
 	}
 	// completion: of each category's boards, how many the player has a time on
+	// flagruns and campaigns have fixed lists; races count the race boards there are
 	all, _ := s.store.Boards()
-	totals := map[string]int{}
+	totals := map[string]int{"ctf": len(board.FlagrunMaps), "ictf": len(board.FlagrunMaps), "ectf": len(board.FlagrunMaps), "sp": board.CampaignCount()}
 	for _, b := range all {
-		totals[completionGroup(b.Key)]++
+		if b.Key.Kind == "race" {
+			totals["race"]++
+		}
 	}
 	var completion []completionRow
 	for _, g := range completionGroups {
