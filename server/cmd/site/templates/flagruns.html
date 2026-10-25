@@ -4,9 +4,9 @@
 <h2 class="section">Maps</h2>
 {{template "filters" .}}
 <div class="card scroll"><table>
-<tr><th>map</th>{{range .Modes}}<th>{{template "badge" .}}</th>{{end}}</tr>
+<tr><th>map</th>{{range .Modes}}<th>{{template "badge" .}}</th>{{end}}<th class="num wide">runs</th></tr>
 {{range .Rows}}<tr><td>{{template "mapcell" .Key}}</td>
-{{range .Cells}}<td>{{if .Entry}}<a class="time" href="{{mapURL .Key}}">{{runtime .Entry.MS}}</a><div class="kind"><a class="dim" href="{{playerURL .Entry.Install}}">{{template "pname" .Entry}}</a></div>{{else}}<a class="faint" href="{{mapURL .Key}}" title="no runs yet">—</a>{{end}}</td>{{end}}</tr>
-{{else}}<tr><td colspan="4" class="dim">No flagruns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
+{{range .Cells}}<td>{{if .Entry}}<a class="time" href="{{mapURL .Key}}">{{runtime .Entry.MS}}</a><div class="kind"><a class="dim" href="{{playerURL .Entry.Install}}">{{template "pname" .Entry}}</a></div>{{else}}<a class="faint" href="{{mapURL .Key}}" title="no runs yet">—</a>{{end}}</td>{{end}}<td class="num dim wide">{{.Runs}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No flagruns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}

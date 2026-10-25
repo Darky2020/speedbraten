@@ -246,6 +246,7 @@ type flagrunCell struct {
 type flagrunRow struct {
 	Key   board.Key // the row's map, for its picture and first board
 	Cells []flagrunCell
+	Runs  int // on all its modes
 }
 
 // flagrunModes are the columns of the flagruns table: ctf, insta ctf, effic ctf.
@@ -283,6 +284,7 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 			c := flagrunCell{Key: board.Key{Map: m, Kind: "flagrun", Mode: mode}}
 			if b := byMap[m][mode]; b != nil {
 				c.Entry = &b.Entries[0]
+				row.Runs += b.Runs
 				if row.Key.Map == "" {
 					row.Key = b.Key
 				}
@@ -317,6 +319,8 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 			return a.newest().Before(b.newest())
 		case "records":
 			return a.filled() > b.filled()
+		case "runs":
+			return a.Runs > b.Runs
 		}
 		return a.Key.Map < b.Key.Map
 	})
@@ -325,7 +329,7 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 	render(w, flagrunsPage, "flagruns.html", data)
 }
 
-var flagrunSorts = []option{{"map", "map A–Z"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"records", "most modes set"}}
+var flagrunSorts = []option{{"map", "map A–Z"}, {"runs", "most runs"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"records", "most modes set"}}
 
 // newest is when the row's latest record was set.
 func (r flagrunRow) newest() time.Time {

@@ -4,9 +4,9 @@
 <h2 class="section">Campaigns</h2>
 {{template "filters" .}}
 <div class="card scroll"><table>
-<tr><th>campaign</th><th class="num">record</th><th>holder</th><th class="num wide">players</th><th class="wide">set</th></tr>
+<tr><th>campaign</th><th class="num">record</th><th>holder</th><th class="num wide">runs</th><th class="num wide">players</th><th class="wide">set</th></tr>
 {{range $b := .Campaigns}}{{$e := index $b.Entries 0}}<tr><td>{{template "mapcell" $b.Key}}</td><td class="num time">{{runtime $e.MS}}</td>
-<td><a href="{{playerURL $e.Install}}">{{template "pname" $e}}</a></td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td></tr>
-{{else}}<tr><td colspan="5" class="dim">No campaigns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
+<td><a href="{{playerURL $e.Install}}">{{template "pname" $e}}</a></td><td class="num dim wide">{{$b.Runs}}</td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td></tr>
+{{else}}<tr><td colspan="6" class="dim">No campaigns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}

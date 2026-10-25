@@ -38,6 +38,7 @@ type Entry struct {
 type Board struct {
 	Key     Key
 	Entries []Entry
+	Runs    int // the runs that count on it, every player's
 }
 
 // Record is a time that was the best on its board when it was set.
@@ -196,6 +197,7 @@ func (s *Store) load() error {
 			onboard[v.key] = map[string]bool{}
 			boards[v.key] = &Board{Key: v.key}
 		}
+		boards[v.key].Runs++
 		if onboard[v.key][v.install] {
 			continue
 		}

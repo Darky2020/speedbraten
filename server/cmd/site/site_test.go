@@ -118,7 +118,15 @@ func TestPublicPages(t *testing.T) {
 		t.Fatal("the all-flagruns records filter")
 	}
 
-	// search, filter and sort
+	// run counts: forge (effic ctf) has two runs that count, the rejected one not
+	if _, body = get(t, s, "/map?map=forge&kind=flagrun&mode=17"); !strings.Contains(body, "2 players · 2 runs") {
+		t.Fatal("the map page's run count")
+	}
+	if _, body = get(t, s, "/flagruns?sort=runs"); !strings.Contains(body, `<td class="num dim wide">2</td>`) {
+		t.Fatal("the flagruns table's run count")
+	}
+
+		// search, filter and sort
 	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
 		t.Fatal("search by a holder's name, any case, doesn't find forge")
 	}

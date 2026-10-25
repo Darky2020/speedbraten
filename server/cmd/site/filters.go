@@ -57,7 +57,7 @@ func (f listFilter) matches(k board.Key, names ...string) bool {
 // modeOf is the mode filter's value for a board: its badge.
 func modeOf(k board.Key) string { return strings.ToLower(badgeOf(k).Text) }
 
-var boardSorts = []option{{"map", "map A–Z"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"players", "most players"}, {"time", "fastest record"}}
+var boardSorts = []option{{"map", "map A–Z"}, {"runs", "most runs"}, {"players", "most players"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"time", "fastest record"}}
 
 // sortBoards orders boards by the filter's sort.
 func sortBoards(boards []*board.Board, by string) {
@@ -71,6 +71,8 @@ func sortBoards(boards []*board.Board, by string) {
 			return ea.When.Before(eb.When)
 		case "players":
 			return len(a.Entries) > len(b.Entries)
+		case "runs":
+			return a.Runs > b.Runs
 		case "time":
 			return ea.MS < eb.MS
 		}
