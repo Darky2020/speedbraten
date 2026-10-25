@@ -156,9 +156,9 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	recent, _ := s.store.RecentRuns(recentRuns)
+	recent, _ := s.store.RecentRuns(homeRuns)
 	holders, _ := s.store.TopHolders(8)
-	oldest, _ := s.store.OldestRecords(recentRuns)
+	oldest, _ := s.store.OldestRecords(homeRuns)
 	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
 		"Holders": holders, "Oldest": oldest, "More": "/records"})
 }
@@ -522,6 +522,7 @@ func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
 const (
 	categoryPanel = 8
 	recentRuns    = 5
+	homeRuns      = 10
 )
 
 // addCategory adds a category page's newest records, recent runs, top record holders and oldest
