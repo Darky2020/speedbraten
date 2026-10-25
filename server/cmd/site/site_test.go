@@ -143,7 +143,7 @@ func TestPublicPages(t *testing.T) {
 	}
 
 	code, body = get(t, s, "/player?id=kb")
-	if code != 200 || !strings.Contains(body, "on 2 boards") || !strings.Contains(body, "&lt;script&gt;bob") {
+	if code != 200 || !strings.Contains(body, "on 2 maps") || !strings.Contains(body, "&lt;script&gt;bob") {
 		t.Fatalf("player %d", code)
 	}
 	if code, body = get(t, s, "/records"); code != 200 || !strings.Contains(body, "first") {

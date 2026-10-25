@@ -1,8 +1,8 @@
 {{template "top" .}}
 <div class="tiles">
-<div class="tile"><div class="k">witnessed runs</div><div class="v">{{.Stats.Runs}}</div></div>
+<div class="tile"><div class="k">runs</div><div class="v">{{.Stats.Runs}}</div></div>
 <div class="tile"><div class="k">players</div><div class="v">{{.Stats.Players}}</div></div>
-<div class="tile"><div class="k">boards</div><div class="v">{{.Stats.Boards}}</div></div>
+<div class="tile"><div class="k">maps</div><div class="v">{{.Stats.Maps}}</div></div>
 <div class="tile"><div class="k">last run</div><div class="v">{{if .Stats.Runs}}{{ago .Stats.Last}}{{else}}—{{end}}</div></div>
 </div>
 <div class="cols">
@@ -11,7 +11,7 @@
 <tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="wide">when</th></tr>
 {{range .Recent}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{.Name}}</a></td>
 <td class="num time">{{if .Record}}<span class="rank1" title="a record">★ </span>{{end}}{{runtime .MS}}</td><td class="dim small wide">{{ago .When}}</td></tr>
-{{else}}<tr><td colspan="5" class="dim">No witnessed runs yet.</td></tr>{{end}}
+{{else}}<tr><td colspan="5" class="dim">No runs yet.</td></tr>{{end}}
 </table></div></div>
 <div class="card"><header><h2>Newest records</h2><a class="more" href="/records">all records →</a></header><div class="scroll"><table>
 <tr><th>map</th><th>mode</th><th>player</th><th class="num">time</th><th class="num wide">improved</th><th class="wide">when</th></tr>

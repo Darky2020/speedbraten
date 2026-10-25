@@ -421,7 +421,9 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 	}
 	var rows []placeRow
 	records := 0
+	maps := map[string]bool{}
 	for _, p := range places {
+		maps[p.Key.Map] = true
 		best := p.Entry.MS
 		if b, _ := s.store.Board(p.Key); b != nil {
 			best = b.Entries[0].MS
@@ -431,7 +433,7 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, placeRow{Place: p, Best: best})
 	}
-	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": records})
+	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": records, "Maps": len(maps)})
 }
 
 func (s *site) info(w http.ResponseWriter, r *http.Request) {

@@ -18,7 +18,7 @@ type Run struct {
 
 // Stats are the site's totals.
 type Stats struct {
-	Runs, Players, Boards int
+	Runs, Players, Boards, Maps int
 	Last                  time.Time
 }
 
@@ -27,13 +27,15 @@ func (s *Store) Stats() (Stats, error) {
 	err := s.locked(func() {
 		st.Runs = len(s.runs)
 		st.Boards = len(s.boards)
-		players := map[string]bool{}
+		players, maps := map[string]bool{}, map[string]bool{}
 		for _, b := range s.boards {
+			maps[b.Key.Map] = true
 			for _, e := range b.Entries {
 				players[e.Install] = true
 			}
 		}
 		st.Players = len(players)
+		st.Maps = len(maps)
 		if n := len(s.runs); n > 0 {
 			st.Last = time.UnixMilli(s.runs[n-1].when)
 		}
