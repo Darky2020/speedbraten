@@ -95,6 +95,10 @@ namespace game
     // ticks and drew the screen or not
     extern void frametimed(int us, int ticks, bool drawn);
     extern void rawinput(const rawevent &e);
+    // the HUD editor's turn at a key or mouse button (processkey's codes) and at mouse motion;
+    // true when it used the event
+    extern bool hudeditkey(int code, bool isdown);
+    extern bool hudeditmove(int dx, int dy);
     extern void tellsharness(); // a harness command changed the game: marks the run's provenance
     extern void begintick();
     extern void enddisplay();

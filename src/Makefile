@@ -142,6 +142,7 @@ CLIENT_OBJS= \
 	engine/world.o \
 	engine/worldio.o \
 	engine/sysinfo.o \
+	engine/huddraw.o \
 	fpsgame/ai.o \
 	fpsgame/client.o \
 	fpsgame/entities.o \
@@ -166,7 +167,8 @@ CLIENT_OBJS= \
 	fpsgame/splits.o \
 	fpsgame/spawns.o \
 	fpsgame/replayio.o \
-	fpsgame/tells.o
+	fpsgame/tells.o \
+	fpsgame/hudedit.o
 
 # BASE=vanilla and BASE=wcng build speedbraten on plain Sauerbraten or wc-ng source (ports/), without
 # p1xbraten's files; wc-ng's libraries come from WCNGDEPS (tools/wcngdeps.sh)

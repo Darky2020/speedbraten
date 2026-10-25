@@ -552,6 +552,7 @@ namespace game
             int tw = 0, th = 0;
             text_bounds(lines[i], tw, th);
             draw_text(lines[i], int(runtimerx * w / scale - tw/2.0f), int(y), 255, 255, 255, alphas[i]);
+            hudeditarea("runtimer", runtimerx*w - tw*scale/2, y*scale, runtimerx*w + tw*scale/2, (y + th)*scale);
             y += th;
         }
         pophudmatrix();

@@ -14,6 +14,7 @@ fpsgame/movable.cpp
 engine/menubg.h
 engine/nullgl.cpp
 engine/nullsdl.cpp
+engine/huddraw.cpp
 engine/simloop.cpp
 engine/sysinfo.cpp
 engine/varstate.h
@@ -23,6 +24,7 @@ fpsgame/dethash.cpp
 fpsgame/dethasher.h
 fpsgame/ghost.cpp
 fpsgame/hub.cpp
+fpsgame/hudedit.cpp
 fpsgame/inputs.cpp
 fpsgame/inputs.h
 fpsgame/replayfile.cpp

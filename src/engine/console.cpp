@@ -640,6 +640,7 @@ void processkey(int code, bool isdown, int modstate)
         if(!consolekey(code, isdown))
         {
             if(modstate&KMOD_GUI) return;
+            if(game::hudeditkey(code, isdown)) return;
             if(haskey) execbind(*haskey, isdown);
         }
     }

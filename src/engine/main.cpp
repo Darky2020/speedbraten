@@ -1132,7 +1132,7 @@ void checkinput()
                 {
                     int dx = event.motion.xrel, dy = event.motion.yrel;
                     checkmousemotion(dx, dy);
-                    if(!g3d_movecursor(dx, dy)) mousemove(dx, dy);
+                    if(!g3d_movecursor(dx, dy) && !game::hudeditmove(dx, dy)) mousemove(dx, dy);
                     mousemoved = true;
                 }
                 else if(shouldgrab) inputgrab(grabinput = true);

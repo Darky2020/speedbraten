@@ -186,10 +186,11 @@
          if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
          else if(action)
          {
-@@ -367,8 +368,26 @@
+@@ -366,9 +367,27 @@
+ }
  
  COMMAND(onrelease, "s");
- 
++
 +static int bindstate()
 +{
 +    if(mainmenu) return keym::ACTION_DEFAULT;
@@ -206,13 +207,21 @@
 +    const char *action = k->actions[state][0] ? k->actions[state] : k->actions[keym::ACTION_DEFAULT];
 +    return action[0] ? action : NULL;
 +}
-+
+ 
  void execbind(keym &k, bool isdown)
  {
 +    inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);
      loopv(releaseactions)
      {
          releaseaction &ra = releaseactions[i];
+@@ -605,6 +624,7 @@
+         if(!consolekey(code, isdown))
+         {
+             if(modstate&KMOD_GUI) return;
++            if(game::hudeditkey(code, isdown)) return;
+             if(haskey) execbind(*haskey, isdown);
+         }
+     }
 --- a/engine/decal.cpp
 +++ b/engine/decal.cpp
 @@ -327,7 +327,7 @@
@@ -463,10 +472,12 @@
  
      #ifdef __APPLE__
          static const int glversions[] = { 32, 20 };
-@@ -916,7 +974,54 @@
+@@ -914,6 +972,53 @@
+         dx += event.motion.xrel;
+         dy += event.motion.yrel;
          events.remove();
-     }
- }
++    }
++}
 +
 +#ifndef HEADLESS
 +// Harness: pushes an SDL event, which then goes through checkinput like a real one.
@@ -497,7 +508,7 @@
 +    SDL_PushEvent(&e);
 +});
 +#endif
- 
++
 +// the key code processkey gets for an SDL mouse button, 0 for none
 +static int mousebuttoncode(int button)
 +{
@@ -512,12 +523,9 @@
 +        case SDL_BUTTON_X2 + 2: return -11;
 +        case SDL_BUTTON_X2 + 3: return -12;
 +        default: return 0;
-+    }
-+}
-+
- void checkinput()
- {
-     if(interceptkeysym) clearinterceptkey();
+     }
+ }
+ 
 @@ -946,6 +1051,18 @@
  
              case SDL_KEYDOWN:
@@ -557,7 +565,7 @@
                          shouldgrab = false;
                          focused = -1;
                          break;
-@@ -998,6 +1121,13 @@
+@@ -998,11 +1121,18 @@
                  break;
  
              case SDL_MOUSEMOTION:
@@ -571,6 +579,12 @@
                  if(grabinput)
                  {
                      int dx = event.motion.xrel, dy = event.motion.yrel;
+                     checkmousemotion(dx, dy);
+-                    if(!g3d_movecursor(dx, dy)) mousemove(dx, dy);
++                    if(!g3d_movecursor(dx, dy) && !game::hudeditmove(dx, dy)) mousemove(dx, dy);
+                     mousemoved = true;
+                 }
+                 else if(shouldgrab) inputgrab(grabinput = true);
 @@ -1011,6 +1141,13 @@
              case SDL_MOUSEBUTTONDOWN:
              case SDL_MOUSEBUTTONUP:
@@ -2095,13 +2109,12 @@
          server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
          if(player1->health<player1->maxhealth && lastmillis-max(maptime, lastslowmohealth)>player1->health*player1->health/2)
          {
-@@ -234,11 +260,18 @@
-             player1->health++;
+@@ -235,10 +261,17 @@
          }
      }
-+
-+    void respawn();
  
++    void respawn();
++
      void updateworld()        // main game update loop
      {
          if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
@@ -2172,13 +2185,13 @@
          findplayerspawn(d, ent, tag);
      }
  
-@@ -364,7 +403,16 @@
+@@ -364,14 +403,24 @@
              }
          }
      }
 -    COMMAND(respawn, "");
 +    ICOMMAND(respawn, "", (), { if(!deferinput(INPUT_COMMAND, 0, "respawn")) respawn(); });
-+
+ 
 +    // suicide and respawn in the same tick (respawn waits of the mode still apply)
 +    ICOMMAND(speedrunrespawn, "", (),
 +    {
@@ -2187,10 +2200,10 @@
 +        if(player1->state == CS_ALIVE) suicide(player1);
 +        respawn();
 +    });
- 
++
      // inputs
  
-@@ -372,6 +420,7 @@
+     VARP(attackspawn, 0, 1, 1);
  
      void doattack(bool on)
      {
@@ -2324,7 +2337,7 @@
  
      bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
  
-@@ -1093,9 +1182,13 @@
+@@ -1093,9 +1182,14 @@
  
          if(!m_edit && !m_sp)
          {
@@ -2336,10 +2349,11 @@
 +        drawsplits(w, h);
 +        drawspeedometer(w, h);
 +        drawinputtimers(w, h);
++        drawhudedit(w, h);
      }
  
      int clipconsole(int w, int h)
-@@ -1304,6 +1397,7 @@
+@@ -1304,6 +1398,7 @@
      const char *savedconfig() { return "config.cfg"; }
      const char *restoreconfig() { return "restore.cfg"; }
      const char *defaultconfig() { return "data/defaults.cfg"; }
@@ -3450,7 +3464,7 @@
      extern const char *autoexec();
      extern const char *savedservers();
      extern void loadconfigs();
-@@ -69,11 +81,20 @@
+@@ -69,11 +81,24 @@
      extern float abovegameplayhud(int w, int h);
      extern void gameplayhud(int w, int h);
      extern bool canjump();
@@ -3465,6 +3479,10 @@
 +    // ticks and drew the screen or not
 +    extern void frametimed(int us, int ticks, bool drawn);
 +    extern void rawinput(const rawevent &e);
++    // the HUD editor's turn at a key or mouse button (processkey's codes) and at mouse motion;
++    // true when it used the event
++    extern bool hudeditkey(int code, bool isdown);
++    extern bool hudeditmove(int dx, int dy);
 +    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
 +    extern void begintick();
 +    extern void enddisplay();

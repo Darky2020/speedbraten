@@ -249,7 +249,7 @@ namespace game
 
     void drawruntimer(int w, int h)
     {
-        if(!runtimer || runkind == RUNTIMER_NONE) return;
+        if(!runtimer || (runkind == RUNTIMER_NONE && !hudediting)) return;
         const char *buf = formatruntime(runticks()*SIMTICK);
         int tw = 0, th = 0;
         text_bounds(buf, tw, th);
@@ -270,6 +270,7 @@ namespace game
         }
         draw_text(buf, int(offset.x), int(offset.y), (color>>16)&0xFF, (color>>8)&0xFF, color&0xFF, 255);
         pophudmatrix();
+        hudeditarea("runtimer", offset.x*runtimerscale, offset.y*runtimerscale, (offset.x + tw)*runtimerscale, (offset.y + th)*runtimerscale);
 
         // the board's best under the timer, at half its size
         const char *rec = runtimerrecord ? hubboardhud() : NULL;
@@ -283,5 +284,6 @@ namespace game
         flushhudmatrix();
         draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
         pophudmatrix();
+        hudeditarea("runtimer", (at.x - rw/2.0f)*scale, at.y*scale, (at.x + rw/2.0f)*scale, (at.y + rh)*scale);
     }
 }

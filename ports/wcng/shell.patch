@@ -187,10 +187,11 @@
          if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
          else if(action)
          {
-@@ -458,8 +459,26 @@
+@@ -457,9 +458,27 @@
+ }
  
  COMMAND(onrelease, "s");
- 
++
 +static int bindstate()
 +{
 +    if(mainmenu) return keym::ACTION_DEFAULT;
@@ -207,13 +208,21 @@
 +    const char *action = k->actions[state][0] ? k->actions[state] : k->actions[keym::ACTION_DEFAULT];
 +    return action[0] ? action : NULL;
 +}
-+
+ 
  void execbind(keym &k, bool isdown)
  {
 +    inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);
      loopv(releaseactions)
      {
          releaseaction &ra = releaseactions[i];
+@@ -699,6 +718,7 @@
+         if(!consolekey(code, isdown))
+         {
+             if(modstate&KMOD_GUI) return;
++            if(game::hudeditkey(code, isdown)) return;
+             if(haskey) execbind(*haskey, isdown);
+         }
+     }
 --- a/engine/decal.cpp
 +++ b/engine/decal.cpp
 @@ -327,7 +327,7 @@
@@ -557,7 +566,7 @@
                          shouldgrab = false;
                          focused = -1;
                          break;
-@@ -1010,6 +1133,13 @@
+@@ -1010,11 +1133,18 @@
                  break;
  
              case SDL_MOUSEMOTION:
@@ -571,6 +580,12 @@
                  if(grabinput)
                  {
                      int dx = event.motion.xrel, dy = event.motion.yrel;
+                     checkmousemotion(dx, dy);
+-                    if(!g3d_movecursor(dx, dy)) mousemove(dx, dy);
++                    if(!g3d_movecursor(dx, dy) && !game::hudeditmove(dx, dy)) mousemove(dx, dy);
+                     mousemoved = true;
+                 }
+                 else if(shouldgrab) inputgrab(grabinput = true);
 @@ -1023,6 +1153,13 @@
              case SDL_MOUSEBUTTONDOWN:
              case SDL_MOUSEBUTTONUP:
@@ -2035,13 +2050,12 @@
          server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
          if(player1->health<player1->maxhealth && lastmillis-max(maptime, lastslowmohealth)>player1->health*player1->health/2)
          {
-@@ -234,11 +260,18 @@
-             player1->health++;
+@@ -235,10 +261,17 @@
          }
      }
-+
-+    void respawn();
  
++    void respawn();
++
      void updateworld()        // main game update loop
      {
          if(!maptime) { maptime = lastmillis; maprealtime = totalmillis; return; }
@@ -2112,13 +2126,13 @@
          findplayerspawn(d, ent, tag);
      }
  
-@@ -364,7 +403,16 @@
+@@ -364,14 +403,24 @@
              }
          }
      }
 -    COMMAND(respawn, "");
 +    ICOMMAND(respawn, "", (), { if(!deferinput(INPUT_COMMAND, 0, "respawn")) respawn(); });
-+
+ 
 +    // suicide and respawn in the same tick (respawn waits of the mode still apply)
 +    ICOMMAND(speedrunrespawn, "", (),
 +    {
@@ -2127,10 +2141,10 @@
 +        if(player1->state == CS_ALIVE) suicide(player1);
 +        respawn();
 +    });
- 
++
      // inputs
  
-@@ -372,6 +420,7 @@
+     VARP(attackspawn, 0, 1, 1);
  
      void doattack(bool on)
      {
@@ -2264,7 +2278,7 @@
  
      bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
  
-@@ -1160,9 +1249,13 @@
+@@ -1160,9 +1249,14 @@
  
          if(!m_edit && !m_sp)
          {
@@ -2276,10 +2290,11 @@
 +        drawsplits(w, h);
 +        drawspeedometer(w, h);
 +        drawinputtimers(w, h);
++        drawhudedit(w, h);
      }
  
      //NEW
-@@ -1516,6 +1609,7 @@
+@@ -1516,6 +1610,7 @@
      const char *savedconfig() { return "config.cfg"; }
      const char *restoreconfig() { return "restore.cfg"; }
      const char *defaultconfig() { return "data/defaults.cfg"; }
@@ -3451,7 +3466,7 @@
      extern const char *autoexec();
      extern const char *wcautoexec(); //NEW
      extern const char *wcconfig(); //NEW
-@@ -84,11 +96,20 @@
+@@ -84,11 +96,24 @@
      extern void rendernetwork(int w, int h, int screenw, int screenh, int fonth);              //NEW
      extern bool renderstatsdisplay(int conw, int conh, int FONTH, int woffset, int roffset);   //NEW
      extern bool canjump();
@@ -3466,6 +3481,10 @@
 +    // ticks and drew the screen or not
 +    extern void frametimed(int us, int ticks, bool drawn);
 +    extern void rawinput(const rawevent &e);
++    // the HUD editor's turn at a key or mouse button (processkey's codes) and at mouse motion;
++    // true when it used the event
++    extern bool hudeditkey(int code, bool isdown);
++    extern bool hudeditmove(int dx, int dy);
 +    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
 +    extern void begintick();
 +    extern void enddisplay();

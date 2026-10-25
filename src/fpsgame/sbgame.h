@@ -103,6 +103,11 @@ extern void runtimerspawned(fpsent *d);
 extern void runtimeredittoggled(bool on);
 extern void drawruntimer(int w, int h);
 extern void drawspeedometer(int w, int h);
+// hudedit: an element drawn at <name>x, <name>y with <name>scale reports the area it covered, in
+// the HUD's unscaled coordinates
+extern bool hudediting;
+extern void hudeditarea(const char *name, float x0, float y0, float x1, float y1);
+extern void drawhudedit(int w, int h);
 extern bool flagheldby(int flag, fpsent *d);
 extern bool flagspawnloc(bool own, vec &loc);
 extern bool flagrunrules();

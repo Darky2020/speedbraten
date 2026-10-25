@@ -1233,6 +1233,7 @@ namespace game
         drawsplits(w, h);
         drawspeedometer(w, h);
         drawinputtimers(w, h);
+        drawhudedit(w, h);
     }
 
     int clipconsole(int w, int h)

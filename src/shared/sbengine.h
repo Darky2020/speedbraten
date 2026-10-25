@@ -66,3 +66,7 @@ struct inputsourcescope
     inputsourcescope(int src) : old(inputsource) { inputsource = src; }
     ~inputsourcescope() { inputsource = old; }
 };
+
+// untextured rectangles in the HUD's current coordinates (engine/huddraw.cpp)
+extern void hudfillrect(float x0, float y0, float x1, float y1, int colour, int alpha = 255);
+extern void hudoutlinerect(float x0, float y0, float x1, float y1, float width, int colour, int alpha = 255);

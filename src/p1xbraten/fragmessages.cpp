@@ -28,6 +28,8 @@ namespace game {
 
     void drawfragmessages(int w, int h)
     {
+        bool sample = hudediting && fragmessages.empty();
+        if(sample) fragmessages.add(fragmessage(player1->name, "enemy", GUN_RIFLE));
         if(fragmessages.empty()) return;
 
         float stepsize = (3*HICON_SIZE)/2;
@@ -56,9 +58,11 @@ namespace game {
             vec2 drawposcenter = vec2(0, (fragmessages.length()-1-i)*stackdir*stepsize).add(origin);
 
             int tw, th; vec2 drawpos;
+            float left = drawposcenter.x - HICON_SIZE/2;
             if(m.attackername[0])
             {
                 text_bounds(m.attackername, tw, th);
+                left = drawposcenter.x - (tw + HICON_SIZE);
                 drawpos = vec2(-2*(tw+HICON_SIZE), -th).div(2).add(drawposcenter);
                 draw_text(m.attackername, drawpos.x, drawpos.y, 0xFF, 0xFF, 0xFF, alpha);
             }
@@ -70,8 +74,11 @@ namespace game {
             text_bounds(m.victimname, tw, th);
             drawpos = vec2(2*HICON_SIZE, -th).div(2).add(drawposcenter);
             draw_text(m.victimname, drawpos.x, drawpos.y, 0xFF, 0xFF, 0xFF, alpha);
+            hudeditarea("hudfragmessage", left*hudfragmessagescale, (drawposcenter.y - HICON_SIZE/2)*hudfragmessagescale,
+                        (drawposcenter.x + HICON_SIZE + tw)*hudfragmessagescale, (drawposcenter.y + HICON_SIZE/2)*hudfragmessagescale);
         }
 
         pophudmatrix();
+        if(sample) fragmessages.pop();
     }
 }

@@ -136,6 +136,7 @@ namespace game
         int colour = bandcolour(speed2);
         draw_text(buf, int(offset.x), int(offset.y), (colour>>16)&0xFF, (colour>>8)&0xFF, colour&0xFF, 255);
         pophudmatrix();
+        hudeditarea("speedometer", offset.x*speedometerscale, offset.y*speedometerscale, (offset.x + tw)*speedometerscale, (offset.y + th)*speedometerscale);
     }
 
     ICOMMAND(getspeed, "i", (int *full),
