@@ -156,12 +156,11 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	recent, _ := s.store.RecentRuns(12)
-	records, _ := s.store.Records(8)
+	recent, _ := s.store.RecentRuns(recentRuns)
 	holders, _ := s.store.TopHolders(8)
 	oldest, _ := s.store.OldestRecords(8)
 	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
-		"Records": records, "Holders": holders, "Oldest": oldest, "More": "/records"})
+		"Holders": holders, "Oldest": oldest, "More": "/records"})
 }
 
 var recordModes = []option{{"", "all modes"}, {"race", "race"}, {"flagrun", "all flagruns"}, {"ctf", "ctf"}, {"ictf", "insta ctf"}, {"ectf", "effic ctf"}, {"sp", "singleplayer"}}
@@ -519,23 +518,19 @@ func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, placeholderSVG)
 }
 
-// categoryPanel is how many rows each of a category page's side lists has.
-const categoryPanel = 8
+// how many rows the lists of the home and category pages have
+const (
+	categoryPanel = 8
+	recentRuns    = 5
+)
 
 // addCategory adds a category page's newest records, recent runs, top record holders and oldest
 // standing records, all of the boards of one kind.
 func (s *site) addCategory(data map[string]any, boards []*board.Board, kind string) {
-	all, _ := s.store.Records(100000)
-	var records []board.Record
-	for _, r := range all {
-		if r.Key.Kind == kind && len(records) < categoryPanel {
-			records = append(records, r)
-		}
-	}
 	runs, _ := s.store.RecentRuns(100000)
 	var recent []board.Run
 	for _, r := range runs {
-		if r.Key.Kind == kind && len(recent) < categoryPanel {
+		if r.Key.Kind == kind && len(recent) < recentRuns {
 			recent = append(recent, r)
 		}
 	}
@@ -566,7 +561,7 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 		data["ModeHolders"] = split
 	}
 	more := map[string]string{"race": "race", "flagrun": "flagrun", "campaign": "sp"}[kind]
-	data["Records"], data["Recent"], data["Holders"], data["Oldest"] = records, recent, holders, oldest
+	data["Recent"], data["Holders"], data["Oldest"] = recent, holders, oldest
 	data["More"] = "/records"
 	if more != "" {
 		data["More"] = "/records?mode=" + more
