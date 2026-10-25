@@ -278,25 +278,34 @@ namespace game
         draw_text(buf, int(offset.x), int(offset.y), (color>>16)&0xFF, (color>>8)&0xFF, color&0xFF, 255);
         pophudmatrix();
 
-        // under the timer at half its size: the board's best, a campaign run's deaths
-        float scale = runtimerscale*0.5f, y = runtimery*h + th*runtimerscale*0.55f;
+        // the board's best under the timer, at half its size
         const char *rec = runtimerrecord ? hubboardhud() : NULL;
-        string deaths = "";
-        int ndeaths = runtimerdeaths();
-        if(runtimerdeathcount && ndeaths > 0) formatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
-        loopi(2)
+        if(rec)
         {
-            const char *line = i ? deaths : rec;
-            if(!line || !line[0]) continue;
+            float scale = runtimerscale*0.5f;
             int rw = 0, rh = 0;
-            text_bounds(line, rw, rh);
-            vec2 at = vec2(runtimerx*w, y).div(scale);
+            text_bounds(rec, rw, rh);
+            vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);
             pushhudmatrix();
             hudmatrix.scale(scale, scale, 1);
             flushhudmatrix();
-            draw_text(line, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
+            draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
             pophudmatrix();
-            y += rh*scale;
+        }
+
+        // a campaign run's deaths in the bottom right corner, above the fps counter
+        int ndeaths = runtimerdeaths();
+        if(runtimerdeathcount && ndeaths > 0)
+        {
+            defformatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
+            const float scale = 0.4f;
+            int dw = 0, dh = 0;
+            text_bounds(deaths, dw, dh);
+            pushhudmatrix();
+            hudmatrix.scale(scale, scale, 1);
+            flushhudmatrix();
+            draw_text(deaths, int(w/scale - dw - dh), int(h/scale - 3*dh), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
+            pophudmatrix();
         }
     }
 }

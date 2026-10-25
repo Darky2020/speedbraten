@@ -5,8 +5,7 @@
 - Speedbraten also comes built on plain Sauerbraten and on wc-ng.
 - The macOS app runs on macOS 11 and newer again, not only 13.
 - Replays from the replay list or the stats can be paused (P), moved back and forth (left/right), sped up (hold space), restarted (R) and left (Backspace), with their time and keys on screen; they stop on their last frame.
-- Maps without a split file get automatic splits: every door in a campaign, and the ghost's path cut into equal parts in flagruns and races.
-- Campaign runs count their deaths, under the timer and in the stats.
+- Campaign runs count their deaths, on screen and in the stats.
 - Campaign door checkpoints: every door you open saves a state; practise from one with `nextdoor`, `prevdoor` or `doorcheckpoint <n>` (keys in the keys tab).
 
 ## v0.3.3alpha

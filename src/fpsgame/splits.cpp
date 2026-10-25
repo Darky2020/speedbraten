@@ -3,8 +3,6 @@
 // per run, in any order: entering a zone, picking up or using a given entity, a cubescript
 // condition turning true, or a map script calling splithere. Split times are run timer ticks.
 // The HUD compares them with the PB run's splits and the best time of each segment.
-// A map without a split file gets automatic ones: in a campaign the first opening of each door or
-// switch, in a flagrun or race the path of the ghost cut into equal lengths.
 
 #include "game.h"
 #include "sbcompat.h"
@@ -12,20 +10,17 @@
 
 namespace game
 {
-    enum { SPLIT_ZONE = 0, SPLIT_PICKUP, SPLIT_TELEPORT, SPLIT_WHEN, SPLIT_SCRIPT, SPLIT_DOOR, SPLIT_PATH };
-    static const char * const splittypes[] = { "zone", "pickup", "teleport", "when", "script", "door", "path" };
+    enum { SPLIT_ZONE = 0, SPLIT_PICKUP, SPLIT_TELEPORT, SPLIT_WHEN, SPLIT_SCRIPT };
+    static const char * const splittypes[] = { "zone", "pickup", "teleport", "when", "script" };
 
     struct splitdef
     {
         string name;
-        int type, ent; // ent: the entity of a pickup, teleport or door
+        int type, ent;
         vec lo, hi;
         string expr;
-        int mapno;     // door: the campaign map it is on
-        float share;   // path: the share of the ghost's path length it fires at, < 0 when unused
     };
     static vector<splitdef> defs;
-    static bool filedefs = false; // the map's splits come from a split file: no automatic ones
 
     struct splithit
     {
@@ -61,8 +56,6 @@ namespace game
         d.ent = -1;
         d.lo = d.hi = vec(0, 0, 0);
         d.expr[0] = '\0';
-        d.mapno = 0;
-        d.share = -1;
         return d;
     }
 
@@ -101,7 +94,6 @@ namespace game
             defformatstring(shipped, "%s%s", overridedir, file);
             if(overridedir[0] && fileexists(shipped, "r")) execfile(shipped, false);
         }
-        filedefs = defs.length() > 0;
     }
 
     ICOMMAND(splitsave, "", (),
@@ -115,7 +107,6 @@ namespace game
         loopv(defs)
         {
             const splitdef &d = defs[i];
-            if(d.type == SPLIT_DOOR || d.type == SPLIT_PATH) continue;
             switch(d.type)
             {
                 case SPLIT_ZONE: f->printf("splitzone %s %g %g %g %g %g %g\n", escapestring(d.name), d.lo.x, d.lo.y, d.lo.z, d.hi.x, d.hi.y, d.hi.z); break;
@@ -191,8 +182,6 @@ namespace game
                 case SPLIT_PICKUP: formatstring(buf, "pickup of entity %d", d.ent); break;
                 case SPLIT_TELEPORT: formatstring(buf, "teleport %d", d.ent); break;
                 case SPLIT_WHEN: formatstring(buf, "when [%s]", d.expr); break;
-                case SPLIT_DOOR: formatstring(buf, "automatic: door %d opens", d.ent); break;
-                case SPLIT_PATH: formatstring(buf, "automatic: %.0f%% of the ghost's path", d.share*100); break;
                 default: copystring(buf, "called by the map script"); break;
             }
             result(buf);
@@ -310,109 +299,6 @@ namespace game
         return true;
     }
 
-    MOD(VARP, splitautodoors, 0, 1, 1);
-    MOD(VARP, splitautoparts, 0, 4, 20); // parts of the ghost's path, 0 for none
-
-    // the first opening of a door or switch this run; a door that shares its tag with one counted
-    // on the same map is the one it opened
-    static void autodoorsplits()
-    {
-        if(filedefs || !splitautodoors || strcmp(splitkind, "sp")) return;
-        int mapno = max(campaignmap(getclientmap(), NULL), 0);
-        const vector<extentity *> &ents = entities::getents();
-        loopv(ents)
-        {
-            const fpsentity &e = *(const fpsentity *)ents[i];
-            if(e.type != MAPMODEL || e.triggerstate == TRIGGER_RESET) continue;
-            string name;
-            if(mapno) formatstring(name, "door %d.%d", mapno+1, i);
-            else formatstring(name, "door %d", i);
-            int d = finddef(name);
-            if(d >= 0 && hasfired(d)) continue;
-            bool opened = false;
-            if(e.attr4) loopvj(hits)
-            {
-                const splitdef &h = defs[hits[j].def];
-                if(h.type == SPLIT_DOOR && h.mapno == mapno && h.ent != i && ents.inrange(h.ent) && ents[h.ent]->attr4 == e.attr4) { opened = true; break; }
-            }
-            if(opened) continue;
-            if(d < 0)
-            {
-                splitdef &n = adddef(name, SPLIT_DOOR);
-                n.ent = i;
-                n.mapno = mapno;
-                d = defs.length()-1;
-            }
-            fire(d);
-        }
-    }
-
-    // path splits: the ghost's eye positions with the path length up to each, and how far along it
-    // the player is (the nearest sample, searched a little ahead of the last one)
-    static vector<float> ghostdist;
-    static string pathkey = "";
-    static int pathcursor = -1;
-    enum { PATHLOOKAHEAD = 1024 };
-
-    static int pathsplitcount() { return filedefs || (strcmp(splitkind, "flagrun") && strcmp(splitkind, "race")) ? 0 : splitautoparts; }
-
-    static void refreshpathsplits(const vector<ghostsample> *samples, const char *file)
-    {
-        int parts = samples ? pathsplitcount() : 0;
-        defformatstring(key, "%s|%s|%d", file ? file : "", defskey, parts);
-        if(!strcmp(key, pathkey)) return;
-        if(parts >= 2 && samples->length() < 2) return;
-        copystring(pathkey, key);
-        ghostdist.setsize(0);
-        pathcursor = -1;
-        loopv(defs) if(defs[i].type == SPLIT_PATH) defs[i].share = -1;
-        if(parts < 2) return;
-        ghostdist.add(0);
-        for(int i = 1; i < samples->length(); i++) ghostdist.add(ghostdist.last() + (*samples)[i].o.dist((*samples)[i-1].o));
-        loopi(parts-1)
-        {
-            defformatstring(name, "part %d", i+1);
-            int d = finddef(name);
-            splitdef &p = d >= 0 && defs[d].type == SPLIT_PATH ? defs[d] : adddef(name, SPLIT_PATH);
-            p.share = (i+1)/float(parts);
-        }
-    }
-
-    static void pathsplits(const vector<ghostsample> *samples)
-    {
-        if(!samples || ghostdist.length() != samples->length() || ghostdist.last() <= 0) return;
-        vec eye = player1->o;
-        int lo = 0, hi = samples->length()-1;
-        if(pathcursor >= 0)
-        {
-            lo = pathcursor;
-            while(hi > lo && ghostdist[hi] > ghostdist[pathcursor] + PATHLOOKAHEAD) hi--;
-        }
-        int best = lo;
-        float bestdist = 1e16f;
-        for(int i = lo; i <= hi; i++)
-        {
-            float dist = (*samples)[i].o.squaredist(eye);
-            if(dist < bestdist) { bestdist = dist; best = i; }
-        }
-        pathcursor = best;
-        float along = ghostdist[best]/ghostdist.last();
-        loopv(defs) if(defs[i].type == SPLIT_PATH && defs[i].share > 0 && along >= defs[i].share && !hasfired(i)) fire(i);
-    }
-
-    // the ghost's tick at a share of its path length
-    static int ghostpathtick(const vector<ghostsample> &samples, float share)
-    {
-        if(ghostdist.length() != samples.length() || ghostdist.last() <= 0) return -1;
-        float at = share*ghostdist.last();
-        for(int i = 1; i < samples.length(); i++) if(ghostdist[i] >= at)
-        {
-            float span = ghostdist[i] - ghostdist[i-1], f = span > 0 ? (at - ghostdist[i-1])/span : 0;
-            return int(ceilf(samples[i-1].tick + f*(samples[i].tick - samples[i-1].tick)));
-        }
-        return samples[samples.length()-1].tick;
-    }
-
     // the chosen ghost replay's splits: recorded ones for a run of this player, else the zones
     // rebuilt from its ghost path; with its finish
     static vector<splittime> ghostsplits;
@@ -455,24 +341,9 @@ namespace game
         if(ghostcompare && !strcmp(key, ghostcomparekey)) return;
         copystring(ghostcomparekey, key);
         ghostcompare = true;
-        refreshpathsplits(samples, file);
-        bool recorded = statssplitsofreplay(file, ghostsplits);
-        if(!recorded)
-        {
-            ghostsplits.setsize(0);
-            zonesfrompath(*samples, *maps);
-        }
-        loopv(defs) if(defs[i].type == SPLIT_PATH && defs[i].share > 0)
-        {
-            bool have = false;
-            loopvj(ghostsplits) if(!strcmp(ghostsplits[j].name, defs[i].name)) { have = true; break; }
-            int tick = have ? -1 : ghostpathtick(*samples, defs[i].share);
-            if(tick < 0) continue;
-            splittime &t = ghostsplits.add();
-            copystring(t.name, defs[i].name);
-            t.tick = tick;
-        }
-        if(recorded) return;
+        if(statssplitsofreplay(file, ghostsplits)) return;
+        ghostsplits.setsize(0);
+        zonesfrompath(*samples, *maps);
         if(runtime >= 0)
         {
             splittime &f = ghostsplits.add();
@@ -528,7 +399,6 @@ namespace game
         if(t < lasttick)
         {
             havelastfeet = false;
-            pathcursor = -1;
             if(t <= 1) hits.setsize(0);
             else while(hits.length() && hits.last().tick > t) hits.pop();
         }
@@ -547,12 +417,6 @@ namespace game
         }
         lastfeet = feet;
         havelastfeet = true;
-        autodoorsplits();
-        const char *file;
-        const vector<ghostsample> *samples;
-        const vector<int> *maps;
-        int ghostms;
-        if(ghostchosenreplay(file, samples, maps, ghostms)) { refreshpathsplits(samples, file); pathsplits(samples); }
     }
 
     // zones as wire boxes, in edit mode or with splitshowzones
