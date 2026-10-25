@@ -26,6 +26,7 @@ import (
 
 	"github.com/flynn/noise"
 
+	"speedbraten/server/board"
 	"speedbraten/server/hub"
 	"speedbraten/server/noisechan"
 )
@@ -107,7 +108,8 @@ func main() {
 	witness := flag.String("witness", "", "the witness's address as players reach it, host:port")
 	ask := flag.String("witnessask", "", "where the hub reaches the witness, if not at -witness")
 	admins := flag.String("admins", "", "file of admin install keys")
-	witnessDB := flag.String("witnessdb", "", "the witness's witness.db, to announce PBs and records")
+	witnessDB := flag.String("witnessdb", "", "the witness's witness.db, to announce PBs and records and serve the boards")
+	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -138,6 +140,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("-witnessdb: %v", err)
 		}
+		if *siteDB == "" {
+			*siteDB = filepath.Join(*dir, "site.db")
+		}
+		boards, err := board.Open(*witnessDB, filepath.Join(*dir, "hub.db"), *siteDB, 30*time.Second)
+		if err != nil {
+			log.Fatalf("boards: %v", err)
+		}
+		h.SetBoards(boards)
 		go func() {
 			for {
 				if n, err := res.Poll(); err != nil {

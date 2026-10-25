@@ -12,6 +12,8 @@ import (
 
 	"github.com/flynn/noise"
 
+	"fmt"
+	"speedbraten/server/board"
 	"speedbraten/server/noisechan"
 	"speedbraten/server/sqlite"
 )
@@ -984,5 +986,73 @@ func TestLobbyStats(t *testing.T) {
 	a.mapmsg(MsgLobbyMap, "nadefly", 17)
 	if s := b.expectStat(a.id); s.best != 0 || s.pb != 0 {
 		t.Fatalf("after the map change %+v", s)
+	}
+}
+
+func TestBoardRequest(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	ka := newKey()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.Exec("INSERT INTO sessions(installkey, installpub) VALUES('wa', ?)", hex.EncodeToString(ka.Public))
+	for i := 0; i < 12; i++ {
+		w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES(?, 'forge', ?, 'flagrun', 17, ?, 'valid', 1)", fmt.Sprintf("k%d", i), fmt.Sprintf("p%d", i), 9000+i*100)
+	}
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('wa', 'forge', 'alice', 'flagrun', 17, 9950, 'valid', 1)")
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	a := f.connect(ka, "1.1.1.1", "alice")
+	ask := func(mapname string) msg {
+		var q writer
+		q.str(mapname)
+		q.s(17)
+		q.str("flagrun")
+		a.send(MsgBoard, q.b)
+		return a.expect(MsgBoardRows)
+	}
+	// a hub without the boards answers with an empty board
+	if m := ask("forge"); m.r.str(64) != "forge" || m.r.s() != 17 || m.r.str(16) != "flagrun" || m.r.u() != 0 {
+		t.Fatal("no boards: not an empty reply")
+	}
+	f.h.SetBoards(store)
+	m := ask("forge")
+	m.r.str(64)
+	m.r.s()
+	m.r.str(16)
+	n := m.r.u()
+	var first string
+	var firstms uint64
+	for i := uint64(0); i < n; i++ {
+		rank, name, ms := m.r.u(), m.r.str(64), m.r.u()
+		if i == 0 {
+			first, firstms = name, ms
+		}
+		if rank != i+1 {
+			t.Fatalf("row %d has rank %d", i, rank)
+		}
+	}
+	rank, ms := m.r.u(), m.r.u()
+	if err := m.r.done(); err != nil {
+		t.Fatal(err)
+	}
+	if n != BoardRows || first != "p0" || firstms != 9000 || rank != 11 || ms != 9950 {
+		t.Fatalf("board: %d rows, #1 %s %d, mine %d %d", n, first, firstms, rank, ms)
 	}
 }

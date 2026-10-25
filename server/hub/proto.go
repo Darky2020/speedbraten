@@ -24,6 +24,7 @@ const (
 	MsgView        = 13
 	MsgViewData    = 14
 	MsgRunTime     = 15
+	MsgBoard       = 16
 
 	MsgWelcome   = 101
 	MsgWitness   = 102
@@ -40,6 +41,7 @@ const (
 	MsgSpecData  = 113
 	MsgSpecEnd   = 114
 	MsgLobbyStat = 115
+	MsgBoardRows = 116
 
 	StateMenu    = 0
 	StatePlaying = 1

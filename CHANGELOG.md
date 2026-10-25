@@ -3,6 +3,8 @@
 ## v0.3.3alpha
 
 - When spectating ends, you stay on the map you were watching instead of going back.
+- The speedrun menu has a boards tab: the witnessed leaderboard of the map you play, and your place on it.
+- The board's best time shows under the run timer (`runtimerrecord`).
 
 ## v0.3.2alpha
 

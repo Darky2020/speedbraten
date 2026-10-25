@@ -317,6 +317,16 @@ func (s *Store) Installs(text string) []string {
 	return out
 }
 
+// InstallOfPub is the witness's install key of the install with that Noise key (the hub's name
+// for it), "" when the witness hasn't seen it.
+func (s *Store) InstallOfPub(pub string) string {
+	rows, err := s.witness.Query("SELECT installkey FROM sessions WHERE installpub = ? ORDER BY id DESC LIMIT 1", pub)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	return rows[0][0]
+}
+
 // Name is an install's name on the boards, "" when unknown.
 func (s *Store) Name(install string) string {
 	var n string

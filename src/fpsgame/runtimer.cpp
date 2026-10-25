@@ -238,6 +238,8 @@ namespace game
     MOD(HVARP, runtimerpbcolour, 0, 0x40FF80, 0xFFFFFF);
     MOD(HVARP, runtimerfastercolour, 0, 0xFFFF40, 0xFFFFFF);
     MOD(HVARP, runtimerslowercolour, 0, 0xFF8040, 0xFFFFFF);
+    MOD(VARP, runtimerrecord, 0, 1, 1);
+    MOD(HVARP, runtimerrecordcolour, 0, 0xB0B0B0, 0xFFFFFF);
     ICOMMAND(hexcolour, "i", (int *colour), { defformatstring(hex, "%06X", *colour & 0xFFFFFF); result(hex); });
 
     void drawruntimer(int w, int h)
@@ -262,6 +264,19 @@ namespace game
             default: color = runtimerpbcolour; break;
         }
         draw_text(buf, int(offset.x), int(offset.y), (color>>16)&0xFF, (color>>8)&0xFF, color&0xFF, 255);
+        pophudmatrix();
+
+        // the board's best under the timer, at half its size
+        const char *rec = runtimerrecord ? hubboardhud() : NULL;
+        if(!rec) return;
+        float scale = runtimerscale*0.5f;
+        int rw = 0, rh = 0;
+        text_bounds(rec, rw, rh);
+        vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
         pophudmatrix();
     }
 }

@@ -30,6 +30,20 @@ namespace game
         string map, kind;
         vector<uint> members, specs, watched; // watched[i]: the member specs[i] spectates
     };
+    // the leaderboard the hub last sent: the one of the run being played, or one the menu asked for
+    struct boardrow { int rank, ms; string name; };
+    struct hubboard
+    {
+        string map, kind;
+        int mode, myrank, myms;
+        vector<boardrow> rows;
+        bool have;
+        hubboard() : mode(0), myrank(0), myms(0), have(false) { map[0] = kind[0] = '\0'; }
+    };
+    static hubboard curboard;
+    static string boardaskedmap = "", boardaskedkind = "";
+    static int boardaskedmode = 0;
+
     static vector<hubplayer> hubplayers;
     static vector<hublobby> hublobbies;
     static uint hubmyid = 0;
@@ -68,6 +82,8 @@ namespace game
         followpending = false;
         lobbyghostsclear();
         spectateend("lost the connection to the hub");
+        curboard = hubboard();
+        boardaskedmap[0] = '\0';
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -272,6 +288,39 @@ namespace game
             conoutf("\f1[lobby] \f0%s\f2 %s", playername(before.specs[i]), hasmember(now, before.specs[i]) ? "joined the lobby" : "stopped spectating");
     }
 
+    static void askboard(const char *map, int mode, const char *kind)
+    {
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        puttext(w, map);
+        w.svar(mode);
+        w.str(kind);
+        if(!hubsend(HM_BOARD, p.getbuf(), p.length())) return;
+        copystring(boardaskedmap, map);
+        copystring(boardaskedkind, kind);
+        boardaskedmode = mode;
+    }
+
+    // the board of the run being played, asked for whenever that changes
+    static void boardupdate()
+    {
+        const char *kind = runkind();
+        if(!kind[0] || remote || spectating()) return;
+        if(!strcmp(boardaskedmap, runmap()) && boardaskedmode == runmode() && !strcmp(boardaskedkind, kind)) return;
+        askboard(runmap(), runmode(), kind);
+    }
+
+    static bool isboard(const hubboard &b, const char *map, int mode, const char *kind) { return b.have && !strcmp(b.map, map) && b.mode == mode && !strcmp(b.kind, kind); }
+
+    // "#1 0:07.656 name" for the HUD, while the board of the run being played is known
+    const char *hubboardhud()
+    {
+        static string buf;
+        if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || curboard.rows.empty()) return NULL;
+        formatstring(buf, "#1 %s %s", formatruntime(curboard.rows[0].ms), curboard.rows[0].name);
+        return buf;
+    }
+
     static void hubmessages()
     {
         int type;
@@ -460,6 +509,7 @@ namespace game
                     if(beat >= 0) formatstring(gain, "%s faster", formatruntime(beat - ms));
                     else copystring(gain, "the first verified time");
                     conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", runlabel(map), kindormode(kind, mode), time, gain);
+                    if(isboard(curboard, map, mode, kind)) askboard(map, mode, kind);
                     break;
                 }
                 case HM_LOBBYSTAT:
@@ -470,6 +520,27 @@ namespace game
                     hubplayer *q = findplayer(id);
                     if(!r.ok || !q) break;
                     q->running = running; q->ms = ms; q->best = best; q->pb = pb; q->statat = totalmillis;
+                    break;
+                }
+                case HM_BOARDROWS:
+                {
+                    hubboard b;
+                    gettext(r, b.map, sizeof(b.map));
+                    b.mode = int(r.svar());
+                    gettext(r, b.kind, sizeof(b.kind));
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 100; i++)
+                    {
+                        boardrow &row = b.rows.add();
+                        row.rank = int(r.var());
+                        gettext(r, row.name, sizeof(row.name));
+                        row.ms = int(r.var());
+                    }
+                    b.myrank = int(r.var());
+                    b.myms = int(r.var());
+                    if(!r.ok) break;
+                    b.have = true;
+                    curboard = b;
                     break;
                 }
                 case HM_NOTICE:
@@ -562,6 +633,7 @@ namespace game
             followupdate();
             sendpos();
             sendruntime();
+            boardupdate();
             spectateupdate();
         }
     }
@@ -800,6 +872,35 @@ namespace game
         }
         else result("");
     });
+    // hubboard [map mode kind]: asks for a leaderboard; without arguments the run being played's
+    ICOMMAND(hubboard, "sis", (char *map, int *mode, char *kind),
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        if(map[0]) askboard(map, *mode, kind);
+        else if(runkind()[0]) askboard(runmap(), runmode(), runkind());
+    });
+    ICOMMAND(hubboardinfo, "s", (char *field),
+    {
+        const hubboard &b = curboard;
+        if(!strcmp(field, "have")) intret(b.have ? 1 : 0);
+        else if(!b.have) result("");
+        else if(!strcmp(field, "map")) result(runlabel(b.map));
+        else if(!strcmp(field, "kind")) result(kindormode(b.kind, b.mode));
+        else if(!strcmp(field, "count")) intret(b.rows.length());
+        else if(!strcmp(field, "myrank")) intret(b.myrank);
+        else if(!strcmp(field, "mytime")) result(b.myrank ? formatruntime(b.myms) : "");
+        else result("");
+    });
+    ICOMMAND(hubboardrow, "is", (int *i, char *field),
+    {
+        if(!curboard.rows.inrange(*i)) { result(""); return; }
+        const boardrow &row = curboard.rows[*i];
+        if(!strcmp(field, "rank")) intret(row.rank);
+        else if(!strcmp(field, "name")) result(row.name);
+        else if(!strcmp(field, "time")) result(formatruntime(row.ms));
+        else result("");
+    });
+
     ICOMMAND(hubmylobby, "", (), { hublobby *l = mylobby(); intret(l ? int(l->id) : 0); });
     ICOMMAND(hubishost, "", (), { hublobby *l = mylobby(); intret(l && l->host == hubmyid ? 1 : 0); });
 

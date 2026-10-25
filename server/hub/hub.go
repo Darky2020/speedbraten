@@ -19,6 +19,7 @@ import (
 	"github.com/flynn/noise"
 
 	"speedbraten/server/noisechan"
+	"speedbraten/server/board"
 	"speedbraten/server/sqlite"
 )
 
@@ -58,6 +59,7 @@ type Hub struct {
 	lobbies   map[uint64]*lobby
 	witness   []byte
 	wdb       *sqlite.DB // the witness's database, for results
+	boards    *board.Store
 	maxView   int
 }
 
@@ -78,6 +80,7 @@ type player struct {
 	spec       *spectate
 	view       *liveView
 	stat       runStat
+	boardBusy  bool // a BOARD request is being answered
 	out        chan []byte
 	closed     bool
 }
@@ -564,6 +567,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.viewData(p, &r)
 	case MsgRunTime:
 		return h.runTime(p, &r)
+	case MsgBoard:
+		return h.boardRequest(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {
