@@ -168,7 +168,8 @@ CLIENT_OBJS= \
 	fpsgame/replayio.o \
 	fpsgame/tells.o
 
-# BASE=vanilla builds speedbraten on plain Sauerbraten source (ports/vanilla), without p1xbraten's files
+# BASE=vanilla and BASE=wcng build speedbraten on plain Sauerbraten or wc-ng source (ports/), without
+# p1xbraten's files; wc-ng's libraries come from WCNGDEPS (tools/wcngdeps.sh)
 P1XBRATEN_CLIENT_OBJS= \
 	p1xbraten/bans.o \
 	p1xbraten/capability_probing.o \
@@ -186,7 +187,38 @@ P1XBRATEN_CLIENT_OBJS= \
 	p1xbraten/serverbrowser.o \
 	p1xbraten/version.o \
 	p1xbraten/weaponstats.o
-ifneq ($(BASE),vanilla)
+WCNG_CLIENT_OBJS= \
+	mod/plugin.o \
+	mod/demorecorder.o \
+	mod/chat.o \
+	mod/events.o \
+	mod/extinfo.o \
+	mod/gamemod.o \
+	mod/geoip.o \
+	mod/mod.o \
+	mod/cubescript.o \
+	mod/hwdisplay.o \
+	mod/playerdisplay.o \
+	mod/http.o \
+	mod/http-builtin-cert.o \
+	mod/strtool.o \
+	mod/crypto.o \
+	mod/extinfo-playerpreview.o \
+	mod/ipbuf.o \
+	mod/geoip-compat.o \
+	mod/neutral-player-names.o
+ifeq ($(BASE),wcng)
+	CLIENT_OBJS+= $(WCNG_CLIENT_OBJS)
+	BASE_CXXFLAGS= -std=gnu++17 -Imod -I$(WCNGDEPS)/include
+	BASE_LIBS= -L$(WCNGDEPS)/lib -lcurl -lssl -lcrypto -lmaxminddb
+	ifneq (,$(findstring windows,$(TARGET)))
+		BASE_CXXFLAGS+= -DCURL_STATICLIB
+		BASE_LIBS+= -lcrypt32 -lbcrypt -lws2_32
+	endif
+	ifneq (,$(findstring linux,$(TARGET)))
+		BASE_LIBS+= -lpthread -ldl
+	endif
+else ifneq ($(BASE),vanilla)
 	CLIENT_OBJS+= $(P1XBRATEN_CLIENT_OBJS)
 endif
 ifdef ANTICHEAT
@@ -208,7 +240,7 @@ P1XBRATEN_SERVER_OBJS= \
 	p1xbraten/managed_games-standalone.o \
 	p1xbraten/proxy_real_ip-standalone.o \
 	p1xbraten/remote_commands-standalone.o
-ifneq ($(BASE),vanilla)
+ifeq (,$(filter $(BASE),vanilla wcng))
 	SERVER_OBJS+= $(P1XBRATEN_SERVER_OBJS)
 endif
 ifdef ANTICHEAT
@@ -227,7 +259,7 @@ clean:
 %-standalone.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) -Isqlite $(VENDOR_INCLUDES)
+$(CLIENT_OBJS): CXXFLAGS += $(INCLUDES) $(CLIENT_INCLUDES) $(BASE_CXXFLAGS) -Isqlite $(VENDOR_INCLUDES)
 # RELEASE=1: release builds, without the test-only commands
 ifdef RELEASE
 $(CLIENT_OBJS): CXXFLAGS += -DSPEEDBRATEN_RELEASE
@@ -262,7 +294,7 @@ ifneq (,$(findstring linux,$(TARGET)))
 client:	libenet
 endif
 client: $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS)
-	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(LIBS) $(CLIENT_LIBS)
+	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_client $(CLIENT_OBJS) $(SQLITE_OBJS) $(VENDOR_OBJS) $(BASE_LIBS) $(LIBS) $(CLIENT_LIBS)
 
 server: $(SERVER_OBJS)
 	$(CXX) $(CXXFLAGS) $(LINKERFLAGS) -o sauer_server $(SERVER_OBJS) $(LIBS)

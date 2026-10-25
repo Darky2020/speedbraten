@@ -31,7 +31,7 @@ jobs:
     needs: vanilla-src
     strategy:
       matrix:
-        base: [p1xbraten, vanilla]
+        base: [p1xbraten, vanilla, wcng]
     runs-on: ubuntu-24.04
     env:
       VANILLA_SRC: ${{ github.workspace }}/vanilla-src
@@ -45,10 +45,15 @@ jobs:
         with:
           name: vanilla-src
           path: vanilla-src
+      - uses: actions/cache@v4
+        if: matrix.base == 'wcng'
+        with:
+          path: build/wcngdeps
+          key: wcngdeps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wcngdeps.sh') }}
       - run: bash tools/basebuild.sh ${{ matrix.base }} x86_64-windows-gnu out "${GITHUB_REF_NAME}"
       - uses: actions/upload-artifact@v4
         with:
-          name: client-windows-x86_64${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
+          name: client-windows-x86_64${{ matrix.base != 'p1xbraten' && format('-{0}', matrix.base) || '' }}
           path: out/speedbraten_*
 
   build-linux:
@@ -56,7 +61,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, ubuntu-22.04-arm]
-        base: [p1xbraten, vanilla]
+        base: [p1xbraten, vanilla, wcng]
         include:
           - { os: ubuntu-22.04,     arch: x86_64 }
           - { os: ubuntu-22.04-arm, arch: aarch64 }
@@ -74,19 +79,24 @@ jobs:
         with:
           name: vanilla-src
           path: vanilla-src
+      - uses: actions/cache@v4
+        if: matrix.base == 'wcng'
+        with:
+          path: build/wcngdeps
+          key: wcngdeps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wcngdeps.sh') }}
       - run: bash tools/basebuild.sh ${{ matrix.base }} ${{ matrix.arch }}-linux-gnu out "${GITHUB_REF_NAME}"
       - name: glibc requirement
         run: objdump -T out/speedbraten_* | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - uses: actions/upload-artifact@v4
         with:
-          name: client-linux-${{ matrix.arch }}${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
+          name: client-linux-${{ matrix.arch }}${{ matrix.base != 'p1xbraten' && format('-{0}', matrix.base) || '' }}
           path: out/speedbraten_*
 
   build-macos:
     needs: vanilla-src
     strategy:
       matrix:
-        base: [p1xbraten, vanilla]
+        base: [p1xbraten, vanilla, wcng]
     runs-on: macos-15
     env:
       VANILLA_SRC: ${{ github.workspace }}/vanilla-src
@@ -114,6 +124,11 @@ jobs:
         with:
           name: vanilla-src
           path: vanilla-src
+      - uses: actions/cache@v4
+        if: matrix.base == 'wcng'
+        with:
+          path: build/wcngdeps
+          key: wcngdeps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/wcngdeps.sh') }}
       - run: bash tools/basebuild.sh ${{ matrix.base }} aarch64-macos out "${GITHUB_REF_NAME}"
       - run: bash tools/basebuild.sh ${{ matrix.base }} x86_64-macos out "${GITHUB_REF_NAME}"
       - name: universal binary
@@ -123,7 +138,7 @@ jobs:
           rm out/speedbraten_aarch64_client out/speedbraten_x86_64_client
       - uses: actions/upload-artifact@v4
         with:
-          name: client-macos-universal${{ matrix.base == 'vanilla' && '-vanilla' || '' }}
+          name: client-macos-universal${{ matrix.base != 'p1xbraten' && format('-{0}', matrix.base) || '' }}
           path: out
 
   golds:
@@ -142,6 +157,11 @@ jobs:
           - { os: ubuntu-22.04-arm, artifact: client-linux-aarch64-vanilla }
           - { os: macos-15,         artifact: client-macos-universal-vanilla }
           - { os: macos-15-intel,   artifact: client-macos-universal-vanilla }
+          - { os: windows-2022,     artifact: client-windows-x86_64-wcng }
+          - { os: ubuntu-22.04,     artifact: client-linux-x86_64-wcng }
+          - { os: ubuntu-22.04-arm, artifact: client-linux-aarch64-wcng }
+          - { os: macos-15,         artifact: client-macos-universal-wcng }
+          - { os: macos-15-intel,   artifact: client-macos-universal-wcng }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
