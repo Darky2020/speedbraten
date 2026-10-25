@@ -165,6 +165,12 @@ func TestPublicPages(t *testing.T) {
 	if code != 200 || !strings.Contains(body, "on 2 maps") || !strings.Contains(body, "&lt;script&gt;bob") {
 		t.Fatalf("player %d", code)
 	}
+	// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
+	for _, want := range []string{"Map completion", `<div class="bar-num">1 / 1</div>`, "1 gold</span> · 1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("player stats lack %q", want)
+		}
+	}
 	if code, body = get(t, s, "/records"); code != 200 || !strings.Contains(body, "first") {
 		t.Fatalf("records %d", code)
 	}

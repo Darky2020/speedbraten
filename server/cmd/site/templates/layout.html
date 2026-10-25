@@ -48,6 +48,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modecard { border-left-width: 4px; }
 .b-ctf-edge { border-left-color: var(--ctf); } .b-ictf-edge { border-left-color: var(--ictf); } .b-ectf-edge { border-left-color: var(--ectf); }
 h2.section { font-size: 18px; margin: 8px 0 12px; }
+.bar-row { display: grid; grid-template-columns: 150px 1fr 64px; gap: 12px; align-items: center; padding: 7px 0; }
+.bar { height: 10px; background: var(--head); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 6px; }
+.bar-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); font-size: 13px; }
 .banner { position: relative; height: 240px; border-radius: 8px; overflow: hidden; margin-bottom: 20px; background: #111 center / cover no-repeat; }
 .banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0.05) 60%); }
 .banner .t { position: absolute; left: 22px; bottom: 18px; right: 22px; z-index: 1; color: #fff; }

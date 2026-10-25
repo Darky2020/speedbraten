@@ -1,7 +1,18 @@
 {{template "top" .}}
 <h1>{{.Name}}</h1>
-<p class="sub">{{.Records}} records · on {{.Maps}} maps</p>
-<div class="card scroll"><table>
+<div class="tiles">
+<div class="tile"><div class="k">records</div><div class="v">{{.Records}}</div></div>
+<div class="tile"><div class="k">podiums</div><div class="v">{{.Podiums}}</div><div class="small dim"><span class="rank1">{{index .Medals 1}} gold</span> · {{index .Medals 2}} silver · {{index .Medals 3}} bronze</div></div>
+<div class="tile"><div class="k">runs</div><div class="v">{{.Runs}}</div><div class="small dim">on {{.Maps}} maps</div></div>
+<div class="tile"><div class="k">playing since</div><div class="v">{{if .Runs}}{{date .Since}}{{else}}—{{end}}</div></div>
+</div>
+<div class="cols2">
+<div class="card"><header><h2>Map completion</h2></header><div class="body">
+{{range .Completion}}<div class="bar-row"><div class="bar-label">{{template "badge" .Badge}} {{.Label}}</div><div class="bar"><div class="fill {{(badge .Badge).Class}}" style="width: {{.Percent}}%"></div></div><div class="bar-num">{{.Done}} / {{.Of}}</div></div>
+{{end}}</div></div>
+{{template "recentcard" .Recent}}
+</div>
+<div class="card scroll"><header><h2>Leaderboard places</h2></header><table>
 <tr><th>map</th><th>mode</th><th class="num">rank</th><th class="num">time</th><th class="num wide">gap to #1</th><th class="wide">date</th><th></th></tr>
 {{range .Places}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td class="num{{if eq .Entry.Rank 1}} rank1{{end}}">{{.Entry.Rank}} <span class="faint">/ {{.Of}}</span></td>
 <td class="num time">{{runtime .Entry.MS}}</td><td class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td><td><a class="small" href="/replay?run={{.Entry.Run}}">replay</a></td></tr>

@@ -19,7 +19,7 @@ type Run struct {
 // Stats are the site's totals.
 type Stats struct {
 	Runs, Players, Boards, Maps int
-	Last                  time.Time
+	Last                        time.Time
 }
 
 func (s *Store) Stats() (Stats, error) {
@@ -124,4 +124,27 @@ func (s *Store) TopHolders(n int) ([]Holder, error) {
 		out = out[:n]
 	}
 	return out, err
+}
+
+// PlayerRuns are an install's runs that count, newest first (at most n), with its total and when
+// its first one was judged.
+func (s *Store) PlayerRuns(install string, n int) (recent []Run, total int, first time.Time, err error) {
+	err = s.locked(func() {
+		records := map[int64]bool{}
+		for _, r := range s.records {
+			records[r.Run] = true
+		}
+		for i := len(s.runs) - 1; i >= 0; i-- {
+			v := s.runs[i]
+			if v.install != install {
+				continue
+			}
+			total++
+			first = time.UnixMilli(v.when)
+			if len(recent) < n {
+				recent = append(recent, Run{Key: v.key, Run: v.run, Name: s.names[v.install], Install: v.install, MS: v.ms, When: time.UnixMilli(v.when), Record: records[v.run]})
+			}
+		}
+	})
+	return
 }

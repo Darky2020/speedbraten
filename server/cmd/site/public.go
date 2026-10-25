@@ -425,20 +425,38 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rows []placeRow
-	records := 0
+	medals := [4]int{}
 	maps := map[string]bool{}
+	mine := map[string]int{}
 	for _, p := range places {
 		maps[p.Key.Map] = true
 		best := p.Entry.MS
 		if b, _ := s.store.Board(p.Key); b != nil {
 			best = b.Entries[0].MS
 		}
-		if p.Entry.Rank == 1 {
-			records++
+		if p.Entry.Rank <= 3 {
+			medals[p.Entry.Rank]++
 		}
+		mine[completionGroup(p.Key)]++
 		rows = append(rows, placeRow{Place: p, Best: best})
 	}
-	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": records, "Maps": len(maps)})
+	// completion: of each category's boards, how many the player has a time on
+	all, _ := s.store.Boards()
+	totals := map[string]int{}
+	for _, b := range all {
+		totals[completionGroup(b.Key)]++
+	}
+	var completion []completionRow
+	for _, g := range completionGroups {
+		if totals[g.Key] == 0 {
+			continue
+		}
+		completion = append(completion, completionRow{Label: g.Label, Badge: g.Badge, Done: mine[g.Key], Of: totals[g.Key], Percent: 100 * mine[g.Key] / totals[g.Key]})
+	}
+	recent, total, first, _ := s.store.PlayerRuns(id, recentRuns)
+	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Places": rows, "Records": medals[1],
+		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Maps": len(maps), "Runs": total, "Since": first,
+		"Completion": completion, "Recent": recent})
 }
 
 func (s *site) info(w http.ResponseWriter, r *http.Request) {
@@ -589,3 +607,25 @@ func topHolders(boards []*board.Board, n int) []board.Holder {
 	}
 	return out
 }
+
+type completionRow struct {
+	Label   string
+	Badge   board.Key
+	Done    int
+	Of      int
+	Percent int
+}
+
+// the categories a player's completion is shown for, each its own count of boards
+var completionGroups = []struct {
+	Key, Label string
+	Badge      board.Key
+}{
+	{"race", "Races", board.Key{Kind: "race"}},
+	{"ctf", "ctf", board.Key{Kind: "flagrun", Mode: 11}},
+	{"ictf", "insta ctf", board.Key{Kind: "flagrun", Mode: 12}},
+	{"ectf", "effic ctf", board.Key{Kind: "flagrun", Mode: 17}},
+	{"sp", "Campaigns", board.Key{Kind: "campaign"}},
+}
+
+func completionGroup(k board.Key) string { return modeOf(k) }
