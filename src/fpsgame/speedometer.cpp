@@ -100,7 +100,7 @@ namespace game
     static int lastsmoothmillis = 0;
     static fpsent *lastsmoothplayer = NULL;
 
-    void drawspeedometer(int w, int h)
+    static void drawspeed(int w, int h)
     {
         fpsent *d = hudplayer();
         if(!speedometer || d->state == CS_EDITING || d->state == CS_SPECTATOR) return;
@@ -135,6 +135,76 @@ namespace game
         flushhudmatrix();
         int colour = bandcolour(speed2);
         draw_text(buf, int(offset.x), int(offset.y), (colour>>16)&0xFF, (colour>>8)&0xFF, colour&0xFF, 255);
+        pophudmatrix();
+    }
+
+    // The info panel: lines the player picks (a campaign run's deaths, position, view angles,
+    // speed), right-aligned, on top of the engine's fps and clock in the bottom right corner or
+    // at infopanelx/y.
+    MOD(VARP, infopanel, 0, 1, 1);
+    MOD(VARP, infopanelstack, 0, 1, 1);
+    MOD(FVARP, infopanelscale, 0.5, 1.0, 2.0);
+    MOD(FVARP, infopanelx, 0.0, 0.98, 1.0);
+    MOD(FVARP, infopanely, 0.0, 0.80, 1.0);
+    MOD(HVARP, infopanelcolour, 0, 0xB0B0B0, 0xFFFFFF);
+    MOD(VARP, infopaneldeaths, 0, 1, 1);
+    MOD(VARP, infopanelposition, 0, 0, 1);
+    MOD(VARP, infopanelangles, 0, 0, 1);
+    MOD(VARP, infopanelspeed, 0, 0, 1);
+
+    static int infopanellines(string *lines)
+    {
+        int n = 0;
+        if(!infopanel) return 0;
+        fpsent *d = hudplayer();
+        int deaths = runtimerdeaths();
+        if(infopaneldeaths && deaths > 0) formatstring(lines[n++], "%d death%s", deaths, deaths == 1 ? "" : "s");
+        if(infopanelposition) formatstring(lines[n++], "(%d, %d, %d)", int(floorf(d->o.x)), int(floorf(d->o.y)), int(floorf(d->o.z)));
+        if(infopanelangles) formatstring(lines[n++], "(%.1f, %.1f)", d->yaw, d->pitch);
+        if(infopanelspeed && d->state != CS_EDITING && d->state != CS_SPECTATOR)
+        {
+            vec v = vec(d->vel).add(d->falling);
+            formatstring(lines[n++], "speed %d", int(v.magnitude2() + 0.5f));
+        }
+        return n;
+    }
+
+    static void drawinfolines(string *lines, int n, int right, int bottom)
+    {
+        int y = bottom;
+        for(int i = n-1; i >= 0; i--)
+        {
+            int tw = 0, th = 0;
+            text_bounds(lines[i], tw, th);
+            y -= th;
+            draw_text(lines[i], right - tw, y, (infopanelcolour>>16)&0xFF, (infopanelcolour>>8)&0xFF, infopanelcolour&0xFF, 255);
+        }
+    }
+
+    // on top of the engine's bottom right stack
+    void hudstack(int right, int top)
+    {
+        if(!infopanelstack) return;
+        string lines[4];
+        int n = infopanellines(lines);
+        if(!n) return;
+        int tw = 0, th = 0;
+        text_bounds("0", tw, th);
+        drawinfolines(lines, n, right, top + th);
+    }
+
+    void drawspeedometer(int w, int h)
+    {
+        drawspeed(w, h);
+        if(infopanelstack) return;
+        string lines[4];
+        int n = infopanellines(lines);
+        if(!n) return;
+        const float scale = 0.4f*infopanelscale;
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        drawinfolines(lines, n, int(infopanelx*w/scale), int(infopanely*h/scale));
         pophudmatrix();
     }
 

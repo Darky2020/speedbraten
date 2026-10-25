@@ -251,7 +251,6 @@ namespace game
     MOD(HVARP, runtimerslowercolour, 0, 0xFF8040, 0xFFFFFF);
     MOD(VARP, runtimerrecord, 0, 1, 1);
     MOD(HVARP, runtimerrecordcolour, 0, 0xB0B0B0, 0xFFFFFF);
-    MOD(VARP, runtimerdeathcount, 0, 1, 1);
     ICOMMAND(hexcolour, "i", (int *colour), { defformatstring(hex, "%06X", *colour & 0xFFFFFF); result(hex); });
 
     void drawruntimer(int w, int h)
@@ -293,16 +292,5 @@ namespace game
             pophudmatrix();
         }
 
-    }
-
-    // a campaign run's deaths, on top of the bottom right stack
-    void hudstack(int right, int top)
-    {
-        int ndeaths = runtimerdeaths();
-        if(!runtimerdeathcount || ndeaths <= 0) return;
-        defformatstring(deaths, "%d death%s", ndeaths, ndeaths == 1 ? "" : "s");
-        int tw = 0, th = 0;
-        text_bounds(deaths, tw, th);
-        draw_text(deaths, right - tw, top, (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
     }
 }
