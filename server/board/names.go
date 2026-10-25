@@ -14,8 +14,9 @@ func ModeName(mode int) string {
 	return fmt.Sprintf("mode %d", mode)
 }
 
-// campaigns whose runs go on from map to map are filed under their first map (fpsgame/runtimer.cpp)
-var campaigns = map[string]string{"mpsp6a": "An Army Of One", "mpsp9a": "Private Stan Sauer"}
+// the single player menu's campaigns, filed under their first map (fpsgame/runtimer.cpp)
+var campaigns = map[string]string{"mpsp6a": "An Army Of One", "mpsp9a": "Private Stan Sauer",
+	"lost": "Lost", "skrsp1": "Meltdown", "crnsp1": "Missile Pass", "level9": "Level 9"}
 
 // MapLabel is the board's map as players know it: a campaign's name, else the map.
 func (k Key) MapLabel() string {

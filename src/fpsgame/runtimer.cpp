@@ -46,7 +46,11 @@ namespace game
     static const struct { const char *name, *maps[5]; } campaigns[] =
     {
         { "An Army Of One", { "mpsp6a", "mpsp6b", "mpsp6c", NULL } },
-        { "Private Stan Sauer", { "mpsp9a", "mpsp9b", "mpsp9c", "mpsp10", NULL } }
+        { "Private Stan Sauer", { "mpsp9a", "mpsp9b", "mpsp9c", "mpsp10", NULL } },
+        { "Lost", { "lost", NULL } },
+        { "Meltdown", { "skrsp1", NULL } },
+        { "Missile Pass", { "crnsp1", NULL } },
+        { "Level 9", { "level9", NULL } }
     };
 
     // the map's place in its campaign (-1 if it is in none) and the campaign's length
