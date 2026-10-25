@@ -268,25 +268,26 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 			modes = append(modes, b.Key.Mode)
 		}
 	}
+	// every map flagruns count on gets a row, runs or not
 	byMap := map[string]map[int]*board.Board{}
-	var maps []string
+	maps := append([]string(nil), board.FlagrunMaps...)
 	for _, b := range boards {
 		if byMap[b.Key.Map] == nil {
 			byMap[b.Key.Map] = map[int]*board.Board{}
-			maps = append(maps, b.Key.Map)
 		}
 		byMap[b.Key.Map][b.Key.Mode] = b
 	}
 	var rows []flagrunRow
 	for _, m := range maps {
-		row := flagrunRow{}
+		row := flagrunRow{Key: board.Key{Map: m, Kind: "flagrun", Mode: flagrunModes[0]}}
+		hasRuns := false
 		for _, mode := range modes {
 			c := flagrunCell{Key: board.Key{Map: m, Kind: "flagrun", Mode: mode}}
 			if b := byMap[m][mode]; b != nil {
 				c.Entry = &b.Entries[0]
 				row.Runs += b.Runs
-				if row.Key.Map == "" {
-					row.Key = b.Key
+				if !hasRuns {
+					row.Key, hasRuns = b.Key, true
 				}
 			}
 			row.Cells = append(row.Cells, c)
@@ -396,7 +397,7 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 			others = append(others, o.Key)
 		}
 	}
-	if k.Kind == "flagrun" && len(others) > 0 {
+	if k.Kind == "flagrun" && board.IsFlagrunMap(k.Map) {
 		others = others[:0]
 		for _, m := range flagrunModes {
 			others = append(others, board.Key{Map: k.Map, Kind: k.Kind, Mode: m})

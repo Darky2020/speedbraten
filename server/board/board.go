@@ -189,7 +189,7 @@ func (s *Store) load() error {
 	var runs []validRun
 	for _, r := range rows {
 		v := validRun{key: Key{Map: r[2], Kind: r[3], Mode: int(atoi(r[4]))}, run: atoi(r[0]), install: canon(r[1]), ms: atoi(r[5]), when: atoi(r[6])}
-		if removed[v.run] || banned[v.install] {
+		if removed[v.run] || banned[v.install] || v.key.Kind == "flagrun" && !IsFlagrunMap(v.key.Map) {
 			continue
 		}
 		runs = append(runs, v)

@@ -222,3 +222,20 @@ func TestMerge(t *testing.T) {
 		t.Fatalf("after splitting: %+v", got)
 	}
 }
+
+func TestFlagrunMaps(t *testing.T) {
+	f := newFixture(t)
+	f.run(1, "ka", "a", "forge", "flagrun", 17, 9000, "valid")
+	f.run(2, "ka", "a", "mymap", "flagrun", 17, 5000, "valid")
+	f.run(3, "ka", "a", "mymap", "race", 0, 5000, "valid")
+	s := f.open()
+	if e := entries(t, s, Key{"mymap", "flagrun", 17}); e != nil {
+		t.Fatalf("a flagrun on a map not on the list: %+v", e)
+	}
+	if e := entries(t, s, Key{"mymap", "race", 0}); len(e) != 1 {
+		t.Fatal("the list is for flagruns only")
+	}
+	if e := entries(t, s, Key{"forge", "flagrun", 17}); len(e) != 1 {
+		t.Fatal("forge is on the list")
+	}
+}

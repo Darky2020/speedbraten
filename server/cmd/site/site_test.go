@@ -126,6 +126,14 @@ func TestPublicPages(t *testing.T) {
 		t.Fatal("the flagruns table's run count")
 	}
 
+	// every map on the flagrun list has a row and its mode pages, runs or not
+	if _, body = get(t, s, "/flagruns"); !strings.Contains(body, ">xenon</a>") || !strings.Contains(body, ">abbey</a>") {
+		t.Fatal("maps without runs aren't listed")
+	}
+	if code, body = get(t, s, "/map?map=xenon&kind=flagrun&mode=12"); code != 200 || !strings.Contains(body, "No runs in this mode yet") {
+		t.Fatalf("a listed map without runs: %d", code)
+	}
+
 		// search, filter and sort
 	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
 		t.Fatal("search by a holder's name, any case, doesn't find forge")
@@ -187,7 +195,7 @@ func TestPublicPages(t *testing.T) {
 	if _, alice := get(t, s, "/player?id=ka"); strings.Contains(alice, `<h1>alice<span class="unreg"`) || !strings.Contains(alice, "<h1>alice</h1>") {
 		t.Fatal("a hub name is marked as unregistered")
 	}
-		// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
+	// kb: second on forge (effic ctf), first on the campaign; 3 runs, the rejected one not counted
 	for _, want := range []string{"Map completion", `<div class="meter-num">1 / 1</div>`, "1 gold</span> · <span class=\"silver\">1 silver", `<div class="k">runs</div><div class="v">2</div>`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("player stats lack %q", want)
