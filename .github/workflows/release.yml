@@ -259,6 +259,7 @@ jobs:
           sed "s/VERSION/${v#v}/" tools/release/macos/Info.plist > $app/Info.plist
           codesign --force --deep --sign - pkg/Speedbraten.app
           (cd pkg && ditto -c -k --keepParent Speedbraten.app ../dist/speedbraten-$v-macos.zip)
+          for b in vanilla wcng; do bash tools/release/packagebase.sh $b art dist $v; done
           (cd dist && shasum -a 256 * > SHA256SUMS)
           ls -la dist; cat dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
