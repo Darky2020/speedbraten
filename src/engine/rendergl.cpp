@@ -2386,8 +2386,6 @@ void gl_drawhud()
                 DELETEA(gameinfo);
             }
 
-            game::hudstack(conw-FONTH, conh-FONTH*3/2-roffset);
-
             pophudmatrix();
         }
 

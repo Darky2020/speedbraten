@@ -107,5 +107,4 @@ extern bool flagheldby(int flag, fpsent *d);
 extern bool flagspawnloc(bool own, vec &loc);
 extern bool flagrunrules();
 extern bool racerules();
-extern int runtimerdeaths();
 extern bool mapchained(int mode);

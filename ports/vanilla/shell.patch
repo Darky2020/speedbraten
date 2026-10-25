@@ -1142,15 +1142,6 @@
          damagedirs[i] = scale > 0 ? (pow(logscale, scale) - 1) / (logscale - 1) : 0;
      }
      if(dirs) gle::end();
-@@ -2338,6 +2346,8 @@
-                 DELETEA(gameinfo);
-             }
- 
-+            game::hudstack(conw-FONTH, conh-FONTH*3/2-roffset);
-+
-             pophudmatrix();
-         }
- 
 --- a/engine/renderparticles.cpp
 +++ b/engine/renderparticles.cpp
 @@ -711,7 +711,7 @@

@@ -13,9 +13,6 @@ extern int fixedframe;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);
-// lines the game adds on top of the engine's bottom right stack (fps, clock): its right edge and the top
-// of the next line up
-namespace game { extern void hudstack(int right, int top); }
 
 struct rawevent
 {

@@ -291,6 +291,5 @@ namespace game
             draw_text(rec, int(at.x - rw/2.0f), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
             pophudmatrix();
         }
-
     }
 }
