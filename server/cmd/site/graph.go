@@ -51,9 +51,23 @@ func recordGraph(history []board.Record) template.HTML {
 	}
 	fmt.Fprintf(&path, " H%.1f", x(end))
 	fmt.Fprintf(&b, `<path d="%s" fill="none" stroke="#2563eb" stroke-width="2"/>`, path.String())
+	// each point's label shows while the pointer is over the point (CSS only); it sits right of
+	// the point and above it, or flips to stay inside the graph
+	b.WriteString(`<style>.pt .tip{opacity:0;pointer-events:none;transition:opacity .1s}.pt:hover .tip{opacity:1}.pt:hover .dot{r:5}</style>`)
+	const tipw, tiph = 150.0, 40.0
 	for _, r := range history {
-		fmt.Fprintf(&b, `<circle cx="%.1f" cy="%.1f" r="3.5" fill="#2563eb"><title>%s · %s · %s</title></circle>`,
-			x(r.When), y(r.MS), template.HTMLEscapeString(r.Name), board.Time(r.MS), r.When.UTC().Format("2 Jan 2006"))
+		px, py := x(r.When), y(r.MS)
+		tx, ty := px+10, py-tiph-8
+		if tx+tipw > w-right {
+			tx = px - 10 - tipw
+		}
+		if ty < 0 {
+			ty = py + 10
+		}
+		fmt.Fprintf(&b, `<g class="pt"><circle cx="%.1f" cy="%.1f" r="12" fill="transparent"/><circle class="dot" cx="%.1f" cy="%.1f" r="3.5" fill="#2563eb"/>`, px, py, px, py)
+		fmt.Fprintf(&b, `<g class="tip"><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="5" fill="#1f2937"/>`, tx, ty, tipw, tiph)
+		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" font-size="13" font-weight="600" fill="#fff">%s %s</text>`, tx+10, ty+17, board.Time(r.MS), template.HTMLEscapeString(r.Name))
+		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" font-size="12" fill="#d1d5db">%s</text></g></g>`, tx+10, ty+32, r.When.UTC().Format("2 Jan 2006"))
 	}
 	b.WriteString(`</svg>`)
 	return template.HTML(b.String())

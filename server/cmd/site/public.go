@@ -388,12 +388,8 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	history, _ := s.store.History(k)
-	newest := make([]board.Record, len(history))
-	for i, h := range history {
-		newest[len(history)-1-i] = h
-	}
 	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
-		"History": history, "HistoryNewest": newest, "Graph": recordGraph(history)})
+		"History": history, "Graph": recordGraph(history)})
 }
 
 type placeRow struct {

@@ -11,9 +11,6 @@
 </table></div>
 <div>
 <div class="card"><header><h2>Record history</h2><span class="dim small">{{len .History}} records</span></header><div class="body">{{.Graph}}</div></div>
-<div class="card"><table><tr><th>when</th><th>player</th><th class="num">time</th></tr>
-{{range .HistoryNewest}}<tr><td class="dim small">{{date .When}}</td><td>{{.Name}}</td><td class="num time">{{runtime .MS}}</td></tr>{{end}}
-</table></div>
 </div>
 </div>
 {{template "bottom" .}}
