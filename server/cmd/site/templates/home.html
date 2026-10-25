@@ -1,0 +1,12 @@
+{{template "top" .}}
+<h1>Leaderboards</h1>
+<p class="sub">{{len .Boards}} boards · witnessed runs only</p>
+<div class="card"><table>
+<tr><th>map</th><th class="num">players</th><th>#1</th><th class="num">time</th></tr>
+{{range .Boards}}<tr><td><a href="{{boardURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td class="num">{{len .Entries}}</td>
+{{with index .Entries 0}}<td><a href="{{playerURL .Install}}">{{.Name}}</a></td><td class="num">{{runtime .MS}}</td>{{end}}</tr>
+{{else}}<tr><td colspan="4" class="dim">No witnessed runs yet.</td></tr>{{end}}
+</table></div>
+<h2>Latest records</h2>
+{{template "records" .Records}}
+{{template "bottom" .}}

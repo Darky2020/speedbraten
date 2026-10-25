@@ -1,0 +1,6 @@
+{{define "records"}}<div class="card"><table>
+<tr><th class="wide">when</th><th>map</th><th>player</th><th class="num">time</th><th class="num wide">beat</th></tr>
+{{range .}}<tr><td class="dim wide">{{date .When}}</td><td><a href="{{boardURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td>{{.Name}}</td><td class="num">{{runtime .MS}}</td><td class="num dim wide">{{if ge .Prev 0}}{{runtime .Prev}}{{else}}first{{end}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No records yet.</td></tr>{{end}}
+</table></div>{{end}}
+{{define "recordspage"}}{{template "top" .}}<h1>Records</h1><p class="sub">every time a board's best was beaten, newest first</p>{{template "records" .Records}}{{template "bottom" .}}{{end}}

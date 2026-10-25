@@ -1,0 +1,33 @@
+{{define "top"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · speedbraten leaderboards</title>
+<style>
+:root { --bg: #f6f7f9; --fg: #1d2330; --dim: #667085; --line: #e3e6eb; --card: #fff; --accent: #2f6fdf; --gold: #b7791f; }
+@media (prefers-color-scheme: dark) { :root { --bg: #111418; --fg: #e6e9ee; --dim: #8b94a3; --line: #262b33; --card: #181c22; --accent: #6ea2ff; --gold: #e0b252; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header, main { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+header { display: flex; align-items: baseline; gap: 16px; padding-top: 20px; padding-bottom: 8px; flex-wrap: wrap; }
+header a.home { font-weight: 700; font-size: 18px; color: var(--fg); text-decoration: none; }
+header nav a { margin-right: 12px; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+h1 { font-size: 22px; margin: 16px 0 4px; } h2 { font-size: 17px; margin: 24px 0 8px; }
+.sub { color: var(--dim); margin: 0 0 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th { color: var(--dim); font-weight: 500; font-size: 13px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.rank1 { color: var(--gold); font-weight: 700; }
+.dim { color: var(--dim); }
+.kind { color: var(--dim); font-size: 13px; }
+@media (max-width: 600px) { .wide { display: none; } th, td { padding: 8px 8px; } }
+footer { max-width: 860px; margin: 32px auto; padding: 0 16px; color: var(--dim); font-size: 13px; }
+</style></head><body>
+<header><a class="home" href="/">speedbraten leaderboards</a><nav><a href="/">boards</a><a href="/records">records</a></nav></header>
+<main>{{end}}
+{{define "bottom"}}</main>
+<footer>Times are witnessed: each run was streamed to the witness while it was played, re-simulated and signed.
+Replays open in speedbraten (replay browser) and check with <code>replayverify</code>.</footer>
+</body></html>{{end}}

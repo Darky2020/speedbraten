@@ -1,0 +1,10 @@
+{{template "top" .}}
+<h1>{{.Name}}</h1>
+<p class="sub">{{len .Places}} boards</p>
+<div class="card"><table>
+<tr><th>map</th><th class="num">rank</th><th class="num">time</th><th class="wide">date</th><th></th></tr>
+{{range .Places}}<tr><td><a href="{{boardURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td class="num{{if eq .Entry.Rank 1}} rank1{{end}}">{{.Entry.Rank}} <span class="dim">/ {{.Of}}</span></td>
+<td class="num">{{runtime .Entry.MS}}</td><td class="dim wide">{{date .Entry.When}}</td><td><a href="/replay?run={{.Entry.Run}}">replay</a></td></tr>
+{{else}}<tr><td colspan="5" class="dim">No runs on the boards.</td></tr>{{end}}
+</table></div>
+{{template "bottom" .}}
