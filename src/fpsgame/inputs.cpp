@@ -1204,7 +1204,9 @@ namespace game
         while(bucket < segmenttiming::BUCKETS-1 && us >= limits[bucket]) bucket++;
         t.hist[bucket]++;
         t.wallus += us;
-        if(ispaused() || holdsim()) t.pausedus += us;
+        // the hold after a live load isn't a pause: a life with a load in it is segmented anyway,
+        // and a life that starts after one would otherwise take over its second's hold
+        if(ispaused()) t.pausedus += us;
         if(!ticks) t.frames0++;
         else if(ticks >= 2) t.frames2++;
         if(drawn) t.drawn++;

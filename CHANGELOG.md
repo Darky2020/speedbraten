@@ -8,6 +8,7 @@
 - Runs on maps whose cfg has Windows line endings (crnsp1, skrsp1, level9) verify again.
 - No more short stutter once a minute while playing a run map.
 - A finished single player run starts over on its first map instead of going to the next map.
+- A life started right after loading a state is no longer rejected as paused.
 
 ## v0.3.1alpha
 
