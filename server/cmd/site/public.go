@@ -266,15 +266,8 @@ func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	var campaigns, maps []*board.Board
-	for _, b := range boards {
-		if b.Key.MapLabel() != b.Key.Map {
-			campaigns = append(campaigns, b)
-		} else {
-			maps = append(maps, b)
-		}
-	}
-	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": campaigns, "Maps": maps})
+	sort.Slice(boards, func(i, j int) bool { return boards[i].Key.MapLabel() < boards[j].Key.MapLabel() })
+	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": boards})
 }
 
 func tabOf(k board.Key) string {
