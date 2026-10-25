@@ -163,13 +163,46 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		"Records": records, "Holders": holders, "Oldest": oldest})
 }
 
+var recordModes = []option{{"", "all modes"}, {"race", "race"}, {"ctf", "ctf"}, {"ictf", "insta ctf"}, {"ectf", "effic ctf"}, {"sp", "singleplayer"}}
+var recordSorts = []option{{"newest", "newest first"}, {"oldest", "oldest first"}, {"improved", "biggest improvement"}, {"map", "map A–Z"}}
+
 func (s *site) records(w http.ResponseWriter, r *http.Request) {
-	records, err := s.store.Records(300)
+	all, err := s.store.Records(100000)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	render(w, recordsPage, "recordspage", map[string]any{"Title": "Records", "Tab": "home", "Records": records})
+	f := newFilter(r, recordSorts, recordModes)
+	var records []board.Record
+	for _, rec := range all {
+		if f.matches(rec.Key, rec.Name) && (f.Mode == "" || modeOf(rec.Key) == f.Mode) {
+			records = append(records, rec)
+		}
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		a, b := records[i], records[j]
+		switch f.Sort {
+		case "oldest":
+			return a.When.Before(b.When)
+		case "improved":
+			return improvement(a) > improvement(b)
+		case "map":
+			return a.Key.MapLabel() < b.Key.MapLabel()
+		}
+		return a.When.After(b.When)
+	})
+	if len(records) > 500 {
+		records = records[:500]
+	}
+	render(w, recordsPage, "recordspage", map[string]any{"Title": "Records", "Tab": "home", "Records": records, "F": f, "Path": "/records"})
+}
+
+// improvement is how much a record beat the one before it; a board's first record counts as none.
+func improvement(r board.Record) int64 {
+	if r.Prev < 0 {
+		return -1
+	}
+	return r.Prev - r.MS
 }
 
 func (s *site) boardsOf(kinds ...string) ([]*board.Board, error) {
@@ -197,7 +230,8 @@ func (s *site) races(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	render(w, racesPage, "races.html", map[string]any{"Title": "Races", "Tab": "races", "Boards": boards})
+	f := newFilter(r, boardSorts, nil)
+	render(w, racesPage, "races.html", map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(boards, f), "F": f, "Path": "/races"})
 }
 
 type flagrunCell struct {
@@ -257,7 +291,55 @@ func (s *site) flagruns(w http.ResponseWriter, r *http.Request) {
 	for _, m := range modes {
 		cols = append(cols, board.Key{Kind: "flagrun", Mode: m})
 	}
-	render(w, flagrunsPage, "flagruns.html", map[string]any{"Title": "Flagruns", "Tab": "flagruns", "Rows": rows, "Modes": cols})
+	f := newFilter(r, flagrunSorts, nil)
+	var shown []flagrunRow
+	for _, row := range rows {
+		var names []string
+		for _, c := range row.Cells {
+			if c.Entry != nil {
+				names = append(names, c.Entry.Name)
+			}
+		}
+		if f.matches(row.Key, names...) {
+			shown = append(shown, row)
+		}
+	}
+	sort.SliceStable(shown, func(i, j int) bool {
+		a, b := shown[i], shown[j]
+		switch f.Sort {
+		case "newest":
+			return a.newest().After(b.newest())
+		case "oldest":
+			return a.newest().Before(b.newest())
+		case "records":
+			return a.filled() > b.filled()
+		}
+		return a.Key.Map < b.Key.Map
+	})
+	render(w, flagrunsPage, "flagruns.html", map[string]any{"Title": "Flagruns", "Tab": "flagruns", "Rows": shown, "Modes": cols, "F": f, "Path": "/flagruns"})
+}
+
+var flagrunSorts = []option{{"map", "map A–Z"}, {"newest", "newest record"}, {"oldest", "oldest record"}, {"records", "most modes set"}}
+
+// newest is when the row's latest record was set.
+func (r flagrunRow) newest() time.Time {
+	var t time.Time
+	for _, c := range r.Cells {
+		if c.Entry != nil && c.Entry.When.After(t) {
+			t = c.Entry.When
+		}
+	}
+	return t
+}
+
+func (r flagrunRow) filled() int {
+	n := 0
+	for _, c := range r.Cells {
+		if c.Entry != nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
@@ -266,8 +348,8 @@ func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	sort.Slice(boards, func(i, j int) bool { return boards[i].Key.MapLabel() < boards[j].Key.MapLabel() })
-	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": boards})
+	f := newFilter(r, boardSorts, nil)
+	render(w, spPage, "singleplayer.html", map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": filterBoards(boards, f), "F": f, "Path": "/singleplayer"})
 }
 
 func tabOf(k board.Key) string {

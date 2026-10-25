@@ -4,7 +4,7 @@
 <div class="card scroll"><table>
 <tr><th>map</th><th>mode</th><th class="num">rank</th><th class="num">time</th><th class="num wide">gap to #1</th><th class="wide">date</th><th></th></tr>
 {{range .Places}}<tr><td>{{template "mapcell" .Key}}</td><td>{{template "badge" .Key}}</td><td class="num{{if eq .Entry.Rank 1}} rank1{{end}}">{{.Entry.Rank}} <span class="faint">/ {{.Of}}</span></td>
-<td class="num time">{{runtime .Entry.MS}}</td><td class="num dim small wide">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td><td><a class="small" href="/replay?run={{.Entry.Run}}">replay</a></td></tr>
+<td class="num time">{{runtime .Entry.MS}}</td><td class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td><td><a class="small" href="/replay?run={{.Entry.Run}}">replay</a></td></tr>
 {{else}}<tr><td colspan="7" class="dim">No runs on the boards.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}

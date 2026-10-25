@@ -62,6 +62,9 @@ button:hover { border-color: var(--accent); }
 .valid { color: var(--ictf); } .rejected { color: var(--ectf); } .unverified { color: var(--gold); }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
 .kind { color: var(--dim); font-size: 13px; }
+.slower { color: var(--ectf); } .faster { color: var(--ictf); }
+.filters input[type=search] { font: inherit; padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); min-width: 220px; }
+.filters .grow { flex: 1; }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .wide { display: none; } td, th { padding: 8px 10px; } .thumb { width: 48px; height: 27px; } .banner { height: 170px; } .banner h1 { font-size: 24px; } }
 </style></head><body>
@@ -72,6 +75,12 @@ button:hover { border-color: var(--accent); }
 {{define "bottom"}}</main>
 <footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a></footer>
 </body></html>{{end}}
+
+{{define "filters"}}<form class="filters" method="get" action="{{.Path}}">
+<input type="search" name="q" value="{{.F.Q}}" placeholder="search map or player">
+{{if .F.Modes}}<select name="mode">{{range .F.Modes}}<option value="{{.Value}}"{{if eq .Value $.F.Mode}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+<select name="sort">{{range .F.Sorts}}<option value="{{.Value}}"{{if eq .Value $.F.Sort}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<button>apply</button>{{if or .F.Q .F.Mode}} <a class="small" href="{{.Path}}">clear</a>{{end}}</form>{{end}}
 
 {{define "badge"}}{{$b := badge .}}<span class="badge {{$b.Class}}">{{$b.Text}}</span>{{end}}
 {{define "mapcell"}}<div class="mapcell"><img class="thumb" src="{{mapImage .Map}}" alt="" loading="lazy"><a href="{{mapURL .}}">{{.MapLabel}}</a></div>{{end}}

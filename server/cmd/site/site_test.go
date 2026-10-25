@@ -93,12 +93,34 @@ func TestPublicPages(t *testing.T) {
 	if code, body = get(t, s, "/singleplayer"); code != 200 || !strings.Contains(body, "An Army Of One") || strings.Contains(body, "0:09.000") {
 		t.Fatalf("singleplayer %d", code)
 	}
-	if code, body = get(t, s, "/races"); code != 200 || !strings.Contains(body, "No witnessed races yet") {
+	if code, body = get(t, s, "/races"); code != 200 || !strings.Contains(body, "No races yet") {
 		t.Fatalf("races %d", code)
 	}
 
+	// search, filter and sort
+	if _, body = get(t, s, "/flagruns?q=ALI"); !strings.Contains(body, "0:09.000") {
+		t.Fatal("search by a holder's name, any case, doesn't find forge")
+	}
+	if _, body = get(t, s, "/flagruns?q=nothing"); !strings.Contains(body, "No flagruns match") {
+		t.Fatal("a search with no match")
+	}
+	if _, body = get(t, s, "/singleplayer?q=army"); !strings.Contains(body, "An Army Of One") {
+		t.Fatal("search by a campaign's name")
+	}
+	if _, body = get(t, s, "/records?mode=sp"); !strings.Contains(body, "An Army Of One") || strings.Contains(body, "0:09.000") {
+		t.Fatal("the records mode filter")
+	}
+	_, body = get(t, s, "/records?sort=oldest")
+	if i, j := strings.Index(body, "0:09.000"), strings.Index(body, "6:09.260"); i < 0 || j < 0 || i > j {
+		t.Fatal("records sorted oldest first")
+	}
+	if _, body = get(t, s, "/records?sort=bogus&mode=bogus"); !strings.Contains(body, "6:09.260") {
+		t.Fatal("unknown sort and mode values fall back to the defaults")
+	}
+
+
 	code, body = get(t, s, "/map?map=forge&kind=flagrun&mode=17")
-	if code != 200 || !strings.Contains(body, "+0:00.500") || strings.Contains(body, "0:08.000") || !strings.Contains(body, "<svg class=\"graph\"") {
+	if code != 200 || !strings.Contains(body, `slower">+0:00.500`) || strings.Contains(body, "0:08.000") || !strings.Contains(body, "<svg class=\"graph\"") {
 		t.Fatalf("map page %d: gap or graph missing, or the rejected run shown", code)
 	}
 	if code, _ = get(t, s, "/map?map=forge&kind=flagrun&mode=11"); code != 404 {

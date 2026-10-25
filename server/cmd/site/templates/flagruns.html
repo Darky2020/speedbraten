@@ -1,9 +1,10 @@
 {{template "top" .}}
-<h1>Flagruns</h1><p class="sub">{{len .Rows}} maps · take the enemy flag and score it as fast as you can, in each of the three ctf modes</p>
+<h1>Flagruns</h1>
+{{template "filters" .}}
 <div class="card scroll"><table>
 <tr><th>map</th>{{range .Modes}}<th>{{template "badge" .}}</th>{{end}}</tr>
 {{range .Rows}}<tr><td>{{template "mapcell" .Key}}</td>
 {{range .Cells}}<td>{{if .Entry}}<a class="time" href="{{mapURL .Key}}">{{runtime .Entry.MS}}</a><div class="kind"><a class="dim" href="{{playerURL .Entry.Install}}">{{.Entry.Name}}</a></div>{{else}}<span class="faint">—</span>{{end}}</td>{{end}}</tr>
-{{else}}<tr><td colspan="4" class="dim">No witnessed flagruns yet.</td></tr>{{end}}
+{{else}}<tr><td colspan="4" class="dim">No flagruns{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}
