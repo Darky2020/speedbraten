@@ -652,9 +652,13 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    // 0: a watched replay ends like any input replay instead of holding its last frame, for
+    // harness scripts, whose sleeps only run while the simulation ticks
+    VAR(replayendhold, 0, 1, 1);
+
     static bool replayviewended()
     {
-        return replayviewing && replaying && replayattempt == replaydata.attempts.length()-1 && curtick >= replaycur().ticks;
+        return replayviewing && replaying && replayendhold && replayattempt == replaydata.attempts.length()-1 && curtick >= replaycur().ticks;
     }
 
     static bool replayviewhold() { return replayviewing && (replayviewpaused || replayviewended()); }
