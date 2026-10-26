@@ -24,6 +24,7 @@ namespace game
     bool statshistory(uchar *head, int &count, int &attempts) { return false; }
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
     bool statssplitsofreplay(const char *file, vector<splittime> &out) { return false; }
+    void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out) { out = runsummary(); }
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
     static int changes = 0;
@@ -336,6 +337,40 @@ namespace game
         }
         sqlite3_finalize(st);
         return true;
+    }
+
+    void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out)
+    {
+        out = runsummary();
+        sqlite3_stmt *st = prepare("SELECT COUNT(*), SUM(finished), MIN(CASE WHEN finished AND NOT assisted THEN runtime END) "
+                                   "FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND (splices > 0) = ?");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        if(sqlite3_step(st) == SQLITE_ROW)
+        {
+            out.attempts = sqlite3_column_int(st, 0);
+            out.finished = sqlite3_column_int(st, 1);
+            if(sqlite3_column_type(st, 2) != SQLITE_NULL) out.pb = sqlite3_column_int(st, 2);
+        }
+        sqlite3_finalize(st);
+        // the last finished run and the PB it was run against
+        st = prepare("SELECT a.runtime, (SELECT MIN(b.runtime) FROM attempts b WHERE b.map = a.map AND b.kind = a.kind AND b.mode = a.mode "
+                     "  AND (b.splices > 0) = (a.splices > 0) AND b.finished AND NOT b.assisted AND b.id < a.id) "
+                     "FROM attempts a WHERE a.map = ? AND a.kind = ? AND a.mode = ? AND (a.splices > 0) = ? AND a.finished ORDER BY a.date DESC, a.id DESC LIMIT 1");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        if(sqlite3_step(st) == SQLITE_ROW)
+        {
+            out.last = sqlite3_column_int(st, 0);
+            if(sqlite3_column_type(st, 1) != SQLITE_NULL) out.lastpb = sqlite3_column_int(st, 1);
+        }
+        sqlite3_finalize(st);
     }
 
     // Writes the attempts in the history chain, oldest first: "SBR2-history 1", the count, then

@@ -8,6 +8,7 @@
 - Campaign door checkpoints: every door you open saves a state; practise from one with `nextdoor`, `prevdoor` or `doorcheckpoint <n>` (keys in the keys tab).
 - `/hudedit` (or the button in the speedrun menu): move and resize the run timer, speedometer and frag messages with the mouse.
 - The speedrun menu no longer drops frames when many replays are saved.
+- A stats panel (speedrun menu, off by default) shows your PB, last run and run count for the map you're running.
 
 ## v0.3.3alpha
 

@@ -533,7 +533,7 @@ namespace game
         if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4%s %s", ghostname(), d); lines.add(newstring(l)); alphas.add(255); }
     }
 
-    void drawsplits(int w, int h)
+    static void drawsplitlines(int w, int h)
     {
         vector<char *> lines;
         vector<int> alphas;
@@ -557,6 +557,82 @@ namespace game
         }
         pophudmatrix();
         lines.deletearrays();
+    }
+
+    // the stats panel: PB, last finished run and run counts of the run's category, right-aligned
+    // at runstatsx with its top at runstatsy
+    MOD(VARP, runstats, 0, 0, 1);
+    MOD(FVARP, runstatsscale, 0.5, 1.0, 2.0);
+    MOD(FVARP, runstatsx, 0.0, 0.985, 1.0);
+    MOD(FVARP, runstatsy, 0.0, 0.32, 1.0);
+
+    static runsummary summary;
+    static string summarykey = "";
+
+    static void drawrunstats(int w, int h)
+    {
+        const char *kind = runtimerkindname();
+        if(!runstats || !kind) return;
+        const inputattempt *first = inputrunfirst();
+        const char *map = first ? first->map : getclientmap();
+        int mode = first ? first->mode : gamemode;
+        bool segmented = inputsplicecount() > 0;
+        defformatstring(key, "%s %s %d %d %d", map, kind, mode, segmented ? 1 : 0, statsversion());
+        if(strcmp(key, summarykey))
+        {
+            copystring(summarykey, key);
+            statsrunsummary(map, kind, mode, segmented, summary);
+        }
+
+        const char *labels[3] = { "PB", "last", "runs" };
+        string values[3];
+        copystring(values[0], summary.pb >= 0 ? formatruntime(summary.pb) : "-");
+        if(summary.last < 0) copystring(values[1], "-");
+        else
+        {
+            copystring(values[1], formatruntime(summary.last));
+            if(summary.lastpb >= 0)
+            {
+                string d;
+                formatdelta(d, (summary.last - summary.lastpb)/SIMTICK);
+                concformatstring(values[1], "  %s", d);
+            }
+        }
+        formatstring(values[2], "%d / %d", summary.finished, summary.attempts);
+
+        const float scale = 0.45f*runstatsscale;
+        int valuew = 0, lineh = 0;
+        loopi(3)
+        {
+            int tw = 0, th = 0;
+            text_bounds(values[i], tw, th);
+            valuew = max(valuew, tw);
+            lineh = max(lineh, th);
+        }
+        int gap = 0, gh = 0;
+        text_bounds("  ", gap, gh);
+        float right = runstatsx*w/scale, valuex = right - valuew, y = runstatsy*h/scale;
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        float left = valuex;
+        loopi(3)
+        {
+            int lw = 0, lh = 0;
+            text_bounds(labels[i], lw, lh);
+            left = min(left, valuex - gap - lw);
+            draw_text(labels[i], int(valuex - gap - lw), int(y), 160, 160, 160, 255);
+            draw_text(values[i], int(valuex), int(y), 255, 255, 255, 255);
+            y += lineh;
+        }
+        pophudmatrix();
+        hudeditarea("runstats", left*scale, runstatsy*h, right*scale, y*scale);
+    }
+
+    void drawsplits(int w, int h)
+    {
+        drawrunstats(w, h);
+        drawsplitlines(w, h);
     }
 
     // harness: the current run's splits as "name tick" pairs

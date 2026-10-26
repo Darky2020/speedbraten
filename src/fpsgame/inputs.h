@@ -320,6 +320,14 @@ namespace game
     extern bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&samples, const vector<int> *&maps, int &runtime);
     extern const char *ghostname();
     extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
+    // a category's runs in ms, -1 where there is none: the PB, the last finished run and the PB
+    // before it
+    struct runsummary
+    {
+        int attempts, finished, pb, last, lastpb;
+        runsummary() : attempts(0), finished(0), pb(-1), last(-1), lastpb(-1) {}
+    };
+    extern void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out);
     extern const inputattempt *inputrunfirst();
     extern const char *inputwatchedfile();
     extern void ghostattach(inputrun &run);
