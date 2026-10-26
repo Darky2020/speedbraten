@@ -657,7 +657,7 @@ namespace server
     static string nextteam = "";
 
     // Flagrun practice rules for CTF: a dropped flag returns at once, respawn is immediate,
-    // either flag can be taken and scored at the other one, and there is no capture limit.
+    // either flag can be taken and scored at the other one, and there is no capture or time limit.
     // Latched at each map change, so a game keeps the rules it started with.
     VARP(flagrun, 0, 1, 1);
     static bool flagrunon = false;
@@ -1623,7 +1623,7 @@ namespace server
         sendstring(smapname, p);
         putint(p, gamemode);
         putint(p, notgotitems ? 1 : 0);
-        if(!raceruleson && (!ci || (m_timed && smapname[0])))
+        if(!raceruleson && !flagrunon && (!ci || (m_timed && smapname[0])))
         {
             putint(p, N_TIMEUP);
             putint(p, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
@@ -1794,7 +1794,7 @@ namespace server
         raceruleson = (gamemode == 0 || gamemode == 1) && (nextracerules >= 0 ? nextracerules : racerules) != 0;
         nextracerules = -1;
         gamemillis = 0;
-        gamelimit = raceruleson ? INT_MAX/2 : gamelimitnextmatch;
+        gamelimit = raceruleson || flagrunon ? INT_MAX/2 : gamelimitnextmatch;
         interm = 0;
         nextexceeded = 0;
         copystring(smapname, s);
@@ -1833,7 +1833,7 @@ namespace server
 
         sendf(-1, 1, "risii", N_MAPCHANGE, smapname, gamemode, 1);
 
-        if(m_timed && smapname[0] && !raceruleson) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
+        if(m_timed && smapname[0] && !raceruleson && !flagrunon) sendf(-1, 1, "ri2", N_TIMEUP, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
         loopv(clients)
         {
             clientinfo *ci = clients[i];

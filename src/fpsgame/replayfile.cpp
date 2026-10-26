@@ -14,7 +14,7 @@ namespace game
 {
     // SIMVERSION: the simulation's version, stored in every replay. REPLAYSIMVERSION: oldest
     // version the current simulation still plays back; bump both when the simulation changes.
-    enum { SIMVERSION = 10, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 50 };
+    enum { SIMVERSION = 11, REPLAYSIMVERSION = 2, REPLAYHASHSTEP = 50 };
     // ghost path precision: positions in 1/GHOSTPOSSCALE units, angles in 1/GHOSTANGLESCALE degrees
     enum { GHOSTPOSSCALE = 4, GHOSTANGLESCALE = 2 };
 

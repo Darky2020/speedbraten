@@ -1225,7 +1225,7 @@ namespace game
 
         if(!m_edit && !m_sp)
         {
-            if(gameclock && !racerules()) drawgameclock(w, h);
+            if(gameclock && !racerules() && !flagrunrules()) drawgameclock(w, h);
             if(hudscore) drawhudscore(w, h);
             if(hudfragmessages==1 || (hudfragmessages==2 && !m_insta)) drawfragmessages(w, h);
         }
