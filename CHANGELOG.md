@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.4alpha
 
 - Speedbraten also comes built on plain Sauerbraten and on wc-ng.
 - The macOS app runs on macOS 11 and newer again, not only 13.
