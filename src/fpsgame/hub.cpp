@@ -44,6 +44,10 @@ namespace game
     static hubboard curboard;
     static string boardaskedmap = "", boardaskedkind = "";
     static int boardaskedmode = 0;
+    // when the board was last asked for, and when to ask again after a result was announced;
+    // both waits are longer than the 30 s a hub may keep its boards before rebuilding them
+    static int boardaskedat = 0, boardreaskat = 0;
+    enum { BOARDREFRESH = 45000, BOARDAFTERRESULT = 35000 };
 
     static vector<hubplayer> hubplayers;
     static vector<hublobby> hublobbies;
@@ -85,6 +89,7 @@ namespace game
         spectateend("lost the connection to the hub");
         curboard = hubboard();
         boardaskedmap[0] = '\0';
+        boardreaskat = 0;
     }
 
     // text on the wire is UTF-8; the game keeps it in its own 8-bit encoding
@@ -300,14 +305,21 @@ namespace game
         copystring(boardaskedmap, map);
         copystring(boardaskedkind, kind);
         boardaskedmode = mode;
+        boardaskedat = totalmillis;
     }
 
-    // the board of the run being played, asked for whenever that changes
+    // The board of the run being played: asked for whenever that changes, again a while after a
+    // result on it was announced (a hub may answer from boards built before the result), and
+    // every BOARDREFRESH outside a run.
     static void boardupdate()
     {
         const char *kind = runkind();
         if(!kind[0] || remote || spectating()) return;
-        if(!strcmp(boardaskedmap, runmap()) && boardaskedmode == runmode() && !strcmp(boardaskedkind, kind)) return;
+        bool same = !strcmp(boardaskedmap, runmap()) && boardaskedmode == runmode() && !strcmp(boardaskedkind, kind);
+        bool running = false;
+        runtimerticks(running);
+        if(same && boardreaskat && totalmillis - boardreaskat >= 0) boardreaskat = 0;
+        else if(same && (running || totalmillis - boardaskedat < BOARDREFRESH)) return;
         askboard(runmap(), runmode(), kind);
     }
 
@@ -529,7 +541,11 @@ namespace game
                     if(beat >= 0) formatstring(gain, "%s faster", formatruntime(beat - ms));
                     else copystring(gain, "the first verified time");
                     conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", runlabel(map), kindormode(kind, mode), time, gain);
-                    if(isboard(curboard, map, mode, kind)) askboard(map, mode, kind);
+                    if(isboard(curboard, map, mode, kind))
+                    {
+                        askboard(map, mode, kind);
+                        boardreaskat = totalmillis + BOARDAFTERRESULT;
+                    }
                     break;
                 }
                 case HM_LOBBYSTAT:

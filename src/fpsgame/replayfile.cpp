@@ -1677,7 +1677,7 @@ namespace game
                 witnessseeds.setsize(0);
                 witnessbeat = 0;
                 if(r.ok) witnessseeds.add(seed);
-                if(witnesslost) conoutf("\f0witness connected again");
+                if(witnesslost) conoutf("\f0witness connected again%s", inputattemptwitnessed() || !runtimerkindname() ? "" : ": load the map again to have its runs witnessed");
                 else logoutf("witness connected");
                 witnesslost = false;
                 continue;

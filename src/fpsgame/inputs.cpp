@@ -231,6 +231,7 @@ namespace game
 
     // the current attempt's seed came from the witness, so its runs are streamed to it
     static bool attemptwitnessed = false;
+    bool inputattemptwitnessed() { return attemptwitnessed; }
     static statestart *lifestart;
 
     // streams the current life; the attempt's map files and CRCs are only known from tick 1 on

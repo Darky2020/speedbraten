@@ -330,6 +330,8 @@ namespace game
     extern void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out);
     extern int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side);
     extern const inputattempt *inputrunfirst();
+    // the map being played got its seed from the witness, so its runs are witnessed
+    extern bool inputattemptwitnessed();
     extern const char *inputwatchedfile();
     extern void ghostattach(inputrun &run);
     // player1 as a ghost sample at tick; lobby members' samples from the hub (hub.cpp)
