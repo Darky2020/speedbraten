@@ -460,6 +460,9 @@ func (s *Store) File(run int64) (string, error) {
 
 func (s *Store) changed() { s.mu.Lock(); s.boards = nil; s.mu.Unlock() }
 
+// Refresh rebuilds the boards on the next read, for when the witness has judged new runs.
+func (s *Store) Refresh() { s.changed() }
+
 func (s *Store) Remove(run int64, note string) error {
 	_, err := s.site.Exec("INSERT OR REPLACE INTO removed(run, note, at) VALUES(?, ?, ?)", run, note, time.Now().Unix())
 	s.changed()

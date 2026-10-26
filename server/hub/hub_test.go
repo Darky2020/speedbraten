@@ -1056,3 +1056,68 @@ func TestBoardRequest(t *testing.T) {
 		t.Fatalf("board: %d rows, #1 %s %d, mine %d %d", n, first, firstms, rank, ms)
 	}
 }
+
+// A result makes the boards rebuild, so the board a client asks for after hearing of it
+// already has the new run, however recently the boards were built.
+func TestResultRefreshesBoard(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER)",
+		"CREATE TABLE events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('k0', 'forge', 'bob', 'flagrun', 17, 9000, 'valid', 1)")
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	f.h.SetBoards(store)
+	res, err := f.h.OpenResults(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Close()
+	res.Poll()
+
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	first := func() (string, uint64) {
+		var q writer
+		q.str("forge")
+		q.s(17)
+		q.str("flagrun")
+		a.send(MsgBoard, q.b)
+		m := a.expect(MsgBoardRows)
+		m.r.str(64)
+		m.r.s()
+		m.r.str(16)
+		if m.r.u() == 0 {
+			return "", 0
+		}
+		m.r.u()
+		return m.r.str(64), m.r.u()
+	}
+	if name, ms := first(); name != "bob" || ms != 9000 {
+		t.Fatalf("before: #1 %q %d", name, ms)
+	}
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('k1', 'forge', 'carol', 'flagrun', 17, 8000, 'valid', 1)")
+	w.Exec("INSERT INTO events(run, installpub, player, map, runkind, mode, runtimems, record, previous, created) VALUES(2, 'k1pub', 'carol', 'forge', 'flagrun', 17, 8000, 1, 9000, 0)")
+	if n, err := res.Poll(); n != 1 || err != nil {
+		t.Fatalf("poll: %d %v", n, err)
+	}
+	a.expect(MsgResult)
+	if name, ms := first(); name != "carol" || ms != 8000 {
+		t.Fatalf("after the record: #1 %q %d", name, ms)
+	}
+}

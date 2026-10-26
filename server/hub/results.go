@@ -50,6 +50,16 @@ func (r *Results) Poll() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// a client asks for the board again when it hears of a result, so the boards have to
+	// include the new runs by then
+	if len(rows) > 0 {
+		r.h.mu.Lock()
+		boards := r.h.boards
+		r.h.mu.Unlock()
+		if boards != nil {
+			boards.Refresh()
+		}
+	}
 	for _, row := range rows {
 		id, _ := strconv.ParseInt(row[0], 10, 64)
 		mode, _ := strconv.ParseInt(row[5], 10, 64)
