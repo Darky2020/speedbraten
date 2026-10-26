@@ -108,11 +108,17 @@ namespace game
             return;
         }
         bool seg = segmented || ghostsegpb || !strcmp(source, "segpb");
-        if(statspbreplay(first->map, kind, first->mode, seg, side, file)) {}
-        else if(statspbreplay(first->map, kind, first->mode, !seg, side, file)) seg = !seg;
-        else { clearghost(); return; }
+        int found = side;
+        if(!statspbreplay(first->map, kind, first->mode, seg, found, file))
+        {
+            found = side;
+            if(!statspbreplay(first->map, kind, first->mode, !seg, found, file)) { clearghost(); return; }
+            seg = !seg;
+        }
         loadghost(file);
-        copystring(ghostlabel, label[0] ? label : seg ? "seg PB" : "PB");
+        // a run picked for the flag of this run is that flag's best, not necessarily the map's
+        bool flagbest = side && found == side;
+        copystring(ghostlabel, label[0] ? label : seg ? (flagbest ? "flag seg PB" : "seg PB") : (flagbest ? "flag PB" : "PB"));
     }
 
     const char *ghostname() { return ghostlabel; }

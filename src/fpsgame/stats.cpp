@@ -16,7 +16,7 @@ namespace game
 #ifdef HEADLESS
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content) {}
     void statsreplaymoved(const char *from, const char *to) {}
-    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int side, char *file) { return false; }
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int &side, char *file) { return false; }
     void statspbreplays(vector<char *> &files) {}
     void statsassistedreplays(vector<char *> &files) {}
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
@@ -262,10 +262,10 @@ namespace game
 
     // the replay file of the fastest finished run with an existing replay; file is a string
     // side > 0: the fastest run taken from that flag, or failing that one whose flag isn't known;
-    // side 0: the fastest of all
-    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int side, char *file)
+    // side 0: the fastest of all. side is set to the found run's flag, 0 when not known.
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int &side, char *file)
     {
-        sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ? "
+        sqlite3_stmt *st = prepare("SELECT replay, side FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ? "
                                    "AND replay IS NOT NULL AND (?5 = 0 OR side = ?5 OR side IS NULL) ORDER BY ?5 > 0 AND side IS NULL, runtime, id LIMIT 1");
         if(!st) return false;
         bindtext(st, 1, map);
@@ -274,7 +274,11 @@ namespace game
         sqlite3_bind_int(st, 4, segmented ? 1 : 0);
         sqlite3_bind_int(st, 5, side);
         bool found = sqlite3_step(st) == SQLITE_ROW;
-        if(found) copystring(file, (const char *)sqlite3_column_text(st, 0), MAXSTRLEN);
+        if(found)
+        {
+            copystring(file, (const char *)sqlite3_column_text(st, 0), MAXSTRLEN);
+            side = sqlite3_column_int(st, 1);
+        }
         sqlite3_finalize(st);
         return found;
     }

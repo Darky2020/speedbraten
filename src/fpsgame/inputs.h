@@ -292,7 +292,7 @@ namespace game
     // content: the replay's SBR2 content hash (32 bytes), or NULL
     extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content = NULL);
     extern void statsreplaymoved(const char *from, const char *to);
-    extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int side, char *file);
+    extern bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int &side, char *file);
     extern void statspbreplays(vector<char *> &files);
     extern void statsassistedreplays(vector<char *> &files);
     extern int statsversion();

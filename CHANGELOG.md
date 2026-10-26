@@ -9,7 +9,7 @@
 - `/hudedit` (or the button in the speedrun menu): move and resize the run timer, speedometer and frag messages with the mouse.
 - The speedrun menu no longer drops frames when many replays are saved.
 - A stats panel (speedrun menu, off by default) shows your PB, last run and run count for the map you're running.
-- In flagruns the ghost is your fastest run from the flag you took, not from the other base.
+- In flagruns the ghost is your fastest run from the flag you took (labelled "flag PB"), not from the other base.
 
 ## v0.3.3alpha
 
