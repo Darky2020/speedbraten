@@ -14,6 +14,7 @@
 - Flag boards (flagruns tab, off by default): above each flag, the best run from that flag, the map PB, runs, and through the hub the world record and top 3; text size, height and range in the menu.
 - The world record under the timer and on the flag boards updates by itself after new records.
 - When the witness comes back while you're on a map, it says the map has to be loaded again for its runs to be witnessed.
+- `/board <map>`: the map's world record and top 3, your place, PB and runs per flagrun mode or race, and a start button.
 
 ## v0.3.3alpha
 

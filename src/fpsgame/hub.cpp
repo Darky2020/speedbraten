@@ -41,7 +41,10 @@ namespace game
         bool have;
         hubboard() : mode(0), myrank(0), myms(0), have(false) { map[0] = kind[0] = '\0'; }
     };
-    static hubboard curboard;
+    // the board of the run being played (HUD, flag boards) and the one menus show (board page, boards tab)
+    static hubboard curboard, viewboard;
+    static string viewmap = "", viewkind = "";
+    static int viewmode = 0;
     static string boardaskedmap = "", boardaskedkind = "";
     static int boardaskedmode = 0;
     // when the board was last asked for, and when to ask again after a result was announced;
@@ -87,7 +90,7 @@ namespace game
         followpending = false;
         lobbyghostsclear();
         spectateend("lost the connection to the hub");
-        curboard = hubboard();
+        curboard = viewboard = hubboard();
         boardaskedmap[0] = '\0';
         boardreaskat = 0;
     }
@@ -576,7 +579,8 @@ namespace game
                     b.myms = int(r.var());
                     if(!r.ok) break;
                     b.have = true;
-                    curboard = b;
+                    if(!strcmp(b.map, boardaskedmap) && b.mode == boardaskedmode && !strcmp(b.kind, boardaskedkind)) curboard = b;
+                    if(!strcmp(b.map, viewmap) && b.mode == viewmode && !strcmp(b.kind, viewkind)) viewboard = b;
                     break;
                 }
                 case HM_NOTICE:
@@ -999,15 +1003,45 @@ namespace game
         else result("");
     });
     // hubboard [map mode kind]: asks for a leaderboard; without arguments the run being played's
+    // hubboard [map mode kind]: asks for a board for the menus, by default the run being played's
     ICOMMAND(hubboard, "sis", (char *map, int *mode, char *kind),
     {
-        if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
-        if(map[0]) askboard(map, *mode, kind);
-        else if(runkind()[0]) askboard(runmap(), runmode(), runkind());
+        if(map[0]) { copystring(viewmap, map); viewmode = *mode; copystring(viewkind, kind); }
+        else if(runkind()[0]) { copystring(viewmap, runmap()); viewmode = runmode(); copystring(viewkind, runkind()); }
+        else return;
+        if(isboard(curboard, viewmap, viewmode, viewkind)) viewboard = curboard;
+        else if(!isboard(viewboard, viewmap, viewmode, viewkind)) viewboard = hubboard();
+        if(!hubready()) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        puttext(w, viewmap);
+        w.svar(viewmode);
+        w.str(viewkind);
+        hubsend(HM_BOARD, p.getbuf(), p.length());
+    });
+    // board [map]: the board page (speedbraten.cfg) of a map, in the category of the run being played,
+    // else ctf flagrun
+    ICOMMAND(board, "s", (char *map),
+    {
+        string name;
+        copystring(name, map[0] ? map : runmap());
+        if(!name[0]) { conoutf(CON_ERROR, "board: name a map"); return; }
+        const char *kind = runkind();
+        bool timed = !strcmp(kind, "flagrun") || !strcmp(kind, "race");
+        defformatstring(cmd, "sb_boardopen %s %s %d", escapestring(name), timed ? kind : "flagrun", timed ? runmode() : 11); // 11: ctf
+        execute(cmd);
+    });
+    // boardstart map mode kind: loads the map with flagrun or race rules for this game only
+    ICOMMAND(boardstart, "sis", (char *map, int *mode, char *kind),
+    {
+        if(remote || !map[0]) return;
+        server::forcenextflagrun(!strcmp(kind, "flagrun") ? 1 : 0);
+        server::forcenextracerules(!strcmp(kind, "race") ? 1 : 0);
+        changemap(map, *mode);
     });
     ICOMMAND(hubboardinfo, "s", (char *field),
     {
-        const hubboard &b = curboard;
+        const hubboard &b = viewboard;
         if(!strcmp(field, "have")) intret(b.have ? 1 : 0);
         else if(!b.have) result("");
         else if(!strcmp(field, "map")) result(runlabel(b.map));
@@ -1019,8 +1053,8 @@ namespace game
     });
     ICOMMAND(hubboardrow, "is", (int *i, char *field),
     {
-        if(!curboard.rows.inrange(*i)) { result(""); return; }
-        const boardrow &row = curboard.rows[*i];
+        if(!viewboard.rows.inrange(*i)) { result(""); return; }
+        const boardrow &row = viewboard.rows[*i];
         if(!strcmp(field, "rank")) intret(row.rank);
         else if(!strcmp(field, "name")) result(row.name);
         else if(!strcmp(field, "time")) result(formatruntime(row.ms));

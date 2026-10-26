@@ -353,6 +353,18 @@ namespace game
         return true;
     }
 
+    // statssummary map kind mode field: pb (formatted, "" without one), finished or attempts of
+    // a category's normal runs
+    ICOMMAND(statssummary, "ssis", (char *map, char *kind, int *mode, char *field),
+    {
+        runsummary s;
+        statsrunsummary(map, kind, *mode, false, s);
+        if(!strcmp(field, "pb")) result(s.pb >= 0 ? formatruntime(s.pb) : "");
+        else if(!strcmp(field, "finished")) intret(s.finished);
+        else if(!strcmp(field, "attempts")) intret(s.attempts);
+        else result("");
+    });
+
     // the fastest finished run taken from flag side (runtimerflagside), -1 without one
     int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side)
     {
