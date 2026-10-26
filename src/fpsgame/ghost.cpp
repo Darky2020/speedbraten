@@ -10,7 +10,7 @@ namespace game
     VARP(ghost, 0, 1, 1);     // draw the ghost
     VARP(ghostdiff, 0, 1, 1); // show the live time difference to it
     VARP(ghostdiffwindow, 1, 3, 600); // seconds of the ghost's path searched either side of the run time
-    VARP(ghostdiffsmooth, 0, 300, 2000); // ms of real time the shown difference is averaged over
+    VARP(ghostdiffsmooth, 0, 100, 2000); // ms of real time the shown difference is averaged over
     VARP(ghostsegpb, 0, 0, 1);
     FVARP(ghostalpha, 0.1f, 0.4f, 1);
 

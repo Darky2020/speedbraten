@@ -15,6 +15,7 @@
 - The world record under the timer and on the flag boards updates by itself after new records.
 - When the witness comes back while you're on a map, it says the map has to be loaded again for its runs to be witnessed.
 - `/board <map>`: the map's world record and top 3, your place, PB and runs per flagrun mode or race, and a start button.
+- The live difference to the ghost follows you closely (smoothed over 100 ms, was 300), so it matches the time you score with.
 
 ## v0.3.3alpha
 
