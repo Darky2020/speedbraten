@@ -94,7 +94,8 @@ namespace game
         const char *kind = runtimerkindname();
         if(!first || !kind) { ghostkey[0] = '\0'; clearghost(); return; }
         bool segmented = inputsplicecount() > 0;
-        defformatstring(key, "%s %s %d %d %d %d", first->map, kind, first->mode, segmented ? 1 : 0, ghostsegpb, statsversion());
+        int side = runtimerflagside();
+        defformatstring(key, "%s %s %d %d %d %d %d", first->map, kind, first->mode, segmented ? 1 : 0, ghostsegpb, side, statsversion());
         if(!strcmp(key, ghostkey)) return;
         copystring(ghostkey, key);
         string source = "pb", file = "", label = "";
@@ -107,8 +108,8 @@ namespace game
             return;
         }
         bool seg = segmented || ghostsegpb || !strcmp(source, "segpb");
-        if(statspbreplay(first->map, kind, first->mode, seg, file)) {}
-        else if(statspbreplay(first->map, kind, first->mode, !seg, file)) seg = !seg;
+        if(statspbreplay(first->map, kind, first->mode, seg, side, file)) {}
+        else if(statspbreplay(first->map, kind, first->mode, !seg, side, file)) seg = !seg;
         else { clearghost(); return; }
         loadghost(file);
         copystring(ghostlabel, label[0] ? label : seg ? "seg PB" : "PB");

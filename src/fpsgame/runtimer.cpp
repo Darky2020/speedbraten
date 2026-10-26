@@ -181,6 +181,8 @@ namespace game
 
     int runtimerticks(bool &running) { running = runstate == RUN_RUNNING; return runticks(); }
     bool runtimerfinished() { return runstate == RUN_FINISHED; }
+    // which flag the flagrun was taken from, as the flag's index + 1; 0 before one is taken
+    int runtimerflagside() { return runkind == RUNTIMER_FLAG && runflag >= 0 ? runflag + 1 : 0; }
 
     // the run kind as the statistics name it, NULL when nothing is timed
     const char *runtimerkindname()

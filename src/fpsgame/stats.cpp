@@ -16,7 +16,7 @@ namespace game
 #ifdef HEADLESS
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content) {}
     void statsreplaymoved(const char *from, const char *to) {}
-    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file) { return false; }
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int side, char *file) { return false; }
     void statspbreplays(vector<char *> &files) {}
     void statsassistedreplays(vector<char *> &files) {}
     bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms) { pbms = -1; return false; }
@@ -101,6 +101,8 @@ namespace game
                 dbexec("DELETE FROM meta WHERE key IN ('historyhead', 'historycount')");
             // a run with gamespeed, pause or fixedframe never counts as a PB or best segment
             sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN assisted INTEGER NOT NULL DEFAULT 0", NULL, NULL, NULL);
+            // the flag a finished flagrun was taken from (runtimerflagside), NULL when not known
+            sqlite3_exec(db, "ALTER TABLE attempts ADD COLUMN side INTEGER", NULL, NULL, NULL);
         }
         return db;
     }
@@ -161,8 +163,8 @@ namespace game
 
     void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content)
     {
-        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content, assisted) "
-                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        sqlite3_stmt *st = prepare("INSERT INTO attempts(date, map, mode, kind, finished, runtime, ticks, splices, maps, mapcrc, cfgcrc, idle, replay, content, assisted, side) "
+                                   "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if(!st) return;
         const inputattempt &first = *run.attempts[0];
         sqlite3_bind_int64(st, 1, info.date);
@@ -184,6 +186,9 @@ namespace game
         else sqlite3_bind_null(st, 14);
         // a campaign run started after the campaign's first map doesn't count for PBs
         sqlite3_bind_int(st, 15, tellsassisted(run) || (run.attempts.length() && campaignmap(run.attempts[0]->map, NULL) > 0) ? 1 : 0);
+        int side = info.flagrun && info.finished ? runtimerflagside() : 0;
+        if(side) sqlite3_bind_int(st, 16, side);
+        else sqlite3_bind_null(st, 16);
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
@@ -256,28 +261,32 @@ namespace game
     }
 
     // the replay file of the fastest finished run with an existing replay; file is a string
-    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, char *file)
+    // side > 0: the fastest run taken from that flag, or failing that one whose flag isn't known;
+    // side 0: the fastest of all
+    bool statspbreplay(const char *map, const char *kind, int mode, bool segmented, int side, char *file)
     {
         sqlite3_stmt *st = prepare("SELECT replay FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND (splices > 0) = ? "
-                                   "AND replay IS NOT NULL ORDER BY runtime, id LIMIT 1");
+                                   "AND replay IS NOT NULL AND (?5 = 0 OR side = ?5 OR side IS NULL) ORDER BY ?5 > 0 AND side IS NULL, runtime, id LIMIT 1");
         if(!st) return false;
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
         sqlite3_bind_int(st, 3, mode);
         sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        sqlite3_bind_int(st, 5, side);
         bool found = sqlite3_step(st) == SQLITE_ROW;
         if(found) copystring(file, (const char *)sqlite3_column_text(st, 0), MAXSTRLEN);
         sqlite3_finalize(st);
         return found;
     }
 
-    // the replay files of the current PBs, normal and segmented, of every category that has one
+    // the replay files of the current PBs, normal and segmented, of every category that has one,
+    // and the fastest run from each flag of a flagrun
     void statspbreplays(vector<char *> &files)
     {
         sqlite3_stmt *st = prepare(
             "SELECT a.replay FROM attempts a WHERE a.replay IS NOT NULL AND a.id = ("
             "  SELECT b.id FROM attempts b WHERE b.map = a.map AND b.kind = a.kind AND b.mode = a.mode"
-            "  AND (b.splices > 0) = (a.splices > 0) AND b.finished AND NOT b.assisted ORDER BY b.runtime, b.id LIMIT 1)");
+            "  AND (b.splices > 0) = (a.splices > 0) AND b.side IS a.side AND b.finished AND NOT b.assisted ORDER BY b.runtime, b.id LIMIT 1)");
         if(!st) return;
         while(sqlite3_step(st) == SQLITE_ROW) files.add(newstring((const char *)sqlite3_column_text(st, 0)));
         sqlite3_finalize(st);

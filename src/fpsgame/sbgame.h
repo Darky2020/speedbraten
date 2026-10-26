@@ -63,6 +63,7 @@ extern void runtimerflagscored(fpsent *d);
 extern void runtimertick();
 extern int runtimerticks(bool &running);
 extern bool runtimerfinished();
+extern int runtimerflagside();
 extern bool runtimerfinishedbeforemap();
 extern int campaignmap(const char *map, int *length);
 extern const char *runlabel(const char *map);
