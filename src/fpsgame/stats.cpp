@@ -25,6 +25,7 @@ namespace game
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
     bool statssplitsofreplay(const char *file, vector<splittime> &out) { return false; }
     void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out) { out = runsummary(); }
+    int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side) { return -1; }
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
     static int changes = 0;
@@ -350,6 +351,21 @@ namespace game
         }
         sqlite3_finalize(st);
         return true;
+    }
+
+    // the fastest finished run taken from flag side (runtimerflagside), -1 without one
+    int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side)
+    {
+        sqlite3_stmt *st = prepare("SELECT MIN(runtime) FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND (splices > 0) = ? AND side = ? AND finished AND NOT assisted");
+        if(!st) return -1;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        sqlite3_bind_int(st, 5, side);
+        int ms = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL ? sqlite3_column_int(st, 0) : -1;
+        sqlite3_finalize(st);
+        return ms;
     }
 
     void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out)

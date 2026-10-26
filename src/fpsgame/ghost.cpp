@@ -348,6 +348,7 @@ namespace game
 
     void renderghost(bool mainpass)
     {
+        if(mainpass) renderflagboards();
         renderlobbyghosts(mainpass);
         ghostsample g;
         if(!currentghost(g)) return;

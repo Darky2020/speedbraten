@@ -328,6 +328,7 @@ namespace game
         runsummary() : attempts(0), finished(0), pb(-1), last(-1), lastpb(-1) {}
     };
     extern void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out);
+    extern int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side);
     extern const inputattempt *inputrunfirst();
     extern const char *inputwatchedfile();
     extern void ghostattach(inputrun &run);

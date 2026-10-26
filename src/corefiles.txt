@@ -22,6 +22,7 @@ engine/witnessnet.cpp
 fpsgame/clientstate.h
 fpsgame/dethash.cpp
 fpsgame/dethasher.h
+fpsgame/flagboards.cpp
 fpsgame/ghost.cpp
 fpsgame/hub.cpp
 fpsgame/hudedit.cpp

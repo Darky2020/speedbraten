@@ -11,6 +11,7 @@
 - A stats panel (speedrun menu, off by default) shows your PB, last run and run count for the map you're running.
 - In flagruns the ghost is your fastest run from the flag you took (labelled "flag PB"), not from the other base.
 - TAB in a local run shows the lobby's columns for you alone: time, session best and PB.
+- Flag boards (flagruns tab, off by default): above each flag, the best run from that flag, the map PB, runs, and through the hub the world record and top 3; text size, height and range in the menu.
 
 ## v0.3.3alpha
 

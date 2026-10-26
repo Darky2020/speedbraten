@@ -313,6 +313,25 @@ namespace game
 
     static bool isboard(const hubboard &b, const char *map, int mode, const char *kind) { return b.have && !strcmp(b.map, map) && b.mode == mode && !strcmp(b.kind, kind); }
 
+    // row i of the witnessed board of the run being played: false past its end or while not known
+    bool hubboardrow(int i, int &rank, int &ms, const char *&name)
+    {
+        if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || !curboard.rows.inrange(i)) return false;
+        rank = curboard.rows[i].rank;
+        ms = curboard.rows[i].ms;
+        name = curboard.rows[i].name;
+        return true;
+    }
+
+    // the player's own place on that board: false when not on it or while it isn't known
+    bool hubboardmine(int &rank, int &ms)
+    {
+        if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || !curboard.myrank) return false;
+        rank = curboard.myrank;
+        ms = curboard.myms;
+        return true;
+    }
+
     // "#1 0:07.656 name" for the HUD, while the board of the run being played is known
     const char *hubboardhud()
     {
