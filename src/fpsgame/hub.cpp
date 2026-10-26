@@ -647,12 +647,101 @@ namespace game
         return a->best < b->best;
     }
 
-    // TAB while in a lobby: its players with their run numbers, then its spectators
+    // the best finished run of each category since the game started, for the local scoreboard
+    struct sessionbest { string map, kind; int mode, ms; };
+    static vector<sessionbest> sessionbests;
+
+    static sessionbest *findsessionbest(const char *map, const char *kind, int mode)
+    {
+        loopv(sessionbests) if(sessionbests[i].mode == mode && !strcmp(sessionbests[i].map, map) && !strcmp(sessionbests[i].kind, kind)) return &sessionbests[i];
+        return NULL;
+    }
+
+    static void notesessionbest(int runtime)
+    {
+        if(inputreplayactive() || !runkind()[0]) return;
+        sessionbest *b = findsessionbest(runmap(), runkind(), runmode());
+        if(!b)
+        {
+            b = &sessionbests.add();
+            copystring(b->map, runmap());
+            copystring(b->kind, runkind());
+            b->mode = runmode();
+            b->ms = runtime;
+        }
+        else b->ms = min(b->ms, runtime);
+    }
+
+    // "effic ctf flagrun on dust2", "race on nadefly", or a campaign's or map's name
+    static const char *localboardtitle()
+    {
+        static string buf;
+        const char *kind = runkind();
+        if(!strcmp(kind, "flagrun")) formatstring(buf, "%s flagrun on %s", server::modename(runmode(), "?"), runmap());
+        else if(!strcmp(kind, "race")) formatstring(buf, "race on %s", runmap());
+        else copystring(buf, runlabel(runmap()));
+        return buf;
+    }
+
+    // TAB in a run away from a lobby: the lobby's columns with the player alone
+    static bool localscoreboard(g3d_gui &g)
+    {
+        const char *kind = runkind(), *statskind = runtimerkindname();
+        if(!kind[0] || !statskind) return false;
+        static runsummary summary;
+        static string summarykey = "";
+        bool segmented = inputsplicecount() > 0;
+        defformatstring(key, "%s %s %d %d %d", runmap(), statskind, runmode(), segmented ? 1 : 0, statsversion());
+        if(strcmp(key, summarykey))
+        {
+            copystring(summarykey, key);
+            statsrunsummary(runmap(), statskind, runmode(), segmented, summary);
+        }
+        const sessionbest *best = findsessionbest(runmap(), kind, runmode());
+        bool running = false;
+        int ms = runtimerticks(running)*SIMTICK;
+        extern int highlightscore;
+        int colour = highlightscore ? COL_YELLOW : COL_WHITE;
+        #define rightjustified(b) { g.pushlist(); g.spring(); b; g.poplist(); }
+
+        g.space(.25f);
+        g.titlef("%s", COL_WHITE, NULL, localboardtitle());
+        g.space(.75f);
+        g.pushlist();
+        g.pushlist(); g.text("name", COL_GRAY); g.text(player1->name, colour); g.poplist();
+        g.space(2);
+        g.pushlist(); g.text("map", COL_GRAY); g.text(runlabel(runmap()), colour); g.poplist();
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("time", COL_GRAY));
+        rightjustified(g.text(running || ms > 0 ? formatruntime(ms) : "-", running ? colour : COL_GRAY));
+        g.poplist();
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("session", COL_GRAY));
+        rightjustified(g.text(best ? formatruntime(best->ms) : "-", colour));
+        g.poplist();
+        g.space(2);
+        g.pushlist();
+        g.strut(6);
+        rightjustified(g.text("PB", COL_GRAY));
+        rightjustified(g.text(summary.pb >= 0 ? formatruntime(summary.pb) : "-", colour));
+        g.poplist();
+        g.poplist();
+        g.space(.25f);
+        #undef rightjustified
+        return true;
+    }
+
+    // TAB while in a lobby: its players with their run numbers, then its spectators; in a run
+    // outside one, the same for the player alone
     bool hubscoreboard(g3d_gui &g)
     {
-        if(remote || !hubready()) return false;
-        hublobby *l = mylobby();
-        if(!l) return false;
+        if(remote) return false;
+        hublobby *l = hubready() ? mylobby() : NULL;
+        if(!l) return localscoreboard(g);
         extern int highlightscore;
         vector<hubplayer *> rows;
         loopv(l->members) if(hubplayer *p = findplayer(l->members[i])) rows.add(p);
@@ -763,6 +852,7 @@ namespace game
 
     void hubrunfinished(int runtime)
     {
+        notesessionbest(max(runtime, 0));
         if(!hubready() || !mylobby() || inputreplayactive()) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);

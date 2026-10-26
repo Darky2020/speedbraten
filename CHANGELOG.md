@@ -10,6 +10,7 @@
 - The speedrun menu no longer drops frames when many replays are saved.
 - A stats panel (speedrun menu, off by default) shows your PB, last run and run count for the map you're running.
 - In flagruns the ghost is your fastest run from the flag you took (labelled "flag PB"), not from the other base.
+- TAB in a local run shows the lobby's columns for you alone: time, session best and PB.
 
 ## v0.3.3alpha
 
