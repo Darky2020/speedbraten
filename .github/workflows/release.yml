@@ -208,15 +208,19 @@ jobs:
                      client=$(pwd)/client/speedbraten_universal; chmod +x "$client"; export FRAMEWORKS=$(pwd)/client/Frameworks; wrap= ;;
           esac
           eval $wrap bash tools/dethash/clientgold.sh "$client" resimdata results tests/gold/*.sbr
-      - name: launcher passes the player's -q (Windows)
+      - name: launcher passes the player's -q and file patches are read (Windows)
         if: runner.os == 'Windows'
         run: |
           cp speedbraten.bat resimdata/
+          mkdir -p resimdata/speedbraten_overrides/data
+          echo 'echo OVERRIDECHECK' > resimdata/speedbraten_overrides/data/overridecheck.cfg
           home=$(cygpath -w "$(pwd)/bathome")
           mkdir -p bathome; printf 'fullscreen 0\nscr_w 640\nscr_h 400\nusesound 0\n' > bathome/init.cfg
-          (cd resimdata && cmd //c speedbraten.bat "-q$home" "-xsleep 2000 [quit]")
+          (cd resimdata && cmd //c speedbraten.bat "-q$home" "-xexec data/overridecheck.cfg; sleep 2000 [quit]")
           for i in $(seq 1 60); do [ -f bathome/log.txt ] && grep -q 'init: mainloop' bathome/log.txt && break; sleep 2; done
           grep 'Using home directory' bathome/log.txt
+          for i in $(seq 1 15); do grep -q OVERRIDECHECK bathome/log.txt && break; sleep 2; done
+          grep OVERRIDECHECK bathome/log.txt
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
