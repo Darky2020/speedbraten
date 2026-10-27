@@ -79,6 +79,16 @@ namespace game
     static hublobby *mylobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid) || hasspec(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
     static const char *playername(uint id) { hubplayer *p = findplayer(id); return p ? p->name : "?"; }
 
+    // a time difference as "+0.518" or "-1:02.300"
+    static const char *signedgap(int d)
+    {
+        static string s;
+        int a = abs(d);
+        if(a < 60000) formatstring(s, "%c%d.%03d", d < 0 ? '-' : '+', a/1000, a%1000);
+        else formatstring(s, "%c%d:%02d.%03d", d < 0 ? '-' : '+', a/60000, (a/1000)%60, a%1000);
+        return s;
+    }
+
     // A board run's replay being downloaded into replays/downloaded/, then watched or raced as a ghost.
     static uint downloadrun = 0;
     static bool downloadwatch = false;
@@ -396,11 +406,7 @@ namespace game
     static const char *legacydiff(const hubboard &b)
     {
         if(!b.legacyms || b.rows.empty() || b.rows[0].rank != 1) return "";
-        int d = b.legacyms - b.rows[0].ms, a = abs(d);
-        static string s;
-        if(a < 60000) formatstring(s, "%c%d.%03d", d < 0 ? '-' : '+', a/1000, a%1000);
-        else formatstring(s, "%c%d:%02d.%03d", d < 0 ? '-' : '+', a/60000, (a/1000)%60, a%1000);
-        return s;
+        return signedgap(b.legacyms - b.rows[0].ms);
     }
     const char *hubboardlegacydiff()
     {
@@ -615,11 +621,39 @@ namespace game
                     bool record = r.var() != 0;
                     int beat = int(r.var()) - 1;
                     if(!r.ok) break;
-                    string time, gain;
+                    string prev = "", legacyname = "", legacysource = "";
+                    int rank = 0, legacyms = 0;
+                    if(r.left())
+                    {
+                        gettext(r, prev, sizeof(prev));
+                        rank = int(r.var());
+                        if(r.var())
+                        {
+                            gettext(r, legacyname, sizeof(legacyname));
+                            legacyms = int(r.var());
+                            gettext(r, legacysource, sizeof(legacysource));
+                        }
+                        if(!r.ok) { prev[0] = '\0'; rank = legacyms = 0; }
+                    }
+                    string board, time, details;
+                    if(!strcmp(kind, "flagrun")) formatstring(board, "%s %s", map, server::modename(mode, "?"));
+                    else if(!strcmp(kind, "race")) formatstring(board, "%s race", map);
+                    else copystring(board, runlabel(map));
                     copystring(time, formatruntime(ms));
-                    if(beat >= 0) formatstring(gain, "%s faster", formatruntime(beat - ms));
-                    else copystring(gain, "the first verified time");
-                    conoutf(CON_GAMEINFO, "\f1[global] \f0%s\f2 %s on %s (%s): \f0%s\f2 (%s)", name, record ? "set a record" : "got a PB", runlabel(map), kindormode(kind, mode), time, gain);
+                    if(beat < 0) copystring(details, "first witnessed time");
+                    else
+                    {
+                        copystring(details, signedgap(ms - beat));
+                        if(record && prev[0]) { concatstring(details, ", prev "); concatstring(details, prev); }
+                        else if(!record && rank) { defformatstring(place, ", #%d", rank); concatstring(details, place); }
+                    }
+                    conoutf(CON_GAMEINFO, "%s  \f7%s  \f0%s  \f2%s  \f4(%s)", record ? "\f3NEW RECORD!!" : "\f2PB", board, name, time, details);
+                    if(legacyms)
+                    {
+                        conoutf(CON_GAMEINFO, "\f6LEGACY RECORD BEATEN!!  \f7%s  \f0%s  \f2%s  \f4(%s %s, %s)", board, name, time, legacyname, formatruntime(legacyms), legacysource);
+                        playsound(S_ITEMSPAWN);
+                    }
+                    else if(record) playsound(S_FLAGSCORE);
                     if(isboard(curboard, map, mode, kind))
                     {
                         askboard(map, mode, kind);

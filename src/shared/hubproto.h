@@ -51,7 +51,10 @@
 //   SPECDATA     var run, var offset, bytes - whole segments of that run's replay file, in order
 //   SPECEND      var player id, str why - spectating stopped
 //   RESULT       str name, str map, svar mode, str kind, var run time in ms, var record (1) or PB (0),
-//                var the time it beat + 1 (0: the first verified time) - a witnessed PB or record
+//                var the time it beat + 1 (0: the first verified time) - a witnessed PB or record,
+//                then str whose record it took (records only), var the player's place (0: not
+//                known), var legacy beaten (0/1) [str player, var ms, str source] - the board's
+//                legacy record, when this is the first witnessed time under it (absent from older hubs)
 //   FINISHED     var player id, str name, str map, svar mode, str kind, var run time in ms (a lobby
 //                member finished a run; not sent back to the one who finished)
 //   LOBBYSTAT    var player id, var running (0/1), var run time in ms, var lobby best ms + 1,

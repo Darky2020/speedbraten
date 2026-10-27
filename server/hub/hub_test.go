@@ -1251,3 +1251,75 @@ func TestResultRefreshesBoard(t *testing.T) {
 		t.Fatalf("after the record: #1 %q %d", name, ms)
 	}
 }
+
+// A result says whose record it took, the player's place, and the legacy record the first
+// time a witnessed time goes under it.
+func TestResultExtras(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER)",
+		"CREATE TABLE events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER)",
+		"INSERT INTO sessions(installkey, installpub) VALUES('k0', 'k0pub'), ('k1', 'k1pub')",
+		"INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('k0', 'forge', 'bob', 'flagrun', 17, 9000, 'valid', 1)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SetLegacy(board.Legacy{Key: board.Key{Map: "forge", Kind: "flagrun", Mode: 17}, Player: "Dino", MS: 8500, Source: "flagruns.com"}); err != nil {
+		t.Fatal(err)
+	}
+	f.h.SetBoards(store)
+	res, err := f.h.OpenResults(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Close()
+	res.Poll()
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	result := func(run, ms, previous int) (string, uint64, bool, string, uint64, string) {
+		t.Helper()
+		w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('k1', 'forge', 'carol', 'flagrun', 17, ?, 'valid', 1)", ms)
+		w.Exec("INSERT INTO events(run, installpub, player, map, runkind, mode, runtimems, record, previous, created) VALUES(?, 'k1pub', 'carol', 'forge', 'flagrun', 17, ?, 1, ?, 0)", run, ms, previous)
+		if n, err := res.Poll(); n != 1 || err != nil {
+			t.Fatalf("poll: %d %v", n, err)
+		}
+		m := a.expect(MsgResult)
+		m.r.str(64)
+		m.r.str(64)
+		m.r.s()
+		m.r.str(16)
+		m.r.u()
+		m.r.u()
+		m.r.u()
+		prev, rank, legacy := m.r.str(64), m.r.u(), m.r.u() == 1
+		var lname, lsrc string
+		var lms uint64
+		if legacy {
+			lname, lms, lsrc = m.r.str(64), m.r.u(), m.r.str(64)
+		}
+		if err := m.r.done(); err != nil {
+			t.Fatal(err)
+		}
+		return prev, rank, legacy, lname, lms, lsrc
+	}
+	if prev, rank, legacy, lname, lms, lsrc := result(2, 8000, 9000); prev != "bob" || rank != 1 || !legacy || lname != "Dino" || lms != 8500 || lsrc != "flagruns.com" {
+		t.Fatalf("first under the legacy record: prev %q rank %d legacy %v %q %d %q", prev, rank, legacy, lname, lms, lsrc)
+	}
+	if prev, rank, legacy, _, _, _ := result(3, 7900, 8000); prev != "carol" || rank != 1 || legacy {
+		t.Fatalf("improving it: prev %q rank %d legacy %v", prev, rank, legacy)
+	}
+}

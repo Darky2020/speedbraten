@@ -3,6 +3,7 @@ package hub
 import (
 	"strconv"
 
+	"speedbraten/server/board"
 	"speedbraten/server/sqlite"
 )
 
@@ -106,6 +107,20 @@ func (h *Hub) announce(installpub, player, mapname, kind string, mode int64, ms 
 		w.u(uint64(previous) + 1)
 	}
 	h.mu.Lock()
+	store := h.boards
+	h.mu.Unlock()
+	x := resultExtras(store, installpub, name, board.Key{Map: mapname, Kind: kind, Mode: int(mode)}, ms, record, previous)
+	w.str(x.prev)
+	w.u(uint64(x.rank))
+	if x.legacy == nil {
+		w.u(0)
+	} else {
+		w.u(1)
+		w.str(x.legacy.Player)
+		w.u(uint64(x.legacy.MS))
+		w.str(x.legacy.Source)
+	}
+	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.newPB(installpub, mapname, kind, mode, ms)
 	for _, q := range h.players {
@@ -113,4 +128,36 @@ func (h *Hub) announce(installpub, player, mapname, kind string, mode int64, ms 
 			h.send(q, MsgResult, w.b)
 		}
 	}
+}
+
+type extras struct {
+	prev   string        // whose record a new record took: another player, or the player's own
+	rank   int           // the player's place on the board now, 0 when not known
+	legacy *board.Legacy // the board's legacy record, when this time is the first under it
+}
+
+// resultExtras reads what the boards say about a result: called after they were refreshed
+// for it.
+func resultExtras(store *board.Store, installpub, name string, k board.Key, ms uint64, record bool, previous int64) extras {
+	var x extras
+	if store == nil {
+		return x
+	}
+	mine := store.InstallOfPub(installpub)
+	if b, err := store.Board(k); err == nil && b != nil {
+		for _, e := range b.Entries {
+			if mine != "" && e.Install == mine {
+				x.rank = e.Rank
+			} else if record && previous >= 0 && e.MS == previous && x.prev == "" {
+				x.prev = e.Name
+			}
+		}
+	}
+	if record && previous >= 0 && x.prev == "" {
+		x.prev = name
+	}
+	if l, err := store.LegacyRecord(k); err == nil && l != nil && record && int64(ms) < l.MS && (previous < 0 || previous >= l.MS) {
+		x.legacy = l
+	}
+	return x
 }

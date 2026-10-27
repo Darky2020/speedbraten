@@ -13,6 +13,7 @@
 - Flag boards: places shown as #1/#2/#3 in gold, silver and bronze.
 - Legacy records show their difference to the witnessed record (− faster, + slower) on the website, /board and the flag boards.
 - Website: campaigns and races with only a legacy record are listed too.
+- Global messages: "NEW RECORD!!" in red with whose record it took, PBs with your place, a sound for records, and "LEGACY RECORD BEATEN!!" the first time a legacy record falls.
 
 ## v0.3.5alpha
 
