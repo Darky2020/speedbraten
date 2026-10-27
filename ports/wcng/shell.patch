@@ -3179,12 +3179,24 @@
 +    }
  };
  
+--- a/mod/cubescript.h
++++ b/mod/cubescript.h
+@@ -228,7 +228,7 @@
+         return -1;
+     }
+ 
+-    int cn = cns.length() > 1 ? cns[rnd(cns.length())] : cns[0];
++    int cn = cns.length() > 1 ? cns[crnd(cns.length())] : cns[0];
+ 
+     if (cubescript)
+         intret(cn);
 --- a/mod/events.cpp
 +++ b/mod/events.cpp
-@@ -789,7 +789,7 @@
+@@ -788,8 +788,7 @@
+                 strtool *msg = new strtool(sizeof(string)*2);
                  msg->fmt("\fs\f3warning:\fr %s event installed from file %s (\fs\f3%s\fr)!", EVENTNAMES[w->event], filename, w->msg);
  
-                 seedMT(getnanoseconds()&0xFFFFFFFF);
+-                seedMT(getnanoseconds()&0xFFFFFFFF);
 -                addtimerfunction(500+rnd(rnd(3)>1?1000:3000), true, (void (*)(void*,uint))&showwarningmsg, msg);
 +                addtimerfunction(500+crnd(crnd(3)>1?1000:3000), true, (void (*)(void*,uint))&showwarningmsg, msg);
  

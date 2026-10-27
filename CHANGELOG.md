@@ -4,6 +4,7 @@
 
 - wc-ng build: runs are witnessed again (the build announced itself to the local game server, which made the witness reject every flagrun life).
 - Opening the server browser during a run no longer makes the witness reject it (the browser used the game's random numbers).
+- wc-ng build: its network and script code no longer touch the game's random numbers, which could get a run rejected at random.
 
 ## v0.3.4alpha
 
