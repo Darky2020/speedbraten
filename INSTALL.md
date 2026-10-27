@@ -16,6 +16,30 @@ Each package is listed in `SHA256SUMS` next to it.
 
 Get Sauerbraten 2020 from [sauerbraten.org](http://sauerbraten.org/) if you do not have it.
 
+## Which build
+
+Speedbraten comes built on three different Sauerbraten clients. The speedrun features, replays,
+the witness and the boards are the same in all of them; they differ in the rest of the game.
+
+| Build | Package name ends in | Based on |
+|---|---|---|
+| p1xbraten (default) | no suffix, e.g. `-windows-x64.zip` | [p1xbraten](https://github.com/sauerbraten/p1xbraten): its scoreboard, frag messages and menus |
+| Vanilla | `-vanilla`, e.g. `-windows-x64-vanilla.zip` | plain Sauerbraten, nothing else changed |
+| wc-ng | `-wcng`, e.g. `-windows-x64-wcng.zip` | [wc-ng](https://github.com/tpoechtrager/wc-ng): its server browser extras, player info, geoip and chat |
+
+Every build has its own launcher and files, so you can unpack several of them into the same
+Sauerbraten folder and keep them side by side. They all use the same home folder, settings,
+replays and statistics. The steps below use the default build; for the others, the names change
+as follows:
+
+| | p1xbraten | Vanilla | wc-ng |
+|---|---|---|---|
+| Windows launcher | `speedbraten.bat` | `speedbraten-vanilla.bat` | `speedbraten-wcng.bat` |
+| Linux launcher | `speedbraten.sh` | `speedbraten-vanilla.sh` | `speedbraten-wcng.sh` |
+| macOS app | `Speedbraten.app` | `Speedbraten Vanilla.app` | `Speedbraten wc-ng.app` |
+
+The wc-ng build is distributed under wc-ng's licence, the GPLv2 (`wc-ng-COPYING` in the package).
+
 ## Windows
 
 1. Find your Sauerbraten folder: the one that contains `sauerbraten.bat` (for example
@@ -60,6 +84,19 @@ happens because the game is not signed with a paid certificate.
 
 If Speedbraten says "Sauerbraten not found", `Sauerbraten.app` is not in **Applications**,
 `~/Applications` or the same folder as `Speedbraten.app`.
+
+## wc-ng's own menus (optional)
+
+The wc-ng build starts with Sauerbraten's menus plus a speedrun button. To get wc-ng's menus as
+well, copy the contents of the `wc-ng-menu` folder from the package into your home folder (see
+below) and add this line to `autoexec.cfg` there (create the file if it does not exist):
+
+```
+exec config/main.cfg
+```
+
+The folder is in `speedbraten_overrides_wcng` on Windows and Linux, and in
+`Speedbraten wc-ng.app/Contents/Resources/speedbraten_overrides` on macOS.
 
 ## Where your files are
 
