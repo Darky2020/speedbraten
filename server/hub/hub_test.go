@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"net"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1064,11 +1065,74 @@ func TestBoardRequest(t *testing.T) {
 		}
 	}
 	rank, ms := m.r.u(), m.r.u()
+	for i := uint64(0); i < n; i++ {
+		if run := m.r.u(); run != i+1 {
+			t.Fatalf("row %d has run %d", i, run)
+		}
+	}
 	if err := m.r.done(); err != nil {
 		t.Fatal(err)
 	}
 	if n != BoardRows || first != "p0" || firstms != 9000 || rank != 11 || ms != 9950 {
 		t.Fatalf("board: %d rows, #1 %s %d, mine %d %d", n, first, firstms, rank, ms)
+	}
+}
+
+// A run on a board can be downloaded in pieces; one that isn't on a board is refused.
+func TestReplayRequest(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER, file TEXT)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := filepath.Join(dir, "1.sbr")
+	want := bytes.Repeat([]byte("replay!"), 10000) // more than two chunks
+	if err := os.WriteFile(file, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES('k0', 'forge', 'bob', 'flagrun', 17, 9000, 'valid', 1, ?)", file)
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES('k1', 'forge', 'eve', 'flagrun', 17, 8000, 'invalid', 1, ?)", file)
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	f.h.SetBoards(store)
+
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	ask := func(run uint64) {
+		var q writer
+		q.u(run)
+		a.send(MsgReplay, q.b)
+	}
+	ask(1)
+	var got []byte
+	for len(got) < len(want) {
+		m := a.expect(MsgReplayData)
+		run, size, off := m.r.u(), m.r.u(), m.r.u()
+		if run != 1 || size != uint64(len(want)) || off != uint64(len(got)) {
+			t.Fatalf("piece: run %d size %d offset %d after %d bytes", run, size, off, len(got))
+		}
+		got = append(got, m.r.b...)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("the replay arrived changed")
+	}
+	ask(2)
+	a.expectNotice("not on a board")
+	if m := a.expect(MsgReplayData); m.r.u() != 2 || m.r.u() != 0 {
+		t.Fatal("a refusal is not an empty piece")
 	}
 }
 

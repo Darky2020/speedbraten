@@ -32,7 +32,7 @@ namespace game
         vector<uint> members, specs, watched; // watched[i]: the member specs[i] spectates
     };
     // the leaderboard the hub last sent: the one of the run being played, or one the menu asked for
-    struct boardrow { int rank, ms; string name; };
+    struct boardrow { int rank, ms, run; string name; };
     struct hubboard
     {
         string map, kind;
@@ -79,6 +79,56 @@ namespace game
     static hublobby *mylobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid) || hasspec(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
     static const char *playername(uint id) { hubplayer *p = findplayer(id); return p ? p->name : "?"; }
 
+    // A board run's replay being downloaded into replays/downloaded/, then watched or raced as a ghost.
+    static uint downloadrun = 0;
+    static bool downloadwatch = false;
+    static string downloadfile = "", downloadlabel = "";
+    static vector<uchar> downloaddata;
+
+    static void replaydownloadend()
+    {
+        downloadrun = 0;
+        downloaddata.setsize(0);
+    }
+
+    static void useboardreplay(const char *file, bool watch, const char *label)
+    {
+        if(!watch)
+        {
+            defformatstring(cmd, "ghostrace %s", escapestring(file));
+            concatstring(cmd, " ");
+            concatstring(cmd, escapestring(label));
+            execute(cmd);
+            return;
+        }
+        if(multiplayer(false)) { conoutf(CON_ERROR, "leave the server to watch a replay"); return; }
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
+        viewinputrun(run, file);
+    }
+
+    static void replaydata(uint run, int size, int offset, const uchar *data, int len)
+    {
+        if(!downloadrun || run != downloadrun) return;
+        if(!size) { replaydownloadend(); return; }
+        if(offset != downloaddata.length() || size > (16<<20) || offset + len > size)
+        {
+            conoutf(CON_ERROR, "the replay download went wrong");
+            replaydownloadend();
+            return;
+        }
+        downloaddata.put(data, len);
+        if(downloaddata.length() < size) return;
+        stream *f = openrawfile(path(downloadfile, true), "wb");
+        bool ok = f && f->write(downloaddata.getbuf(), downloaddata.length()) == size_t(downloaddata.length());
+        delete f;
+        replaydownloadend();
+        if(!ok) { conoutf(CON_ERROR, "could not save %s", downloadfile); return; }
+        conoutf("saved %s", downloadfile);
+        useboardreplay(downloadfile, downloadwatch, downloadlabel);
+    }
+
     static void hubreset()
     {
         hubplayers.setsize(0);
@@ -93,6 +143,7 @@ namespace game
         lobbyghostsclear();
         spectateend("lost the connection to the hub");
         curboard = viewboard = hubboard();
+        replaydownloadend();
         boardaskedmap[0] = '\0';
         boardreaskat = 0;
     }
@@ -576,9 +627,11 @@ namespace game
                         row.rank = int(r.var());
                         gettext(r, row.name, sizeof(row.name));
                         row.ms = int(r.var());
+                        row.run = 0;
                     }
                     b.myrank = int(r.var());
                     b.myms = int(r.var());
+                    loopv(b.rows) if(r.left()) b.rows[i].run = int(r.var());
                     if(!r.ok) break;
                     b.have = true;
                     if(!strcmp(b.map, boardaskedmap) && b.mode == boardaskedmode && !strcmp(b.kind, boardaskedkind)) curboard = b;
@@ -598,6 +651,13 @@ namespace game
                     if(!r.ok) { maps.deletearrays(); break; }
                     flagrunmaps.deletearrays();
                     loopv(maps) flagrunmaps.add(maps[i]);
+                    break;
+                }
+                case HM_REPLAYDATA:
+                {
+                    uint run = uint(r.var());
+                    int size = int(r.var()), offset = int(r.var());
+                    if(r.ok) replaydata(run, size, offset, r.p, r.left());
                     break;
                 }
                 case HM_NOTICE:
@@ -1094,7 +1154,38 @@ namespace game
         if(!strcmp(field, "rank")) intret(row.rank);
         else if(!strcmp(field, "name")) result(row.name);
         else if(!strcmp(field, "time")) result(formatruntime(row.ms));
+        else if(!strcmp(field, "run")) intret(row.run);
         else result("");
+    });
+
+    // boardreplay i watch|ghost: watches or races the replay of row i of the menus' board, downloading
+    // it from the hub the first time
+    ICOMMAND(boardreplay, "is", (int *i, char *action),
+    {
+        if(!viewboard.rows.inrange(*i)) return;
+        const boardrow &row = viewboard.rows[*i];
+        bool watch = !strcmp(action, "watch");
+        if(!row.run) { conoutf(CON_ERROR, "update the hub to download board replays"); return; }
+        string time;
+        copystring(time, formatruntime(row.ms));
+        for(char *c = time; *c; c++) if(*c == ':' || *c == '.') *c = '-';
+        string file;
+        formatstring(file, "replays/downloaded/%s_%s_run%d.sbr", viewboard.map, time, row.run);
+        for(char *c = file + strlen("replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+        defformatstring(label, "%s %s", row.name, formatruntime(row.ms));
+        if(stream *f = openrawfile(path(file, true), "rb")) { delete f; useboardreplay(file, watch, label); return; }
+        if(downloadrun) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
+        if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download replays"); return; }
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(row.run);
+        if(!hubsend(HM_REPLAY, p.getbuf(), p.length())) return;
+        downloadrun = row.run;
+        downloadwatch = watch;
+        copystring(downloadfile, file);
+        copystring(downloadlabel, label);
+        downloaddata.setsize(0);
+        conoutf("downloading %s's run (%s)..", row.name, formatruntime(row.ms));
     });
 
     ICOMMAND(hubmylobby, "", (), { hublobby *l = mylobby(); intret(l ? int(l->id) : 0); });

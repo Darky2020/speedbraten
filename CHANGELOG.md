@@ -8,6 +8,7 @@
 - /board: places shown as #1/#2/#3 in gold, silver and bronze, your name in green, and your place next to your PB.
 - /board shows only the categories a map has: flagrun maps their ctf modes, other maps race, campaign maps their campaign.
 - The speedrun menu's boards tab is gone; the stats tab opens this map's /board.
+- /board: watch or race as a ghost the top runs' replays, downloaded from the hub into replays/downloaded.
 
 ## v0.3.5alpha
 

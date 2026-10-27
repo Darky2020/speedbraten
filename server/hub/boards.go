@@ -1,6 +1,10 @@
 package hub
 
-import "speedbraten/server/board"
+import (
+	"os"
+
+	"speedbraten/server/board"
+)
 
 // BoardRows is how many entries of a board the hub sends a client.
 const BoardRows = 10
@@ -74,5 +78,79 @@ func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64) []byte {
 	}
 	w.u(uint64(rank))
 	w.u(uint64(ms))
+	for _, e := range rows {
+		w.u(uint64(e.Run))
+	}
+	return w.b
+}
+
+const (
+	// MaxReplay is the largest replay file the hub sends.
+	MaxReplay   = 4 << 20
+	replayChunk = 32 << 10
+)
+
+// replayRequest sends the replay of a run on a board, read off the hub's lock; one request per
+// player at a time. Called with h.mu held.
+func (h *Hub) replayRequest(p *player, r *reader) error {
+	run := int64(r.u())
+	if err := r.done(); err != nil {
+		return err
+	}
+	if p.replayBusy {
+		return nil
+	}
+	store := h.boards
+	if store == nil {
+		h.notice(p, "this hub has no boards")
+		h.send(p, MsgReplayData, replayMsg(run, 0, 0, nil))
+		return nil
+	}
+	p.replayBusy = true
+	go func() {
+		data, why := boardReplay(store, run)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		p.replayBusy = false
+		if p.closed {
+			return
+		}
+		if why != "" {
+			h.notice(p, why)
+			h.send(p, MsgReplayData, replayMsg(run, 0, 0, nil))
+			return
+		}
+		for off := 0; off < len(data); off += replayChunk {
+			h.send(p, MsgReplayData, replayMsg(run, len(data), off, data[off:min(off+replayChunk, len(data))]))
+		}
+	}()
+	return nil
+}
+
+// boardReplay reads the replay of a run that is an entry on a board, or says why it can't.
+func boardReplay(store *board.Store, run int64) ([]byte, string) {
+	if ok, err := store.Listed(run); err != nil || !ok {
+		return nil, "that run is not on a board"
+	}
+	path, err := store.File(run)
+	if err != nil {
+		return nil, "that run's replay is not kept"
+	}
+	if st, err := os.Stat(path); err != nil || st.Size() == 0 || st.Size() > MaxReplay {
+		return nil, "that run's replay can't be sent"
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "that run's replay can't be sent"
+	}
+	return data, ""
+}
+
+func replayMsg(run int64, size, offset int, chunk []byte) []byte {
+	var w writer
+	w.u(uint64(run))
+	w.u(uint64(size))
+	w.u(uint64(offset))
+	w.bytes(chunk)
 	return w.b
 }

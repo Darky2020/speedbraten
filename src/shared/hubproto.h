@@ -31,6 +31,7 @@
 //   RUNTIME      var running (0/1), var run time in ms so far - the run timer, while in a lobby:
 //                when it starts or stops, and once a second while it runs
 //   BOARD        str map, svar mode, str kind - asks for that leaderboard
+//   REPLAY       var run - asks for the replay of a run on a board (REPLAYDATA)
 // hub -> client
 //   WELCOME      var your id, str your name ("" while you have none), str why the name you
 //                asked for was refused ("" if it wasn't)
@@ -58,7 +59,10 @@
 //                for the scoreboard, to everyone in the lobby
 //   BOARDROWS    str map, svar mode, str kind, var count, count x (var rank, str name, var ms), var your
 //                rank (0: not on it), var your ms - the top of a leaderboard (witnessed runs)
+//                then count x var run (since FLAGRUNMAPS; absent from older hubs)
 //   FLAGRUNMAPS  var count, count x str map - the maps flagrun boards are kept for
+//   REPLAYDATA   var run, var size, var offset, bytes - a piece of a board run's replay file, in
+//                order; size 0: the run can't be sent (a NOTICE says why)
 
 #ifndef __HUBPROTO_H__
 #define __HUBPROTO_H__
@@ -66,8 +70,8 @@
 enum
 {
     HUBPROTO = 1,
-    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE, HM_VIEW, HM_VIEWDATA, HM_RUNTIME, HM_BOARD,
-    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT, HM_BOARDROWS, HM_FLAGRUNMAPS
+    HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE, HM_VIEW, HM_VIEWDATA, HM_RUNTIME, HM_BOARD, HM_REPLAY,
+    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT, HM_BOARDROWS, HM_FLAGRUNMAPS, HM_REPLAYDATA
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
 enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };

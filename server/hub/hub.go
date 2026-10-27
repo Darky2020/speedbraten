@@ -81,6 +81,7 @@ type player struct {
 	view       *liveView
 	stat       runStat
 	boardBusy  bool // a BOARD request is being answered
+	replayBusy bool // a REPLAY request is being answered
 	out        chan []byte
 	closed     bool
 }
@@ -579,6 +580,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.runTime(p, &r)
 	case MsgBoard:
 		return h.boardRequest(p, &r)
+	case MsgReplay:
+		return h.replayRequest(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {
