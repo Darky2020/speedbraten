@@ -1,10 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- New installs connect to the speedbraten hub (and through it the witness) out of the box, and walking back onto the flag restarts the flagrun timer by default.
-- Global messages: the time gained is green (red when slower), and the legacy record message shows how far under the legacy time the run was.
-
 ## v0.3.6alpha
 
 - Spectating someone no longer warns that you modified the map.
@@ -18,7 +13,8 @@
 - Flag boards: places shown as #1/#2/#3 in gold, silver and bronze.
 - Legacy records show their difference to the witnessed record (− faster, + slower) on the website, /board and the flag boards.
 - Website: campaigns and races with only a legacy record are listed too.
-- Global messages: "NEW RECORD!!" in red with whose record it took, PBs with your place, a sound for records, and "LEGACY RECORD BEATEN!!" the first time a legacy record falls.
+- Global messages: "NEW RECORD!!" in red with whose record it took and the time gained in green, PBs with your place, a sound for records, and "LEGACY RECORD BEATEN!!" with the gap to the legacy time the first time a legacy record falls.
+- New installs connect to the speedbraten hub (and through it the witness) out of the box, and walking back onto the flag restarts the flagrun timer by default.
 
 ## v0.3.5alpha
 
