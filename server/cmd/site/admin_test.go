@@ -280,10 +280,27 @@ func TestAdminLegacy(t *testing.T) {
 	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); !strings.Contains(body, "Legacy record") || !strings.Contains(body, "0:05.912") || !strings.Contains(body, "https://flagruns.com/forge") {
 		t.Fatal("the map page doesn't show the legacy record")
 	}
+	// the witnessed #1 (alice, 0:09.000) against it
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); !strings.Contains(body, "#1 &#43;3.088") || !strings.Contains(body, `class="small slower"`) {
+		t.Fatal("no diff to the witnessed record")
+	}
+	f.act(url.Values{"do": {"legacyimport"}, "csv": {"lost,campaign,-3,Raze,11:48,speedrun.com\nmpsp6a,campaign,-3,x,9:00,speedrun.com"}})
+	if _, body := get(t, f.s, "/singleplayer"); !strings.Contains(body, "Lost") || strings.Index(body, "Lost") < strings.Index(body, "An Army Of One") {
+		t.Fatal("a campaign with only a legacy record isn't listed after the witnessed ones")
+	}
+	if _, body := get(t, f.s, "/map?map=mpsp6a&kind=campaign&mode=-3"); !strings.Contains(body, "#1 −2:50.740") || !strings.Contains(body, `class="small faster"`) {
+		t.Fatal("no diff for a witnessed record faster than the legacy one")
+	}
 	// a board without witnessed runs gets a page for its legacy record
 	f.act(url.Values{"do": {"legacyimport"}, "csv": {"# header\nnadefly,race,ffa,Rex,1:02.5,speedyruns,2015\n"}})
 	if code, body := get(t, f.s, "/map?map=nadefly&kind=race&mode=0"); code != 200 || !strings.Contains(body, "1:02.500") || !strings.Contains(body, "speedyruns · 2015") {
 		t.Fatalf("legacy-only board: %d", code)
+	}
+	if _, body := get(t, f.s, "/races"); !strings.Contains(body, "nadefly") {
+		t.Fatal("a race with only a legacy record isn't listed")
+	}
+	if _, body := get(t, f.s, "/map?map=nadefly&kind=race&mode=0"); strings.Contains(body, "#1 ") {
+		t.Fatal("a diff without a witnessed record")
 	}
 	if w := f.do("GET", "/admin/legacy", password, nil, "10.0.0.1"); !strings.Contains(w.Body.String(), "Dino") || !strings.Contains(w.Body.String(), "Rex") {
 		t.Fatal("the legacy tab doesn't list both")

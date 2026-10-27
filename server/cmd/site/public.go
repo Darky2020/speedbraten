@@ -233,6 +233,35 @@ func (s *site) boardsOf(kinds ...string) ([]*board.Board, error) {
 	return out, err
 }
 
+// signedGap is a time difference as +s.mmm, or +m:ss.mmm from a minute on.
+func signedGap(d int64) string {
+	sign := "+"
+	if d < 0 {
+		sign, d = "−", -d
+	}
+	if d < 60000 {
+		return fmt.Sprintf("%s%d.%03d", sign, d/1000, d%1000)
+	}
+	return sign + board.Time(d)
+}
+
+// withLegacy adds an empty board for each legacy record of the kind that has no witnessed
+// runs, for the lists that show every board with a time.
+func (s *site) withLegacy(boards []*board.Board, kind string) []*board.Board {
+	legacy, _ := s.store.LegacyRecords()
+	have := map[board.Key]bool{}
+	for _, b := range boards {
+		have[b.Key] = true
+	}
+	out := append([]*board.Board(nil), boards...)
+	for _, l := range legacy {
+		if l.Key.Kind == kind && !have[l.Key] {
+			out = append(out, &board.Board{Key: l.Key})
+		}
+	}
+	return out
+}
+
 func (s *site) races(w http.ResponseWriter, r *http.Request) {
 	boards, err := s.boardsOf("race")
 	if err != nil {
@@ -240,7 +269,7 @@ func (s *site) races(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := newFilter(r, boardSorts, nil)
-	data := map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(boards, f), "F": f, "Path": "/races"}
+	data := map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(s.withLegacy(boards, "race"), f), "F": f, "Path": "/races"}
 	s.addCategory(data, boards, "race")
 	render(w, racesPage, "races.html", data)
 }
@@ -367,7 +396,7 @@ func (s *site) singleplayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := newFilter(r, boardSorts, nil)
-	data := map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": filterBoards(boards, f), "F": f, "Path": "/singleplayer"}
+	data := map[string]any{"Title": "Singleplayer", "Tab": "sp", "Campaigns": filterBoards(s.withLegacy(boards, "campaign"), f), "F": f, "Path": "/singleplayer"}
 	s.addCategory(data, boards, "campaign")
 	render(w, spPage, "singleplayer.html", data)
 }
@@ -414,6 +443,12 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	legacy, _ := s.store.LegacyRecord(k)
+	legacyDiff, legacyFaster := "", false
+	if legacy != nil && b != nil && len(b.Entries) > 0 {
+		d := b.Entries[0].MS - legacy.MS
+		legacyFaster = d < 0
+		legacyDiff = signedGap(d)
+	}
 	if b == nil && legacy != nil {
 		b = &board.Board{Key: k}
 	}
@@ -423,7 +458,8 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	history, _ := s.store.History(k)
 	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
-		"History": history, "Graph": recordGraph(history), "Legacy": legacy})
+		"History": history, "Graph": recordGraph(history), "Legacy": legacy,
+		"LegacyDiff": legacyDiff, "LegacyBeaten": legacyFaster})
 }
 
 type placeRow struct {

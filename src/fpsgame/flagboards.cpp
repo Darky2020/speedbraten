@@ -16,6 +16,7 @@ namespace game
     extern bool hubboardrow(int i, int &rank, int &ms, const char *&name);
     extern bool hubboardmine(int &rank, int &ms);
     extern bool hubboardlegacy(int &ms, const char *&name, const char *&source);
+    extern const char *hubboardlegacydiff();
 
     struct flagboard
     {
@@ -64,7 +65,11 @@ namespace game
             // places in gold, silver and bronze, and the player's own place below them
             int rank, ms;
             const char *name, *source;
-            if(hubboardlegacy(ms, name, source)) addline(b, "\f4legacy  %s  %s", formatruntime(ms), name);
+            if(hubboardlegacy(ms, name, source))
+            {
+                const char *diff = hubboardlegacydiff();
+                addline(b, "\f4legacy  %s  %s%s%s", formatruntime(ms), name, diff[0] ? (diff[0] == '-' ? "  \f0" : "  \f3") : "", diff);
+            }
             loopj(3)
             {
                 if(!hubboardrow(j, rank, ms, name)) break;

@@ -392,6 +392,21 @@ namespace game
     }
 
     // the player's own place on that board: false when not on it or while it isn't known
+    // the witnessed record against the legacy one: "+0.518" (slower), "-0.120", or "" without both
+    static const char *legacydiff(const hubboard &b)
+    {
+        if(!b.legacyms || b.rows.empty() || b.rows[0].rank != 1) return "";
+        int d = b.rows[0].ms - b.legacyms, a = abs(d);
+        static string s;
+        if(a < 60000) formatstring(s, "%c%d.%03d", d < 0 ? '-' : '+', a/1000, a%1000);
+        else formatstring(s, "%c%d:%02d.%03d", d < 0 ? '-' : '+', a/60000, (a/1000)%60, a%1000);
+        return s;
+    }
+    const char *hubboardlegacydiff()
+    {
+        if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind())) return "";
+        return legacydiff(curboard);
+    }
     bool hubboardlegacy(int &ms, const char *&name, const char *&source)
     {
         if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || !curboard.legacyms) return false;
@@ -1162,6 +1177,7 @@ namespace game
         else if(!strcmp(field, "legacyname")) result(b.legacyms ? b.legacyname : "");
         else if(!strcmp(field, "legacytime")) result(b.legacyms ? formatruntime(b.legacyms) : "");
         else if(!strcmp(field, "legacysource")) result(b.legacyms ? b.legacysource : "");
+        else if(!strcmp(field, "legacydiff")) result(legacydiff(b));
         else result("");
     });
     ICOMMAND(hubboardrow, "is", (int *i, char *field),

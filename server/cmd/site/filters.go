@@ -63,6 +63,13 @@ var boardSorts = []option{{"map", "map A–Z"}, {"runs", "most runs"}, {"players
 func sortBoards(boards []*board.Board, by string) {
 	sort.SliceStable(boards, func(i, j int) bool {
 		a, b := boards[i], boards[j]
+		// boards with only a legacy record go last, by name
+		if len(a.Entries) == 0 || len(b.Entries) == 0 {
+			if len(a.Entries) != len(b.Entries) {
+				return len(a.Entries) > 0
+			}
+			return a.Key.MapLabel() < b.Key.MapLabel()
+		}
 		ea, eb := a.Entries[0], b.Entries[0]
 		switch by {
 		case "newest":

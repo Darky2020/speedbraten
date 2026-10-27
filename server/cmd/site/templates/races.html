@@ -5,8 +5,8 @@
 {{template "filters" .}}
 <div class="card scroll"><table>
 <tr><th>map</th><th>mode</th><th class="num">record</th><th>holder</th><th class="num wide">runs</th><th class="num wide">players</th><th class="wide">set</th></tr>
-{{range $b := .Boards}}{{$e := index $b.Entries 0}}<tr><td>{{template "mapcell" $b.Key}}</td><td>{{template "badge" $b.Key}}</td><td class="num time">{{runtime $e.MS}}</td>
-<td><a href="{{playerURL $e.Install}}">{{template "pname" $e}}</a></td><td class="num dim wide">{{$b.Runs}}</td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td></tr>
+{{range $b := .Boards}}<tr><td>{{template "mapcell" $b.Key}}</td><td>{{template "badge" $b.Key}}</td>{{with $b.Entries}}{{$e := index . 0}}<td class="num time">{{runtime $e.MS}}</td>
+<td><a href="{{playerURL $e.Install}}">{{template "pname" $e}}</a></td><td class="num dim wide">{{$b.Runs}}</td><td class="num dim wide">{{len $b.Entries}}</td><td class="dim small wide">{{ago $e.When}}</td>{{else}}<td class="num dim">—</td><td class="dim">—</td><td class="num dim wide">0</td><td class="num dim wide">0</td><td class="wide"></td>{{end}}</tr>
 {{else}}<tr><td colspan="7" class="dim">No races{{if .F.Q}} match{{else}} yet{{end}}.</td></tr>{{end}}
 </table></div>
 {{template "bottom" .}}
