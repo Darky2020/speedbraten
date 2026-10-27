@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.5alpha
 
 - wc-ng build: runs are witnessed again (the build announced itself to the local game server, which made the witness reject every flagrun life).
 - Opening the server browser during a run no longer makes the witness reject it (the browser used the game's random numbers).
