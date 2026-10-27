@@ -81,9 +81,8 @@ namespace game {
         return 0;
     }
 
-    // speedbraten's settings live in these menus, so a 0 saved by p1xbraten is ignored
-    MOD(VARFP, usep1xbratenmenus, 0, 1, 1, {
-        usep1xbratenmenus = 1;
-        execfile(menus_cfg.name);
-    });
+    // speedbraten's settings live in these menus, so a 0 saved by p1xbraten is ignored; the menus
+    // are loaded at startup whatever the saved configs say (the vanilla and wc-ng builds write
+    // speedbraten.cfg without this setting)
+    MOD(VARFP, usep1xbratenmenus, 0, 1, 1, usep1xbratenmenus = 1);
 }

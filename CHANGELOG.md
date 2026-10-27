@@ -2,6 +2,8 @@
 
 ## v0.3.4alpha
 
+- Windows: the vanilla and wc-ng builds load their speedrun menus (their file patches were never read on Windows).
+- The default build keeps its menus after the vanilla or wc-ng build was used with the same home folder.
 - Speedbraten also comes built on plain Sauerbraten and on wc-ng.
 - The macOS app runs on macOS 11 and newer again, not only 13.
 - Replays from the replay list or the stats can be paused (P), moved back and forth (left/right), sped up (hold space), restarted (R) and left (Backspace), with their time and keys on screen; they stop on their last frame.

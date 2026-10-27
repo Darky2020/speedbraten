@@ -1522,6 +1522,7 @@ int main(int argc, char **argv)
     }
     execfile("p1xbraten.cfg", false); // mod settings saved by p1xbraten, kept for players coming from it
     execfile(game::modconfig(), false);
+    execfile("data/p1xbraten/menus.cfg.gz");
     execfile(game::autoexec(), false);
 
     identflags &= ~IDF_PERSIST;
