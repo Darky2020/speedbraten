@@ -170,7 +170,7 @@ func TestAdminModeration(t *testing.T) {
 		t.Fatalf("stale token: %d", w.Code)
 	}
 	f.act(url.Values{"do": {"remove"}, "run": {"1"}, "note": {"copied"}})
-	if _, body := get(t, f.s, "/board?map=forge&kind=flagrun&mode=17"); strings.Contains(body, "0:09.000") {
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); strings.Contains(body, "0:09.000") {
 		t.Fatal("a removed run is still on the board")
 	}
 	w := f.do("GET", "/admin/moderation", password, nil, "10.0.0.1")
@@ -271,5 +271,33 @@ func TestAdminServer(t *testing.T) {
 	}
 	if _, err := parseFolders("noequals"); err == nil {
 		t.Fatal("a folder without a name")
+	}
+}
+
+func TestAdminLegacy(t *testing.T) {
+	f := newAdminFixture(t)
+	f.act(url.Values{"do": {"legacyset"}, "map": {"forge"}, "kind": {"flagrun"}, "mode": {"17"}, "player": {"Dino"}, "time": {"0:05.912"}, "source": {"flagruns.com"}, "link": {"https://flagruns.com/forge"}})
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); !strings.Contains(body, "Legacy record") || !strings.Contains(body, "0:05.912") || !strings.Contains(body, "https://flagruns.com/forge") {
+		t.Fatal("the map page doesn't show the legacy record")
+	}
+	// a board without witnessed runs gets a page for its legacy record
+	f.act(url.Values{"do": {"legacyimport"}, "csv": {"# header\nnadefly,race,ffa,Rex,1:02.5,speedyruns,2015\n"}})
+	if code, body := get(t, f.s, "/map?map=nadefly&kind=race&mode=0"); code != 200 || !strings.Contains(body, "1:02.500") || !strings.Contains(body, "speedyruns · 2015") {
+		t.Fatalf("legacy-only board: %d", code)
+	}
+	if w := f.do("GET", "/admin/legacy", password, nil, "10.0.0.1"); !strings.Contains(w.Body.String(), "Dino") || !strings.Contains(w.Body.String(), "Rex") {
+		t.Fatal("the legacy tab doesn't list both")
+	}
+	// a bad line imports nothing
+	form := url.Values{"do": {"legacyimport"}, "csv": {"dust2,flagrun,17,A,5.1,x\ndust2,flagrun,17,B,oops,x"}, "token": {f.token}}
+	if w := f.do("POST", "/admin/act", password, form, "10.0.0.1"); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "line 2") {
+		t.Fatalf("bad csv: %d %s", w.Code, w.Body.String())
+	}
+	if w := f.do("GET", "/admin/legacy", password, nil, "10.0.0.1"); strings.Contains(w.Body.String(), "dust2") {
+		t.Fatal("a bad import added lines")
+	}
+	f.act(url.Values{"do": {"legacydelete"}, "map": {"nadefly"}, "kind": {"race"}, "mode": {"0"}})
+	if code, _ := get(t, f.s, "/map?map=nadefly&kind=race&mode=0"); code != 404 {
+		t.Fatalf("after delete: %d", code)
 	}
 }

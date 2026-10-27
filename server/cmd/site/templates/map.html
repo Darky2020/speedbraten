@@ -2,6 +2,7 @@
 <div class="banner" style="background-image: url('{{mapImage .Board.Key.Map}}')"><div class="t"><h1>{{.Board.Key.MapLabel}}</h1>
 <p>{{template "badge" .Board.Key}} {{with .Board.Entries}}{{len .}} players · {{$.Board.Runs}} runs{{else}}no runs yet{{end}}{{if ne .Board.Key.MapLabel .Board.Key.Map}} · starts on {{.Board.Key.Map}}{{end}}</p></div></div>
 {{if gt (len .Others) 1}}<div class="modes">{{range .Others}}<a href="{{mapURL .}}"{{if eq . $.Board.Key}} class="on"{{end}}>{{modeName .}}</a>{{end}}</div>{{end}}
+{{with .Legacy}}<div class="card legacy"><div class="body"><span class="dim">Legacy record (not witnessed):</span> <span class="time">{{runtime .MS}}</span> {{.Player}} <span class="dim">· {{.Source}}{{with .Date}} · {{.}}{{end}}</span>{{with .Link}} <a href="{{.}}" rel="nofollow noopener" target="_blank">↗</a>{{end}}</div></div>{{end}}
 {{if not .Board.Entries}}<div class="card"><div class="body dim">No runs in this mode yet. Be the first to set a time.</div></div>
 {{else}}<div class="cols">
 <div class="card scroll"><header><h2>Leaderboard</h2></header><table>

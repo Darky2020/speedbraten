@@ -59,7 +59,8 @@
 //                for the scoreboard, to everyone in the lobby
 //   BOARDROWS    str map, svar mode, str kind, var count, count x (var rank, str name, var ms), var your
 //                rank (0: not on it), var your ms - the top of a leaderboard (witnessed runs)
-//                then count x var run (since FLAGRUNMAPS; absent from older hubs)
+//                then count x var run, then var legacy (0/1) [str player, var ms, str source] - the
+//                board's unwitnessed reference record from an older leaderboard (absent from older hubs)
 //   FLAGRUNMAPS  var count, count x str map - the maps flagrun boards are kept for
 //   REPLAYDATA   var run, var size, var offset, bytes - a piece of a board run's replay file, in
 //                order; size 0: the run can't be sent (a NOTICE says why)

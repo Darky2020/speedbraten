@@ -9,6 +9,8 @@
 - /board shows only the categories a map has: flagrun maps their ctf modes, other maps race, campaign maps their campaign.
 - The speedrun menu's boards tab is gone; the stats tab opens this map's /board.
 - /board: watch or race as a ghost the top runs' replays, downloaded from the hub into replays/downloaded.
+- Legacy records: a board can show an older leaderboard's record (not witnessed) on the website, on /board and on the flag boards.
+- Flag boards: places shown as #1/#2/#3 in gold, silver and bronze.
 
 ## v0.3.5alpha
 

@@ -30,7 +30,7 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 	}
 	store := h.boards
 	if store == nil {
-		h.send(p, MsgBoardRows, boardMsg(k, nil, 0, 0))
+		h.send(p, MsgBoardRows, boardMsg(k, nil, 0, 0, nil))
 		return nil
 	}
 	p.boardBusy = true
@@ -39,6 +39,10 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 		var rows []board.Entry
 		var rank int
 		var ms int64
+		legacy, err := store.LegacyRecord(k)
+		if err != nil {
+			h.cfg.Logf("legacy record %v: %v", k, err)
+		}
 		if b, err := store.Board(k); err != nil {
 			h.cfg.Logf("board %v: %v", k, err)
 		} else if b != nil {
@@ -54,7 +58,7 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 		if len(rows) > BoardRows {
 			rows = rows[:BoardRows]
 		}
-		msg := boardMsg(k, rows, rank, ms)
+		msg := boardMsg(k, rows, rank, ms, legacy)
 		h.mu.Lock()
 		p.boardBusy = false
 		if !p.closed {
@@ -65,7 +69,7 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 	return nil
 }
 
-func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64) []byte {
+func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64, legacy *board.Legacy) []byte {
 	var w writer
 	w.str(k.Map)
 	w.s(int64(k.Mode))
@@ -80,6 +84,14 @@ func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64) []byte {
 	w.u(uint64(ms))
 	for _, e := range rows {
 		w.u(uint64(e.Run))
+	}
+	if legacy == nil {
+		w.u(0)
+	} else {
+		w.u(1)
+		w.str(legacy.Player)
+		w.u(uint64(legacy.MS))
+		w.str(legacy.Source)
 	}
 	return w.b
 }

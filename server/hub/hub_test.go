@@ -1070,11 +1070,62 @@ func TestBoardRequest(t *testing.T) {
 			t.Fatalf("row %d has run %d", i, run)
 		}
 	}
+	if m.r.u() != 0 {
+		t.Fatal("a legacy record on a board without one")
+	}
 	if err := m.r.done(); err != nil {
 		t.Fatal(err)
 	}
 	if n != BoardRows || first != "p0" || firstms != 9000 || rank != 11 || ms != 9950 {
 		t.Fatalf("board: %d rows, #1 %s %d, mine %d %d", n, first, firstms, rank, ms)
+	}
+}
+
+// A board's legacy record comes after its rows, also on a board without witnessed runs.
+func TestBoardLegacy(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SetLegacy(board.Legacy{Key: board.Key{Map: "forge", Kind: "flagrun", Mode: 17}, Player: "Dino", MS: 5912, Source: "flagruns.com"}); err != nil {
+		t.Fatal(err)
+	}
+	f.h.SetBoards(store)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	var q writer
+	q.str("forge")
+	q.s(17)
+	q.str("flagrun")
+	a.send(MsgBoard, q.b)
+	m := a.expect(MsgBoardRows)
+	m.r.str(64)
+	m.r.s()
+	m.r.str(16)
+	if n, rank, ms := m.r.u(), m.r.u(), m.r.u(); n != 0 || rank != 0 || ms != 0 {
+		t.Fatalf("rows %d, mine %d %d", n, rank, ms)
+	}
+	if has, name, ms, src := m.r.u(), m.r.str(64), m.r.u(), m.r.str(64); has != 1 || name != "Dino" || ms != 5912 || src != "flagruns.com" {
+		t.Fatalf("legacy %d %q %d %q", has, name, ms, src)
+	}
+	if err := m.r.done(); err != nil {
+		t.Fatal(err)
 	}
 }
 

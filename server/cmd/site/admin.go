@@ -32,6 +32,7 @@ var (
 	runsAdmin       = page("admin_runs.html")
 	flagsAdmin      = page("admin_flags.html")
 	moderationAdmin = page("admin_moderation.html")
+	legacyAdmin     = page("admin_legacy.html")
 	playersAdmin    = page("admin_players.html")
 	playerAdmin     = page("admin_player.html")
 	serverAdmin     = page("admin_server.html")
@@ -69,6 +70,7 @@ func (a *admin) register(mux *http.ServeMux) {
 	mux.Handle("/admin/runs", a.auth(http.HandlerFunc(a.runs)))
 	mux.Handle("/admin/flags", a.auth(http.HandlerFunc(a.flags)))
 	mux.Handle("/admin/moderation", a.auth(http.HandlerFunc(a.moderation)))
+	mux.Handle("/admin/legacy", a.auth(http.HandlerFunc(a.legacy)))
 	mux.Handle("/admin/players", a.auth(http.HandlerFunc(a.players)))
 	mux.Handle("/admin/player", a.auth(http.HandlerFunc(a.player)))
 	mux.Handle("/admin/server", a.auth(http.HandlerFunc(a.server)))
@@ -443,6 +445,16 @@ type bannedRow struct {
 	ID, Name, Note, At string
 }
 
+func (a *admin) legacy(w http.ResponseWriter, r *http.Request) {
+	list, err := a.store.LegacyRecords()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	render(w, legacyAdmin, "admin_legacy.html", map[string]any{"Title": "Legacy records", "Tab": "legacy", "Admin": true, "Token": a.token, "Legacy": list,
+		"Kinds": runKinds[1:], "Modes": runModes[1:], "Sources": board.LegacySources})
+}
+
 func (a *admin) moderation(w http.ResponseWriter, r *http.Request) {
 	removed, err := a.store.RemovedRuns()
 	if err != nil {
@@ -524,6 +536,39 @@ func (a *admin) act(w http.ResponseWriter, r *http.Request) {
 	case "review":
 		flag, _ := strconv.ParseInt(r.FormValue("flag"), 10, 64)
 		err = a.store.ReviewFlag(flag, note)
+	case "legacyset", "legacydelete":
+		mode, ok := board.ParseMode(r.FormValue("mode"))
+		k := board.Key{Map: strings.TrimSpace(r.FormValue("map")), Kind: r.FormValue("kind"), Mode: mode}
+		if !ok {
+			http.Error(w, "unknown mode", http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("do") == "legacydelete" {
+			err = a.store.DeleteLegacy(k)
+			break
+		}
+		ms, terr := board.ParseTime(r.FormValue("time"))
+		if terr != nil {
+			http.Error(w, terr.Error(), http.StatusBadRequest)
+			return
+		}
+		err = a.store.SetLegacy(board.Legacy{Key: k, Player: strings.TrimSpace(r.FormValue("player")), MS: ms, Source: strings.TrimSpace(r.FormValue("source")),
+			Date: strings.TrimSpace(r.FormValue("date")), Link: strings.TrimSpace(r.FormValue("link"))})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	case "legacyimport":
+		list, perr := board.ParseLegacyCSV(r.FormValue("csv"))
+		if perr != nil {
+			http.Error(w, perr.Error()+" (nothing was imported)", http.StatusBadRequest)
+			return
+		}
+		for _, l := range list {
+			if err = a.store.SetLegacy(l); err != nil {
+				break
+			}
+		}
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 		return

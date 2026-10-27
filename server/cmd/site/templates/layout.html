@@ -82,6 +82,7 @@ button:hover { border-color: var(--accent); }
 .slower { color: var(--ectf); } .faster { color: var(--ictf); }
 .filters input[type=search] { font: inherit; padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); min-width: 220px; }
 .filters .grow { flex: 1; }
+.card.legacy { margin-bottom: 16px; }
 .filters:has(.row) { flex-direction: column; }
 .filters .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .filters input[type=date], .filters input[type=number] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); }
@@ -91,7 +92,7 @@ button:hover { border-color: var(--accent); }
 @media (max-width: 600px) { .wide { display: none; } td, th { padding: 8px 10px; } .thumb { width: 48px; height: 27px; } .banner { height: 170px; } .banner h1 { font-size: 24px; } }
 </style></head><body>
 <div class="bar"><div class="in"><a class="logo" href="/">speed<span>braten</span></a>
-<nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/admin/server"{{if eq .Tab "server"}} class="on"{{end}}>Server</a><a href="/">Public site</a>
+<nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/admin/legacy"{{if eq .Tab "legacy"}} class="on"{{end}}>Legacy</a><a href="/admin/server"{{if eq .Tab "server"}} class="on"{{end}}>Server</a><a href="/">Public site</a>
 {{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav></div></div>
 <main>{{end}}
 {{define "bottom"}}</main>

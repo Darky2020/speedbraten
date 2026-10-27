@@ -35,11 +35,11 @@ namespace game
     struct boardrow { int rank, ms, run; string name; };
     struct hubboard
     {
-        string map, kind;
-        int mode, myrank, myms;
+        string map, kind, legacyname, legacysource;
+        int mode, myrank, myms, legacyms;
         vector<boardrow> rows;
         bool have;
-        hubboard() : mode(0), myrank(0), myms(0), have(false) { map[0] = kind[0] = '\0'; }
+        hubboard() : mode(0), myrank(0), myms(0), legacyms(0), have(false) { map[0] = kind[0] = legacyname[0] = legacysource[0] = '\0'; }
     };
     // the maps flagrun boards are kept for, as the hub last sent them
     static vector<char *> flagrunmaps;
@@ -392,6 +392,14 @@ namespace game
     }
 
     // the player's own place on that board: false when not on it or while it isn't known
+    bool hubboardlegacy(int &ms, const char *&name, const char *&source)
+    {
+        if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || !curboard.legacyms) return false;
+        ms = curboard.legacyms;
+        name = curboard.legacyname;
+        source = curboard.legacysource;
+        return true;
+    }
     bool hubboardmine(int &rank, int &ms)
     {
         if(!hubhost[0] || remote || !isboard(curboard, runmap(), runmode(), runkind()) || !curboard.myrank) return false;
@@ -632,6 +640,12 @@ namespace game
                     b.myrank = int(r.var());
                     b.myms = int(r.var());
                     loopv(b.rows) if(r.left()) b.rows[i].run = int(r.var());
+                    if(r.left() && r.var())
+                    {
+                        gettext(r, b.legacyname, sizeof(b.legacyname));
+                        b.legacyms = int(r.var());
+                        gettext(r, b.legacysource, sizeof(b.legacysource));
+                    }
                     if(!r.ok) break;
                     b.have = true;
                     if(!strcmp(b.map, boardaskedmap) && b.mode == boardaskedmode && !strcmp(b.kind, boardaskedkind)) curboard = b;
@@ -1145,6 +1159,9 @@ namespace game
         else if(!strcmp(field, "count")) intret(b.rows.length());
         else if(!strcmp(field, "myrank")) intret(b.myrank);
         else if(!strcmp(field, "mytime")) result(b.myrank ? formatruntime(b.myms) : "");
+        else if(!strcmp(field, "legacyname")) result(b.legacyms ? b.legacyname : "");
+        else if(!strcmp(field, "legacytime")) result(b.legacyms ? formatruntime(b.legacyms) : "");
+        else if(!strcmp(field, "legacysource")) result(b.legacyms ? b.legacysource : "");
         else result("");
     });
     ICOMMAND(hubboardrow, "is", (int *i, char *field),

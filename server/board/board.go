@@ -102,6 +102,9 @@ func Open(witnessDB, hubDB, siteDB string, ttl time.Duration) (*Store, error) {
 			return nil, err
 		}
 	}
+	if err := s.legacyTable(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 

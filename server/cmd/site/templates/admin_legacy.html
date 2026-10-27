@@ -1,0 +1,26 @@
+{{template "top" .}}
+<h1>Legacy records</h1>
+<p class="dim">One reference record per board from an older leaderboard. Shown above the board on the site and in game; not witnessed and not ranked. Adding one for a board that has one replaces it.</p>
+<form class="filters" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}">
+<div class="row"><input type="text" name="map" placeholder="map (campaign: its first map)" required>
+<select name="kind">{{range .Kinds}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+<select name="mode">{{range .Modes}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+<input type="text" name="player" placeholder="player" required>
+<input type="text" name="time" placeholder="0:05.912" size="9" required>
+<input type="text" name="source" list="sources" placeholder="source" required><datalist id="sources">{{range .Sources}}<option value="{{.}}">{{end}}</datalist>
+<input type="text" name="date" placeholder="date (optional)" size="11">
+<input type="text" name="link" placeholder="https://… (optional)">
+<button name="do" value="legacyset">add</button></div></form>
+<details><summary>import CSV…</summary>
+<form method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}">
+<p class="dim small">One per line: map,kind,mode,player,time,source[,date[,link]] — mode as a number or a name (effic ctf); lines starting with # are skipped. Nothing is imported if a line is wrong.</p>
+<textarea name="csv" rows="8" style="width:100%;font:inherit" placeholder="akimiski,flagrun,effic ctf,Dino,0:05.912,flagruns.com,2019-03-02,https://…"></textarea>
+<p><button name="do" value="legacyimport">import</button></p></form></details>
+<div class="card scroll"><table>
+<tr><th>map</th><th>player</th><th class="num">time</th><th>source</th><th>date</th><th></th></tr>
+{{range .Legacy}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a><div class="kind">{{.Key.KindLabel}}</div></td><td>{{.Player}}</td><td class="num time">{{runtime .MS}}</td>
+<td>{{.Source}}{{with .Link}} <a href="{{.}}" rel="nofollow noopener" target="_blank">↗</a>{{end}}</td><td class="dim">{{.Date}}</td>
+<td><form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="map" value="{{.Key.Map}}"><input type="hidden" name="kind" value="{{.Key.Kind}}"><input type="hidden" name="mode" value="{{.Key.Mode}}"><button name="do" value="legacydelete">delete</button></form></td></tr>
+{{else}}<tr><td colspan="6" class="dim">None yet.</td></tr>{{end}}
+</table></div>
+{{template "bottom" .}}

@@ -15,6 +15,7 @@ namespace game
 
     extern bool hubboardrow(int i, int &rank, int &ms, const char *&name);
     extern bool hubboardmine(int &rank, int &ms);
+    extern bool hubboardlegacy(int &ms, const char *&name, const char *&source);
 
     struct flagboard
     {
@@ -59,15 +60,15 @@ namespace game
             addline(b, "\f4from this flag  \f7%s", best >= 0 ? formatruntime(best) : "-");
             addline(b, "\f4map PB  \f7%s", summary.pb >= 0 ? formatruntime(summary.pb) : "-");
             addline(b, "\f4runs  \f7%d / %d", summary.finished, summary.attempts);
-            // the witnessed board, when the hub sent it: the record, the next two places, and the
-            // player's own place below them
+            // the board, when the hub sent it: the unwitnessed legacy record, the first three
+            // places in gold, silver and bronze, and the player's own place below them
             int rank, ms;
-            const char *name;
+            const char *name, *source;
+            if(hubboardlegacy(ms, name, source)) addline(b, "\f4legacy  %s  %s", formatruntime(ms), name);
             loopj(3)
             {
                 if(!hubboardrow(j, rank, ms, name)) break;
-                if(rank == 1) addline(b, "\f2world record  \f7%s  %s", formatruntime(ms), name);
-                else addline(b, "\f4%d.  \f7%s  %s", rank, formatruntime(ms), name);
+                addline(b, "%s#%d  \f7%s  %s", rank == 1 ? "\f2" : rank == 2 ? "\f9" : rank == 3 ? "\f6" : "\f4", rank, formatruntime(ms), name);
             }
             if(hubboardmine(rank, ms) && rank > 3) addline(b, "\f4you  #%d  \f7%s", rank, formatruntime(ms));
         }

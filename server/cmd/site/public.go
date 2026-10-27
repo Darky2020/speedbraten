@@ -413,13 +413,17 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 			b = &board.Board{Key: k}
 		}
 	}
+	legacy, _ := s.store.LegacyRecord(k)
+	if b == nil && legacy != nil {
+		b = &board.Board{Key: k}
+	}
 	if b == nil {
 		http.NotFound(w, r)
 		return
 	}
 	history, _ := s.store.History(k)
 	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
-		"History": history, "Graph": recordGraph(history)})
+		"History": history, "Graph": recordGraph(history), "Legacy": legacy})
 }
 
 type placeRow struct {
