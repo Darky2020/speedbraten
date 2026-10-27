@@ -15,6 +15,7 @@ namespace game
     static bool mapedited = false;
 
     void noteworldedit() { mapedited = true; }
+    bool worldedited() { return mapedited; }
 
     static uint snaptag(const char *s) { return uint(s[0]) | (uint(s[1])<<8) | (uint(s[2])<<16) | (uint(s[3])<<24); }
 

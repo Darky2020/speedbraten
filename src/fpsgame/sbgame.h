@@ -24,6 +24,7 @@ extern void snapcycletick();
 extern bool loadsavedstate();
 extern void drawinputtimers(int w, int h);
 extern void noteworldedit();
+extern bool worldedited();
 extern void savestatemapstart();
 extern uint snapshotdigest();
 extern void snapcyclereport();

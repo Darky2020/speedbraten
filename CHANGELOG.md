@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Spectating someone no longer warns that you modified the map.
+- Flagruns and races: leaving edit mode respawns you, so your next run isn't spoiled by the edit mode it would otherwise share a life with; after changing the map it tells you to load it again.
 
 ## v0.3.5alpha
 

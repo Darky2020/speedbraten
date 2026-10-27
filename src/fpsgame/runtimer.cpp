@@ -165,11 +165,23 @@ namespace game
         runstart = inputtick();
     }
 
+    extern bool inputreplayactive();
+
+    // A flagrun or race life that used edit mode can't be witnessed, so leaving edit mode starts a
+    // new life; an edited map can't be witnessed until it is loaded again.
     void runtimeredittoggled(bool on)
     {
-        if(!on || runkind != RUNTIMER_RACE || runstate != RUN_RUNNING) return;
-        runstate = RUN_IDLE;
-        conoutf(CON_GAMEINFO, "\f3race attempt voided: edit mode used");
+        if(on)
+        {
+            if(runkind != RUNTIMER_RACE || runstate != RUN_RUNNING) return;
+            runstate = RUN_IDLE;
+            conoutf(CON_GAMEINFO, "\f3race attempt voided: edit mode used");
+            return;
+        }
+        if(!runtimerperlife() || !connected || multiplayer(false) || inputreplayactive()) return;
+        if(worldedited()) { conoutf(CON_GAMEINFO, "\f3the map was edited: load it again to have runs witnessed"); return; }
+        conoutf(CON_GAMEINFO, "\f2respawned: a life that used edit mode can't be witnessed");
+        execute("respawnnow");
     }
 
     static void racetick()
