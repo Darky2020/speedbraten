@@ -643,14 +643,17 @@ namespace game
                     if(beat < 0) copystring(details, "first witnessed time");
                     else
                     {
-                        copystring(details, signedgap(ms - beat));
+                        formatstring(details, "%s%s\f4", ms < beat ? "\f0" : "\f3", signedgap(ms - beat));
                         if(record && prev[0]) { concatstring(details, ", prev "); concatstring(details, prev); }
                         else if(!record && rank) { defformatstring(place, ", #%d", rank); concatstring(details, place); }
                     }
                     conoutf(CON_GAMEINFO, "%s  \f7%s  \f0%s  \f2%s  \f4(%s)", record ? "\f3NEW RECORD!!" : "\f2PB", board, name, time, details);
                     if(legacyms)
                     {
-                        conoutf(CON_GAMEINFO, "\f6LEGACY RECORD BEATEN!!  \f7%s  \f0%s  \f2%s  \f4(%s %s, %s)", board, name, time, legacyname, formatruntime(legacyms), legacysource);
+                        string legacytime;
+                        copystring(legacytime, formatruntime(legacyms));
+                        conoutf(CON_GAMEINFO, "\f6LEGACY RECORD BEATEN!!  \f7%s  \f0%s  \f2%s  \f4(%s %s, %s, %s%s\f4)", board, name, time, legacyname, legacytime, legacysource,
+                                ms < legacyms ? "\f0" : "\f3", signedgap(ms - legacyms));
                         playsound(S_ITEMSPAWN);
                     }
                     else if(record) playsound(S_FLAGSCORE);

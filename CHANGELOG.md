@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Global messages: the time gained is green (red when slower), and the legacy record message shows how far under the legacy time the run was.
+
 ## v0.3.6alpha
 
 - Spectating someone no longer warns that you modified the map.
