@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New installs connect to the speedbraten hub (and through it the witness) out of the box, and walking back onto the flag restarts the flagrun timer by default.
 - Global messages: the time gained is green (red when slower), and the legacy record message shows how far under the legacy time the run was.
 
 ## v0.3.6alpha

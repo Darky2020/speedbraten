@@ -10,7 +10,7 @@
 
 namespace game
 {
-    SVARP(hubhost, "");
+    SVARP(hubhost, "141.95.67.191");
     VARP(hubport, 1, HUBPORT, 65535);
     SVARP(hubkey, ""); // the hub's channel public key, 64 hex digits
     SVARP(hubkeyfor, ""); // the "host:port" hubkey was learned from

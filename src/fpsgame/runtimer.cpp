@@ -217,7 +217,7 @@ namespace game
 
     // flagruns: walking back into the flag's pickup sphere puts the run back to holding, so the
     // timer starts again when the player leaves it (a replay-forced sim setting)
-    MOD(VARP, flagrunrestart, 0, 0, 1);
+    MOD(VARP, flagrunrestart, 0, 1, 1);
 
     static void updaterun()
     {
