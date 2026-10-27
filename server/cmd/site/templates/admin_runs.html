@@ -1,10 +1,17 @@
 {{template "top" .}}
 <h1>Runs</h1>
 <form class="filters" method="get" action="/admin/runs">
-<input type="search" name="player" value="{{.F.Player}}" placeholder="player name or install key">
+<div class="row"><input type="search" name="player" value="{{.F.Player}}" placeholder="player name or install key">
 <input type="search" name="map" value="{{.F.Map}}" placeholder="map">
-<select name="verdict">{{range .Verdicts}}<option value="{{.Value}}"{{if eq .Value $.F.Verdict}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-<button>filter</button>{{if or .F.Player .F.Map .F.Verdict}} <a class="small" href="/admin/runs">clear</a>{{end}}</form>
+<select name="verdict">{{range .Verdicts}}<option value="{{.Value}}"{{if eq .Value $.F.Verdict}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<div class="row"><select name="kind">{{range .Kinds}}<option value="{{.Value}}"{{if eq .Value $.F.Kind}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<select name="mode">{{range .Modes}}<option value="{{.Value}}"{{if eq .Value $.F.Mode}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label>from <input type="date" name="from" value="{{.F.From}}"></label> <label>to <input type="date" name="to" value="{{.F.To}}"></label></div>
+<div class="row"><select name="problems">{{range .Problems}}<option value="{{.Value}}"{{if eq .Value $.F.Problems}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label><input type="number" name="lag" min="0" step="50" value="{{.F.Lag}}" placeholder="500"> ms</label>
+<select name="show">{{range .Shows}}<option value="{{.Value}}"{{if eq .Value $.F.Show}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<div class="row"><label>sort <select name="sort">{{range .Sorts}}<option value="{{.Value}}"{{if eq .Value $.F.Sort}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<button>filter</button>{{if .Filtered}} <a class="small" href="/admin/runs">clear</a>{{end}}</div></form>
 <div class="card scroll"><table>
 <tr><th class="num">run</th><th>started</th><th>player</th><th>map</th><th class="num">length</th><th>verdict</th><th class="num">lag</th><th></th></tr>
 {{range .Runs}}<tr{{if .Deleted}} class="faint"{{end}}><td class="num">{{.ID}}</td><td class="dim small">{{.Started}}</td>
@@ -18,5 +25,5 @@
 {{if eq .Verdict "valid"}}{{if .Deleted}}<form class="inline" method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><button name="do" value="restore">undelete</button></form>{{else}}<details class="inline"><summary>delete…</summary><form method="post" action="/admin/act"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="run" value="{{.ID}}"><input type="text" name="note" placeholder="why"> <button name="do" value="remove">delete</button></form></details>{{end}}{{end}}</td></tr>
 {{else}}<tr><td colspan="8" class="dim">No runs match.</td></tr>{{end}}
 </table></div>
-{{if .More}}<p><a href="{{.More}}">older runs →</a></p>{{end}}
+{{if or .Prev .Next}}<p class="pager">{{if .Prev}}<a href="{{.Prev}}">← prev</a>{{end}} <span class="dim">page {{.PageNo}}</span> {{if .Next}}<a href="{{.Next}}">next →</a>{{end}}</p>{{end}}
 {{template "bottom" .}}

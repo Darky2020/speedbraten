@@ -113,6 +113,50 @@ func TestAdminRuns(t *testing.T) {
 	if n := len(regexp.MustCompile(`<td class="num">\d+</td>`).FindAllString(w.Body.String(), -1)); n != 1 {
 		t.Fatalf("player filter by name: %d rows", n)
 	}
+	rows := func(target string) []string {
+		t.Helper()
+		w := f.do("GET", target, password, nil, "10.0.0.1")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d", target, w.Code)
+		}
+		var ids []string
+		for _, m := range regexp.MustCompile(`<td class="num">(\d+)</td>`).FindAllStringSubmatch(w.Body.String(), -1) {
+			ids = append(ids, m[1])
+		}
+		return ids
+	}
+	for target, want := range map[string]string{
+		"/admin/runs?kind=campaign":                    "4",
+		"/admin/runs?mode=17&sort=fast":                "3 1 2 5",
+		"/admin/runs?sort=slow&verdict=valid":          "4 2 1",
+		"/admin/runs?sort=old":                         "1 2 3 4 5",
+		"/admin/runs?from=2026-10-25&to=2026-10-25":    "5",
+		"/admin/runs?problems=violations":              "",
+		"/admin/runs?sort=bogus&kind=bogus&mode=bogus": "5 4 3 2 1",
+	} {
+		if got := strings.Join(rows(target), " "); got != want {
+			t.Errorf("%s: runs %q, want %q", target, got, want)
+		}
+	}
+	f.act(url.Values{"do": {"remove"}, "run": {"1"}, "note": {"copied"}})
+	f.act(url.Values{"do": {"ban"}, "install": {"kc"}, "note": {"cheating"}})
+	for target, want := range map[string]string{
+		"/admin/runs?show=deleted": "1",
+		"/admin/runs?show=banned":  "5",
+		"/admin/runs?show=hide":    "4 3 2",
+	} {
+		if got := strings.Join(rows(target), " "); got != want {
+			t.Errorf("%s: runs %q, want %q", target, got, want)
+		}
+	}
+	runsPerPage = 2
+	defer func() { runsPerPage = 100 }()
+	if got := strings.Join(rows("/admin/runs?sort=old&page=1"), " "); got != "3 4" {
+		t.Errorf("page 2: runs %q", got)
+	}
+	if w := f.do("GET", "/admin/runs?sort=old&page=1", password, nil, "10.0.0.1"); !strings.Contains(w.Body.String(), `href="/admin/runs?page=2&amp;sort=old"`) || !strings.Contains(w.Body.String(), `href="/admin/runs?sort=old"`) {
+		t.Errorf("page 2: no next or prev link")
+	}
 	// any run's file, rejected ones included
 	if w = f.do("GET", "/admin/file?run=3", password, nil, "10.0.0.1"); w.Code != 200 || w.Body.String() != "SBR2 c.sbr" {
 		t.Fatalf("file: %d", w.Code)

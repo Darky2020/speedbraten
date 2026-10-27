@@ -24,8 +24,9 @@ import (
 const (
 	maxFailures = 5
 	lockout     = 15 * time.Minute
-	runsPerPage = 100
 )
+
+var runsPerPage = 100
 
 var (
 	runsAdmin       = page("admin_runs.html")
@@ -141,13 +142,67 @@ type runRow struct {
 	Finished, Deleted, Banned                                                         bool
 }
 
-type runFilter struct{ Player, Map, Verdict string }
+type runFilter struct {
+	Player, Map, Verdict, Kind, Mode, From, To, Problems, Lag, Show, Sort string
+	Page                                                                  int
+}
 
-var runVerdicts = []option{{"", "any verdict"}, {"valid", "valid"}, {"rejected", "rejected"}, {"unverified", "unverified"}, {"none", "no verdict"}, {"unfinished", "unfinished"}}
+var (
+	runVerdicts = []option{{"", "any verdict"}, {"valid", "valid"}, {"rejected", "rejected"}, {"unverified", "unverified"}, {"none", "no verdict"}, {"unfinished", "unfinished"}}
+	runKinds    = []option{{"", "any kind"}, {"flagrun", "flagrun"}, {"race", "race"}, {"campaign", "campaign"}, {"dmsp", "dmsp"}}
+	runModes    = []option{{"", "any mode"}, {"11", "ctf"}, {"12", "insta ctf"}, {"17", "effic ctf"}, {"0", "ffa"}, {"1", "coop edit"}, {"-3", "SP"}, {"-2", "DMSP"}}
+	runProblems = []option{{"", "any problems"}, {"violations", "with violations"}, {"lag", "lag over"}}
+	runShows    = []option{{"", "deleted + banned: show"}, {"hide", "deleted + banned: hide"}, {"deleted", "only deleted"}, {"banned", "only banned"}}
+	runSorts    = []option{{"", "newest"}, {"old", "oldest"}, {"fast", "fastest"}, {"slow", "slowest"}, {"lag", "most lag"}, {"viol", "most violations"}}
+	runOrders   = map[string]string{
+		"":     "id DESC",
+		"old":  "id",
+		"fast": "IFNULL(finished, 0) = 0, runtimems IS NULL, runtimems, id DESC",
+		"slow": "IFNULL(finished, 0) = 0, runtimems IS NULL, runtimems DESC, id DESC",
+		"lag":  "IFNULL(maxlagms, 0) DESC, id DESC",
+		"viol": "IFNULL(violations, 0) DESC, id DESC",
+	}
+)
+
+func pick(opts []option, v string) string {
+	if hasOption(opts, v) {
+		return v
+	}
+	return ""
+}
+
+// inList is "column IN (?,?..)" over the values, or a false condition for none.
+func inList(column string, values []string, args *[]any) string {
+	if len(values) == 0 {
+		return "0"
+	}
+	for _, v := range values {
+		*args = append(*args, v)
+	}
+	return column + " IN (" + strings.TrimSuffix(strings.Repeat("?,", len(values)), ",") + ")"
+}
+
+func (f runFilter) query(page int) string {
+	v := url.Values{}
+	for k, s := range map[string]string{"player": f.Player, "map": f.Map, "verdict": f.Verdict, "kind": f.Kind, "mode": f.Mode, "from": f.From, "to": f.To,
+		"problems": f.Problems, "lag": f.Lag, "show": f.Show, "sort": f.Sort} {
+		if s != "" {
+			v.Set(k, s)
+		}
+	}
+	if page > 0 {
+		v.Set("page", strconv.Itoa(page))
+	}
+	return "/admin/runs?" + v.Encode()
+}
 
 func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := runFilter{Player: strings.TrimSpace(q.Get("player")), Map: strings.TrimSpace(q.Get("map")), Verdict: q.Get("verdict")}
+	f := runFilter{Player: strings.TrimSpace(q.Get("player")), Map: strings.TrimSpace(q.Get("map")), Verdict: pick(runVerdicts, q.Get("verdict")),
+		Kind: pick(runKinds, q.Get("kind")), Mode: pick(runModes, q.Get("mode")), From: q.Get("from"), To: q.Get("to"),
+		Problems: pick(runProblems, q.Get("problems")), Lag: strings.TrimSpace(q.Get("lag")), Show: pick(runShows, q.Get("show")), Sort: pick(runSorts, q.Get("sort"))}
+	f.Page, _ = strconv.Atoi(q.Get("page"))
+	f.Page = max(f.Page, 0)
 	where, args := []string{"1"}, []any{}
 	if f.Player != "" {
 		// the player's own keys, or every install whose name contains the text
@@ -155,10 +210,7 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		for _, k := range append([]string{f.Player}, a.store.Installs(f.Player)...) {
 			keys = append(keys, a.store.Keys(a.store.Canonical(k))...)
 		}
-		where = append(where, "installkey IN ("+strings.TrimSuffix(strings.Repeat("?,", len(keys)), ",")+")")
-		for _, k := range keys {
-			args = append(args, k)
-		}
+		where = append(where, inList("installkey", keys, &args))
 	}
 	if f.Map != "" {
 		where = append(where, "map = ?")
@@ -173,17 +225,71 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 	case "unfinished":
 		where = append(where, "IFNULL(finished, 0) = 0")
 	}
-	if before, err := strconv.ParseInt(q.Get("before"), 10, 64); err == nil {
-		where = append(where, "id < ?")
-		args = append(args, before)
+	if f.Kind != "" {
+		where = append(where, "runkind = ?")
+		args = append(args, f.Kind)
+	}
+	if f.Mode != "" {
+		mode, _ := strconv.Atoi(f.Mode)
+		where = append(where, "mode = ?")
+		args = append(args, mode)
+	}
+	// dates are UTC days, like the started column shown
+	if t, err := time.Parse("2006-01-02", f.From); err == nil {
+		where = append(where, "IFNULL(started, 0) >= ?")
+		args = append(args, t.UnixMilli())
+	} else {
+		f.From = ""
+	}
+	if t, err := time.Parse("2006-01-02", f.To); err == nil {
+		where = append(where, "IFNULL(started, 0) < ?")
+		args = append(args, t.AddDate(0, 0, 1).UnixMilli())
+	} else {
+		f.To = ""
+	}
+	switch f.Problems {
+	case "violations":
+		where = append(where, "IFNULL(violations, 0) > 0")
+	case "lag":
+		lag, err := strconv.Atoi(f.Lag)
+		if err != nil || lag < 0 {
+			lag, f.Lag = 500, "500"
+		}
+		where = append(where, "IFNULL(maxlagms, 0) > ?")
+		args = append(args, lag)
+	}
+	if f.Show != "" {
+		var removed, banned []string
+		if notes, err := a.store.RemovedRuns(); err == nil {
+			for _, n := range notes {
+				removed = append(removed, n.ID)
+			}
+		}
+		if notes, err := a.store.BannedInstalls(); err == nil {
+			for _, n := range notes {
+				banned = append(banned, a.store.Keys(a.store.Canonical(n.ID))...)
+			}
+		}
+		switch f.Show {
+		case "deleted":
+			where = append(where, inList("id", removed, &args))
+		case "banned":
+			where = append(where, inList("installkey", banned, &args))
+		case "hide":
+			where = append(where, "NOT "+inList("id", removed, &args), "NOT "+inList("installkey", banned, &args))
+		}
 	}
 	rows, err := a.store.Witness().Query(`SELECT id, IFNULL(started, 0), IFNULL(installkey, ''), IFNULL(map, ''), IFNULL(runkind, ''), IFNULL(mode, 0),
 		IFNULL(runtimems, 0), IFNULL(verdict, ''), IFNULL(reason, ''), IFNULL(stop, IFNULL(refused, '')), IFNULL(violations, 0), IFNULL(maxlagms, 0),
 		IFNULL(finished, 0), IFNULL(ended, 0)
-		FROM runs WHERE `+strings.Join(where, " AND ")+` ORDER BY id DESC LIMIT `+strconv.Itoa(runsPerPage), args...)
+		FROM runs WHERE `+strings.Join(where, " AND ")+` ORDER BY `+runOrders[f.Sort]+` LIMIT `+strconv.Itoa(runsPerPage+1)+` OFFSET `+strconv.Itoa(f.Page*runsPerPage), args...)
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	more := len(rows) > runsPerPage
+	if more {
+		rows = rows[:runsPerPage]
 	}
 	banned := map[string]bool{}
 	if notes, err := a.store.BannedInstalls(); err == nil {
@@ -217,13 +323,17 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		}
 		list = append(list, rr)
 	}
-	more := ""
-	if len(list) == runsPerPage {
-		v := url.Values{"player": {f.Player}, "map": {f.Map}, "verdict": {f.Verdict}, "before": {list[len(list)-1].ID}}
-		more = "/admin/runs?" + v.Encode()
+	prev, next := "", ""
+	if f.Page > 0 {
+		prev = f.query(f.Page - 1)
 	}
-	render(w, runsAdmin, "admin_runs.html", map[string]any{"Title": "Runs", "Tab": "runs", "Admin": true, "Token": a.token, "F": f, "Runs": list, "More": more,
-		"Verdicts": runVerdicts})
+	if more {
+		next = f.query(f.Page + 1)
+	}
+	filtered := f != runFilter{Page: f.Page}
+	render(w, runsAdmin, "admin_runs.html", map[string]any{"Title": "Runs", "Tab": "runs", "Admin": true, "Token": a.token, "F": f, "Runs": list,
+		"Prev": prev, "Next": next, "PageNo": f.Page + 1, "Filtered": filtered,
+		"Verdicts": runVerdicts, "Kinds": runKinds, "Modes": runModes, "Problems": runProblems, "Shows": runShows, "Sorts": runSorts})
 }
 
 func (a *admin) players(w http.ResponseWriter, r *http.Request) {

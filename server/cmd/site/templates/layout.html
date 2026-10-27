@@ -82,6 +82,11 @@ button:hover { border-color: var(--accent); }
 .slower { color: var(--ectf); } .faster { color: var(--ictf); }
 .filters input[type=search] { font: inherit; padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); min-width: 220px; }
 .filters .grow { flex: 1; }
+.filters:has(.row) { flex-direction: column; }
+.filters .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.filters input[type=date], .filters input[type=number] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg); }
+.filters input[type=number] { width: 80px; }
+@media (max-width: 600px) { .filters input[type=search] { min-width: 0; width: 100%; } }
 @media (max-width: 860px) { .cols, .cols2, .cols3 { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .wide { display: none; } td, th { padding: 8px 10px; } .thumb { width: 48px; height: 27px; } .banner { height: 170px; } .banner h1 { font-size: 24px; } }
 </style></head><body>
