@@ -11,7 +11,7 @@
 - /board: watch or race as a ghost the top runs' replays, downloaded from the hub into replays/downloaded.
 - Legacy records: a board can show an older leaderboard's record (not witnessed) on the website, on /board and on the flag boards.
 - Flag boards: places shown as #1/#2/#3 in gold, silver and bronze.
-- Legacy records show how far the witnessed record is from them (+ slower, − faster) on the website, /board and the flag boards.
+- Legacy records show their difference to the witnessed record (− faster, + slower) on the website, /board and the flag boards.
 - Website: campaigns and races with only a legacy record are listed too.
 
 ## v0.3.5alpha

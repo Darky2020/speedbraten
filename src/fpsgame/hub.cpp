@@ -392,11 +392,11 @@ namespace game
     }
 
     // the player's own place on that board: false when not on it or while it isn't known
-    // the witnessed record against the legacy one: "+0.518" (slower), "-0.120", or "" without both
+    // the legacy record against the witnessed #1: "-0.518" (faster), "+0.120", or "" without both
     static const char *legacydiff(const hubboard &b)
     {
         if(!b.legacyms || b.rows.empty() || b.rows[0].rank != 1) return "";
-        int d = b.rows[0].ms - b.legacyms, a = abs(d);
+        int d = b.legacyms - b.rows[0].ms, a = abs(d);
         static string s;
         if(a < 60000) formatstring(s, "%c%d.%03d", d < 0 ? '-' : '+', a/1000, a%1000);
         else formatstring(s, "%c%d:%02d.%03d", d < 0 ? '-' : '+', a/60000, (a/1000)%60, a%1000);

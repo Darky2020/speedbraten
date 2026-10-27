@@ -445,7 +445,7 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 	legacy, _ := s.store.LegacyRecord(k)
 	legacyDiff, legacyFaster := "", false
 	if legacy != nil && b != nil && len(b.Entries) > 0 {
-		d := b.Entries[0].MS - legacy.MS
+		d := legacy.MS - b.Entries[0].MS
 		legacyFaster = d < 0
 		legacyDiff = signedGap(d)
 	}
