@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- wc-ng build: runs are witnessed again (the build announced itself to the local game server, which made the witness reject every flagrun life).
+
 ## v0.3.4alpha
 
 - Windows: the vanilla and wc-ng builds load their speedrun menus (their file patches were never read on Windows).
