@@ -41,7 +41,9 @@ namespace game
         bool have;
         hubboard() : mode(0), myrank(0), myms(0), have(false) { map[0] = kind[0] = '\0'; }
     };
-    // the board of the run being played (HUD, flag boards) and the one menus show (board page, boards tab)
+    // the maps flagrun boards are kept for, as the hub last sent them
+    static vector<char *> flagrunmaps;
+    // the board of the run being played (HUD, flag boards) and the one menus show (board page)
     static hubboard curboard, viewboard;
     static string viewmap = "", viewkind = "";
     static int viewmode = 0;
@@ -583,6 +585,21 @@ namespace game
                     if(!strcmp(b.map, viewmap) && b.mode == viewmode && !strcmp(b.kind, viewkind)) viewboard = b;
                     break;
                 }
+                case HM_FLAGRUNMAPS:
+                {
+                    vector<char *> maps;
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 1000; i++)
+                    {
+                        string m;
+                        gettext(r, m, sizeof(m));
+                        maps.add(newstring(m));
+                    }
+                    if(!r.ok) { maps.deletearrays(); break; }
+                    flagrunmaps.deletearrays();
+                    loopv(maps) flagrunmaps.add(maps[i]);
+                    break;
+                }
                 case HM_NOTICE:
                 {
                     char text[1024] = "";
@@ -1019,16 +1036,35 @@ namespace game
         w.str(viewkind);
         hubsend(HM_BOARD, p.getbuf(), p.length());
     });
-    // board [map]: the board page (speedbraten.cfg) of a map, in the category of the run being played,
-    // else ctf flagrun
+    // the kinds of board a map has: "campaign", "flagrun" or "race", or "flagrun race" before the
+    // hub has sent its flagrun maps
+    static const char *boardkinds(const char *map)
+    {
+        if(campaignfirst(map)) return "campaign";
+        if(flagrunmaps.empty()) return "flagrun race";
+        loopv(flagrunmaps) if(!strcmp(flagrunmaps[i], map)) return "flagrun";
+        return "race";
+    }
+    ICOMMAND(boardkinds, "s", (char *map), result(boardkinds(map)));
+
+    // board [map]: the board page (speedbraten.cfg) of a map, in the category of the run being played
+    // when the map has it, else ctf flagrun or race; a campaign map shows its campaign's board
     ICOMMAND(board, "s", (char *map),
     {
         string name;
         copystring(name, map[0] ? map : runmap());
         if(!name[0]) { conoutf(CON_ERROR, "board: name a map"); return; }
+        if(const char *first = campaignfirst(name))
+        {
+            defformatstring(cmd, "sb_boardopen %s campaign -3", escapestring(first)); // -3: SP
+            execute(cmd);
+            return;
+        }
+        const char *kinds = boardkinds(name);
         const char *kind = runkind();
-        bool timed = !strcmp(kind, "flagrun") || !strcmp(kind, "race");
-        defformatstring(cmd, "sb_boardopen %s %s %d", escapestring(name), timed ? kind : "flagrun", timed ? runmode() : 11); // 11: ctf
+        bool current = (!strcmp(kind, "flagrun") || !strcmp(kind, "race")) && strstr(kinds, kind);
+        if(!current) kind = strstr(kinds, "flagrun") ? "flagrun" : "race";
+        defformatstring(cmd, "sb_boardopen %s %s %d", escapestring(name), kind, current ? runmode() : !strcmp(kind, "flagrun") ? 11 : 0); // 11: ctf
         execute(cmd);
     });
     // boardstart map mode kind: loads the map with flagrun or race rules for this game only

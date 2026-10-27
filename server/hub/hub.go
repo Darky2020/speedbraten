@@ -334,6 +334,15 @@ func (h *Hub) welcome(p *player, refusal string) {
 	h.send(p, MsgWelcome, w.b)
 }
 
+func flagrunMapsMsg() []byte {
+	var w writer
+	w.u(uint64(len(board.FlagrunMaps)))
+	for _, m := range board.FlagrunMaps {
+		w.str(m)
+	}
+	return w.b
+}
+
 func (h *Hub) join(p *player, want string) {
 	if old := h.byKey[p.key]; old != nil {
 		h.kick(old, "you connected from somewhere else")
@@ -345,6 +354,7 @@ func (h *Hub) join(p *player, want string) {
 	h.byKey[p.key] = p
 	refusal := h.rename(p, want)
 	h.welcome(p, refusal)
+	h.send(p, MsgFlagrunMaps, flagrunMapsMsg())
 	if h.witness != nil {
 		h.send(p, MsgWitness, h.witness)
 	}

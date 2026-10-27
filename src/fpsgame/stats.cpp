@@ -669,34 +669,70 @@ namespace game
     struct attemptstats
     {
         int64_t date;
-        int finished, runtime, ticks, splices, idle;
+        int finished, runtime, ticks, splices, idle, waspb, ispb;
         string replay;
     };
     static vector<attemptstats> attemptlist;
 
-    // statsattempts map kind mode: caches the newest 100 runs of a map
-    ICOMMAND(statsattempts, "ssi", (char *map, char *kind, int *mode),
+    // statsattempts map kind mode [finished side fastest pbs]: caches the newest 100 runs of a
+    // map, or the fastest ones; finished keeps finished runs only, side those taken from that
+    // flag (runtimerflagside), pbs those that were a PB when they were run
+    ICOMMAND(statsattempts, "ssiiiii", (char *map, char *kind, int *mode, int *finished, int *side, int *fastest, int *pbs),
     {
         attemptlist.setsize(0);
-        sqlite3_stmt *st = prepare("SELECT date, finished, runtime, ticks, splices, idle, replay FROM attempts "
-                                   "WHERE map = ? AND kind = ? AND mode = ? ORDER BY date DESC, id DESC LIMIT 100");
+        // a run was a PB if no earlier run of the same kind (segmented or not, from the same flag
+        // when one is picked) was as fast
+        char sql[1024];
+        nformatstring(sql, sizeof(sql),
+            "SELECT a.id, a.date, a.finished, a.runtime, a.ticks, a.splices, a.idle, a.replay, "
+            "  a.finished AND NOT a.assisted AND NOT EXISTS (SELECT 1 FROM attempts b WHERE b.map = a.map AND b.kind = a.kind AND b.mode = a.mode "
+            "    AND b.finished AND NOT b.assisted AND (b.splices > 0) = (a.splices > 0) AND (?4 = 0 OR b.side = ?4) "
+            "    AND (b.date < a.date OR (b.date = a.date AND b.id < a.id)) AND b.runtime <= a.runtime) AS waspb "
+            "FROM attempts a WHERE a.map = ?1 AND a.kind = ?2 AND a.mode = ?3 AND (?4 = 0 OR a.side = ?4) AND (?5 = 0 OR a.finished) "
+            "%s ORDER BY %s LIMIT 100",
+            *pbs ? "AND waspb" : "", *fastest ? "a.finished DESC, a.runtime, a.id" : "a.date DESC, a.id DESC");
+        sqlite3_stmt *st = prepare(sql);
         if(!st) { intret(0); return; }
         bindtext(st, 1, map);
         bindtext(st, 2, kind);
         sqlite3_bind_int(st, 3, *mode);
+        sqlite3_bind_int(st, 4, *side);
+        sqlite3_bind_int(st, 5, *finished || *pbs ? 1 : 0);
+        int pbid[2];
+        pbid[0] = pbid[1] = -1;
+        vector<int> ids;
         while(sqlite3_step(st) == SQLITE_ROW)
         {
             attemptstats &a = attemptlist.add();
-            a.date = sqlite3_column_int64(st, 0);
-            a.finished = sqlite3_column_int(st, 1);
-            a.runtime = sqlite3_column_int(st, 2);
-            a.ticks = sqlite3_column_int(st, 3);
-            a.splices = sqlite3_column_int(st, 4);
-            a.idle = sqlite3_column_int(st, 5);
-            const char *replay = (const char *)sqlite3_column_text(st, 6);
+            ids.add(sqlite3_column_int(st, 0));
+            a.date = sqlite3_column_int64(st, 1);
+            a.finished = sqlite3_column_int(st, 2);
+            a.runtime = sqlite3_column_int(st, 3);
+            a.ticks = sqlite3_column_int(st, 4);
+            a.splices = sqlite3_column_int(st, 5);
+            a.idle = sqlite3_column_int(st, 6);
+            const char *replay = (const char *)sqlite3_column_text(st, 7);
             copystring(a.replay, replay ? replay : "");
+            a.waspb = sqlite3_column_int(st, 8);
+            a.ispb = 0;
         }
         sqlite3_finalize(st);
+        st = prepare("SELECT id, splices > 0 FROM attempts WHERE map = ?1 AND kind = ?2 AND mode = ?3 AND (?4 = 0 OR side = ?4) "
+                     "AND finished AND NOT assisted ORDER BY runtime, id");
+        if(st)
+        {
+            bindtext(st, 1, map);
+            bindtext(st, 2, kind);
+            sqlite3_bind_int(st, 3, *mode);
+            sqlite3_bind_int(st, 4, *side);
+            while(sqlite3_step(st) == SQLITE_ROW)
+            {
+                int seg = sqlite3_column_int(st, 1);
+                if(pbid[seg] < 0) pbid[seg] = sqlite3_column_int(st, 0);
+            }
+            sqlite3_finalize(st);
+        }
+        loopv(attemptlist) if(ids[i] == pbid[attemptlist[i].splices > 0 ? 1 : 0]) attemptlist[i].ispb = 1;
         intret(attemptlist.length());
     });
 
@@ -719,6 +755,8 @@ namespace game
         else if(!strcmp(field, "splices")) intret(a.splices);
         else if(!strcmp(field, "idle")) result(formatduration(int64_t(a.idle)*SIMTICK));
         else if(!strcmp(field, "replay")) result(a.replay);
+        else if(!strcmp(field, "pb")) intret(a.ispb);
+        else if(!strcmp(field, "waspb")) intret(a.waspb);
         else result("");
     });
 

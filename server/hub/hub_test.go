@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -281,6 +282,20 @@ func TestNamesAndPresence(t *testing.T) {
 	m = b.expect(MsgGone)
 	if id := m.r.u(); id != a.id {
 		t.Fatalf("gone %d, want %d", id, a.id)
+	}
+}
+
+func TestFlagrunMapsOnJoin(t *testing.T) {
+	f := newFixture(t)
+	c := f.connect(newKey(), "1.1.1.1", "alice")
+	m := c.expect(MsgFlagrunMaps)
+	n := int(m.r.u())
+	var got []string
+	for i := 0; i < n; i++ {
+		got = append(got, m.r.str(64))
+	}
+	if m.r.err != nil || !slices.Equal(got, board.FlagrunMaps) {
+		t.Fatalf("got %d maps %v, err %v", len(got), got, m.r.err)
 	}
 }
 

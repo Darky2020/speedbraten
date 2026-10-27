@@ -65,6 +65,13 @@ namespace game
         return -1;
     }
 
+    // the first map of the map's campaign, NULL if it is in none
+    const char *campaignfirst(const char *map)
+    {
+        loopi(sizeof(campaigns)/sizeof(campaigns[0])) for(int j = 0; campaigns[i].maps[j]; j++) if(!strcmp(campaigns[i].maps[j], map)) return campaigns[i].maps[0];
+        return NULL;
+    }
+
     // a run's name for people: the campaign's when the run starts on a campaign's first map
     const char *runlabel(const char *map)
     {

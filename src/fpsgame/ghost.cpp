@@ -389,15 +389,14 @@ namespace game
         return true;
     }
 
-    // ghostsource pb|segpb: races the PB or the segmented PB on the current map and mode
-    static void ghostsource(const char *source)
+    // ghostsource pb|segpb [map kind mode]: races the PB or the segmented PB on the current map
+    // and mode, or on the one given
+    static void ghostsource(const char *source, const char *map, const char *kind, int mode)
     {
-        const char *map, *kind;
-        int mode;
-        if(!currentcategory(map, kind, mode)) { conoutf(CON_ERROR, "ghostsource: start a run on the map first"); return; }
+        if(!map[0] && !currentcategory(map, kind, mode)) { conoutf(CON_ERROR, "ghostsource: start a run on the map first"); return; }
         statssetghost(map, kind, mode, !strcmp(source, "segpb") ? "segpb" : "pb", NULL, NULL);
     }
-    ICOMMAND(ghostsource, "s", (char *source), ghostsource(source));
+    ICOMMAND(ghostsource, "sssi", (char *source, char *map, char *kind, int *mode), ghostsource(source, map, kind, *mode));
 
     // ghostlabel text: renames the ghost of the current map and mode ("" for the default)
     static void setghostlabel(const char *label)

@@ -58,6 +58,7 @@
 //                for the scoreboard, to everyone in the lobby
 //   BOARDROWS    str map, svar mode, str kind, var count, count x (var rank, str name, var ms), var your
 //                rank (0: not on it), var your ms - the top of a leaderboard (witnessed runs)
+//   FLAGRUNMAPS  var count, count x str map - the maps flagrun boards are kept for
 
 #ifndef __HUBPROTO_H__
 #define __HUBPROTO_H__
@@ -66,7 +67,7 @@ enum
 {
     HUBPROTO = 1,
     HM_HELLO = 1, HM_SETNAME, HM_STATUS, HM_LOBBYCREATE, HM_LOBBYJOIN, HM_LOBBYLEAVE, HM_LOBBYMAP, HM_CHAT, HM_REPORT, HM_FINISH, HM_POS, HM_SPECTATE, HM_VIEW, HM_VIEWDATA, HM_RUNTIME, HM_BOARD,
-    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT, HM_BOARDROWS
+    HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT, HM_BOARDROWS, HM_FLAGRUNMAPS
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
 enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };

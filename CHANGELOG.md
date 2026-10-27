@@ -4,6 +4,10 @@
 
 - Spectating someone no longer warns that you modified the map.
 - Flagruns and races: leaving edit mode respawns you, so your next run isn't spoiled by the edit mode it would otherwise share a life with; after changing the map it tells you to load it again.
+- Your runs list (board → all runs): filters for finished runs, flag and PB history, sorting by time, and your PB marked; its ghost button races your PB as "PB".
+- /board: places shown as #1/#2/#3 in gold, silver and bronze, your name in green, and your place next to your PB.
+- /board shows only the categories a map has: flagrun maps their ctf modes, other maps race, campaign maps their campaign.
+- The speedrun menu's boards tab is gone; the stats tab opens this map's /board.
 
 ## v0.3.5alpha
 
