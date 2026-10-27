@@ -1360,6 +1360,17 @@
  }
  
  #else
+--- a/engine/serverbrowser.cpp
++++ b/engine/serverbrowser.cpp
+@@ -224,7 +224,7 @@
+ 
+     void clearattempts() { memset(attempts, 0, sizeof(attempts)); }
+ 
+-    void setoffset() { offset = 1 + rnd(0xFFFFFF); } 
++    void setoffset() { offset = 1 + crnd(0xFFFFFF); } 
+ 
+     int encodeping(int millis)
+     {
 --- a/engine/sound.cpp
 +++ b/engine/sound.cpp
 @@ -1,7 +1,11 @@

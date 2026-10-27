@@ -1299,6 +1299,17 @@
  }
  
  #else
+--- a/engine/serverbrowser.cpp
++++ b/engine/serverbrowser.cpp
+@@ -232,7 +232,7 @@
+ 
+     void clearattempts() { memset(attempts, 0, sizeof(attempts)); }
+ 
+-    void setoffset() { offset = 1 + rnd(0xFFFFFF); } 
++    void setoffset() { offset = 1 + crnd(0xFFFFFF); } 
+ 
+     int encodeping(int millis)
+     {
 --- a/engine/sound.cpp
 +++ b/engine/sound.cpp
 @@ -1,7 +1,11 @@
@@ -3179,6 +3190,34 @@
  
                  break;
              }
+--- a/mod/extinfo.cpp
++++ b/mod/extinfo.cpp
+@@ -72,14 +72,19 @@
+         {
+             int val;
+             int validuntil;
++            // a generator of its own: seedMT and randomMT drive the game simulation, which has
++            // to come out the same when a replay of it is played
+             void newval()
+             {
+-                volatile int *junk = new volatile int[5];
+-                int seedval = totalmillis;
+-                loopi(5) seedval ^= junk[i];
+-                delete[] junk;
+-                seedMT(seedval);
+-                do { val = randomMT(); } while (!val);
++                static uint state = 0;
++                if(!state) state = (uint(time(NULL)) ^ uint(totalmillis) ^ 0x9E3779B9U) | 1;
++                do
++                {
++                    state ^= state << 13;
++                    state ^= state >> 17;
++                    state ^= state << 5;
++                    val = int(state & 0x7FFFFFFF);
++                } while (!val);
+                 validuntil = totalmillis+RAND_INTERVALL;
+             }
+             bool valid() { return totalmillis <= validuntil; }
 --- a/mod/mod.cpp
 +++ b/mod/mod.cpp
 @@ -28,7 +28,7 @@

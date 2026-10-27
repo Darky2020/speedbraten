@@ -10,7 +10,7 @@ struct pingattempts
 
     void clearattempts() { memset(attempts, 0, sizeof(attempts)); }
 
-    void setoffset() { offset = 1 + rnd(0xFFFFFF); }
+    void setoffset() { offset = 1 + crnd(0xFFFFFF); }
 
     int encodeping(int millis)
     {
