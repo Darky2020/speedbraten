@@ -1713,7 +1713,12 @@ namespace game
             {
                 string why = "";
                 r.str(why, sizeof(why));
-                conoutf(CON_ERROR, type == WM_RUNSTOP ? "the witness stopped watching this run: %s" : "the witness refused this run: %s", why);
+                // a flagrun or race life the witness stopped watching ends at the player's next key
+                // press, so the run they go on to play is a new life the witness watches
+                bool life = type == WM_RUNSTOP && live && live->runid == runid && live->life;
+                conoutf(CON_ERROR, type == WM_RUNSTOP ? "the witness stopped watching this run: %s%s" : "the witness refused this run: %s%s", why,
+                        life ? " - press a key to respawn and be witnessed again" : "");
+                if(life) inputrespawnonkey();
                 if(live && live->runid == runid) DELETEP(live);
             }
         }

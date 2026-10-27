@@ -101,6 +101,7 @@ extern bool runtimerperlife();
 extern bool runtimerliferan();
 extern int runtimerstarttick();
 extern void inputlifespawned();
+extern void inputrespawnonkey();
 extern void runtimerspawned(fpsent *d);
 extern void runtimeredittoggled(bool on);
 extern void drawruntimer(int w, int h);

@@ -410,8 +410,12 @@ namespace game
 
     static void seedlife();
 
+    static bool respawnonkey = false;
+    void inputrespawnonkey() { respawnonkey = true; }
+
     void inputlifespawned()
     {
+        respawnonkey = false;
         if(runtimerliferan()) recordingran = true;
         if(!replaying && !recordingoff) saveliferun(false, 0);
         lifestart = NULL;
@@ -1327,6 +1331,7 @@ namespace game
 
     void inputmapstart(const char *name, int mode)
     {
+        respawnonkey = false;
         bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
         if(!chained || replaypending) { saveunfinishedrun(); hubviewstop(); }
         lifestart = NULL;
@@ -1408,6 +1413,13 @@ namespace game
 
     void rawinput(const rawevent &e)
     {
+        if(respawnonkey && (e.kind == rawevent::KEYDOWN || e.kind == rawevent::BUTTONDOWN) && !(e.flags&(rawevent::TEXT|rawevent::REPEAT)) &&
+           !replaying && connected && (flagrunrules() || racerules()))
+        {
+            respawnonkey = false;
+            inputsourcescope src(e.kind == rawevent::KEYDOWN ? INPUTSRC_KEY : INPUTSRC_MOUSE);
+            execute("respawnnow");
+        }
         if(replayviewing && !(e.flags&rawevent::TEXT))
         {
             if(e.kind == rawevent::KEYDOWN && e.keycode == SDLK_SPACE) replayviewfast = true;
