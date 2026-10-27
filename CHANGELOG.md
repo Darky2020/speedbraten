@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Spectating someone no longer warns that you modified the map.
+
 ## v0.3.5alpha
 
 - wc-ng build: runs are witnessed again (the build announced itself to the local game server, which made the witness reject every flagrun life).

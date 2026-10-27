@@ -2729,11 +2729,10 @@
          sendf(-1, 1, "ri3", N_ITEMACC, i, sender);
          ci->state.pickup(sents[i].type);
          return true;
-@@ -955,6 +993,22 @@
-     }
+@@ -956,6 +994,22 @@
  
      VAR(persistteams, 0, 0, 1);
-+
+ 
 +    static string nextteam = "";
 +
 +    // Flagrun practice rules for CTF: a dropped flag returns at once, respawn is immediate,
@@ -2749,9 +2748,10 @@
 +
 +    // the next map change puts every client on this team instead of balancing teams
 +    void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
- 
++
      void autoteam()
      {
+         static const char * const teamnames[2] = {"good", "evil"};
 @@ -1876,7 +1930,7 @@
          sendstring(smapname, p);
          putint(p, gamemode);
@@ -2874,7 +2874,19 @@
              }
          }
  
-@@ -2937,8 +3026,9 @@
+@@ -2558,6 +2647,11 @@
+     void checkmaps(int req = -1)
+     {
+         if(m_edit || !smapname[0]) return;
++        // a game with only local players has nobody to warn: a replay or a watched stream can ask
++        // to spawn before its client has sent the map's CRC
++        bool remoteplayer = false;
++        loopv(clients) if(!clients[i]->local && clients[i]->state.aitype == AI_NONE) { remoteplayer = true; break; }
++        if(!remoteplayer) return;
+         vector<crcinfo> crcs;
+         int total = 0, unsent = 0, invalid = 0;
+         if(mcrc) crcs.add(crcinfo(mcrc, clients.length() + 1));
+@@ -2937,8 +3031,9 @@
          if(mastermode>=MM_LOCKED) ci->state.state = CS_SPECTATOR;
          ci->state.lasttimeplayed = lastmillis;
  
@@ -2885,7 +2897,7 @@
  
          sendwelcome(ci);
          if(restorescore(ci)) sendresume(ci);
-@@ -3813,5 +3903,7 @@
+@@ -3813,5 +3908,7 @@
      }
  
      #include "aiman.h"

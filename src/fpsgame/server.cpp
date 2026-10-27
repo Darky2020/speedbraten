@@ -2358,6 +2358,11 @@ namespace server
     void checkmaps(int req = -1)
     {
         if(m_edit || !smapname[0]) return;
+        // a game with only local players has nobody to warn: a replay or a watched stream can ask
+        // to spawn before its client has sent the map's CRC
+        bool remoteplayer = false;
+        loopv(clients) if(!clients[i]->local && clients[i]->state.aitype == AI_NONE) { remoteplayer = true; break; }
+        if(!remoteplayer) return;
         vector<crcinfo> crcs;
         int total = 0, unsent = 0, invalid = 0;
         if(mcrc) crcs.add(crcinfo(mcrc, clients.length() + 1));
