@@ -2,6 +2,7 @@ package hub
 
 import (
 	"os"
+	"time"
 
 	"speedbraten/server/board"
 )
@@ -119,8 +120,9 @@ func (h *Hub) replayRequest(p *player, r *reader) error {
 		return nil
 	}
 	p.replayBusy = true
+	key := p.key
 	go func() {
-		data, why := boardReplay(store, run)
+		data, why := boardReplay(store, run, store.InstallOfPub(key))
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		p.replayBusy = false
@@ -140,9 +142,14 @@ func (h *Hub) replayRequest(p *player, r *reader) error {
 }
 
 // boardReplay reads the replay of a run that is an entry on a board, or says why it can't.
-func boardReplay(store *board.Store, run int64) ([]byte, string) {
-	if ok, err := store.Listed(run); err != nil || !ok {
+// viewer: the asking player's install.
+func boardReplay(store *board.Store, run int64, viewer string) ([]byte, string) {
+	until, ok, err := store.ReplayLock(run, viewer)
+	if err != nil || !ok {
 		return nil, "that run is not on a board"
+	}
+	if !until.IsZero() {
+		return nil, "that run's replay is public in " + board.Wait(time.Until(until)) + " (" + until.UTC().Format("2006-01-02 15:04") + " UTC)"
 	}
 	path, err := store.File(run)
 	if err != nil {

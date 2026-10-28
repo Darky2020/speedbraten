@@ -69,7 +69,7 @@ type Store struct {
 	boards  map[Key]*Board
 	names   map[string]string
 	named   map[string]bool // players whose name is registered (see Entry)
-	listed  map[int64]bool
+	listed  map[int64]listing
 	merged  map[string]string // install -> the install it was merged into
 	records []Record
 	runs    []validRun // the runs that count, in the order they were judged
@@ -97,6 +97,7 @@ func Open(witnessDB, hubDB, siteDB string, ttl time.Duration) (*Store, error) {
 		"CREATE TABLE IF NOT EXISTS flagreviews(flag INTEGER PRIMARY KEY, note TEXT, at INTEGER)",
 		"CREATE TABLE IF NOT EXISTS merged(install TEXT PRIMARY KEY, player TEXT NOT NULL, at INTEGER)",
 		"CREATE TABLE IF NOT EXISTS names(install TEXT PRIMARY KEY, name TEXT NOT NULL)",
+		"CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
 	} {
 		if _, err := s.site.Exec(q); err != nil {
 			return nil, err
@@ -120,6 +121,12 @@ func (s *Store) Close() {
 func (s *Store) Witness() *sqlite.DB { return s.witness }
 
 func atoi(v string) int64 { n, _ := strconv.ParseInt(v, 10, 64); return n }
+
+// listing is what a board entry's run needs for its replay to be served
+type listing struct {
+	kind, install string
+	when          time.Time
+}
 
 type validRun struct {
 	key           Key
@@ -187,7 +194,7 @@ func (s *Store) load() error {
 		return err
 	}
 	boards := map[Key]*Board{}
-	listed := map[int64]bool{}
+	listed := map[int64]listing{}
 	onboard := map[Key]map[string]bool{}
 	var runs []validRun
 	for _, r := range rows {
@@ -207,7 +214,7 @@ func (s *Store) load() error {
 		onboard[v.key][v.install] = true
 		b := boards[v.key]
 		b.Entries = append(b.Entries, Entry{Rank: len(b.Entries) + 1, Run: v.run, Install: v.install, Name: names[v.install], Registered: named[v.install], MS: v.ms, When: time.UnixMilli(v.when)})
-		listed[v.run] = true
+		listed[v.run] = listing{kind: v.key.Kind, install: v.install, when: time.UnixMilli(v.when)}
 	}
 
 	// records in the order they were set: each run faster than every earlier one on its board
@@ -342,7 +349,7 @@ func (s *Store) Records(n int) ([]Record, error) {
 // Listed tells whether a run is an entry on a board.
 func (s *Store) Listed(run int64) (bool, error) {
 	var ok bool
-	err := s.locked(func() { ok = s.listed[run] })
+	err := s.locked(func() { _, ok = s.listed[run] })
 	return ok, err
 }
 

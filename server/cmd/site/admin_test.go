@@ -318,3 +318,29 @@ func TestAdminLegacy(t *testing.T) {
 		t.Fatalf("after delete: %d", code)
 	}
 }
+
+func TestAdminReplayDelay(t *testing.T) {
+	f := newAdminFixture(t)
+	f.act(url.Values{"do": {"replaydelay"}, "hours.race": {"0"}, "hours.flagrun": {"100000"}, "hours.campaign": {"0"}})
+	if body := f.do("GET", "/admin/server", password, nil, "10.0.0.1").Body.String(); !strings.Contains(body, `name="hours.flagrun" value="100000"`) {
+		t.Fatal("the server tab doesn't show the saved flagrun delay")
+	}
+	// run 1 (forge flagrun) is locked: no download, a lock on its board and player pages
+	if code, body := get(t, f.s, "/replay?run=1"); code != http.StatusForbidden || !strings.Contains(body, "public from") {
+		t.Fatalf("locked replay download: %d %q", code, body)
+	}
+	if _, body := get(t, f.s, "/map?map=forge&kind=flagrun&mode=17"); !strings.Contains(body, "🔒") || strings.Contains(body, "/replay?run=1\"") {
+		t.Fatal("the map page doesn't lock run 1's replay")
+	}
+	if _, body := get(t, f.s, "/player?id=ka"); !strings.Contains(body, "replay public on") || strings.Contains(body, "/replay?run=1\"") {
+		t.Fatal("the player page links a locked replay")
+	}
+	// the campaign run has no delay
+	if code, _ := get(t, f.s, "/replay?run=4"); code != 200 {
+		t.Fatalf("campaign replay download: %d", code)
+	}
+	form := url.Values{"do": {"replaydelay"}, "hours.race": {"-1"}, "hours.flagrun": {"1"}, "hours.campaign": {"0"}, "token": {f.token}}
+	if w := f.do("POST", "/admin/act", password, form, "10.0.0.1"); w.Code != http.StatusBadRequest {
+		t.Fatalf("a negative delay: %d", w.Code)
+	}
+}

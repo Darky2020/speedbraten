@@ -385,7 +385,17 @@ func (a *admin) server(w http.ResponseWriter, r *http.Request) {
 	if a.disk != nil {
 		d = a.disk.report()
 	}
-	render(w, serverAdmin, "admin_server.html", map[string]any{"Title": "Server", "Tab": "server", "Admin": true, "Token": a.token, "D": d})
+	delays, _ := a.store.ReplayDelays()
+	var rows []delayRow
+	for _, k := range board.DelayKinds {
+		rows = append(rows, delayRow{Kind: k, Hours: int64(delays[k] / time.Hour)})
+	}
+	render(w, serverAdmin, "admin_server.html", map[string]any{"Title": "Server", "Tab": "server", "Admin": true, "Token": a.token, "D": d, "Delays": rows})
+}
+
+type delayRow struct {
+	Kind  string
+	Hours int64
 }
 
 func shortKey(k string) string {
@@ -557,6 +567,17 @@ func (a *admin) act(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+	case "replaydelay":
+		for _, k := range board.DelayKinds {
+			hours, perr := strconv.ParseInt(strings.TrimSpace(r.FormValue("hours."+k)), 10, 64)
+			if perr != nil || hours < 0 {
+				http.Error(w, "hours must be a whole number, 0 or more", http.StatusBadRequest)
+				return
+			}
+			if err = a.store.SetReplayDelay(k, hours); err != nil {
+				break
+			}
 		}
 	case "legacyimport":
 		list, perr := board.ParseLegacyCSV(r.FormValue("csv"))

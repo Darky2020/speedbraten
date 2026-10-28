@@ -70,12 +70,19 @@ func mapURL(k board.Key) string {
 }
 
 var funcs = template.FuncMap{
-	"runtime":   board.Time,
-	"gap":       func(a, b int64) string { return board.Time(a - b) },
-	"date":      func(t time.Time) string { return t.UTC().Format("2006-01-02") },
-	"ago":       ago,
-	"age":       age,
-	"inc":       func(i int) int { return i + 1 },
+	"runtime": board.Time,
+	"gap":     func(a, b int64) string { return board.Time(a - b) },
+	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02") },
+	"ago":     ago,
+	"age":     age,
+	"inc":     func(i int) int { return i + 1 },
+	"dict": func(kv ...any) map[string]any {
+		m := map[string]any{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+		return m
+	},
 	"badge":     badgeOf,
 	"modeName":  func(k board.Key) string { return board.ModeName(k.Mode) },
 	"mapURL":    mapURL,
@@ -457,9 +464,13 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	history, _ := s.store.History(k)
+	var runs []int64
+	for _, e := range b.Entries {
+		runs = append(runs, e.Run)
+	}
 	render(w, mapPage, "map.html", map[string]any{"Title": k.MapLabel() + " · " + k.KindLabel(), "Tab": tabOf(k), "Board": b, "Others": others,
 		"History": history, "Graph": recordGraph(history), "Legacy": legacy,
-		"LegacyDiff": legacyDiff, "LegacyBeaten": legacyFaster})
+		"LegacyDiff": legacyDiff, "LegacyBeaten": legacyFaster, "Locks": s.replayLocks(runs)})
 }
 
 type placeRow struct {
@@ -552,7 +563,11 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		flagModes = append(flagModes, board.Key{Kind: "flagrun", Mode: m})
 	}
 	recent, total, first, _ := s.store.PlayerRuns(id, recentRuns)
-	render(w, playerPage, "player.html", map[string]any{"Title": name, "Tab": "", "Name": name, "Registered": s.store.Registered(id), "Places": rows, "Records": medals[1],
+	var runs []int64
+	for _, p := range rows {
+		runs = append(runs, p.Entry.Run)
+	}
+	render(w, playerPage, "player.html", map[string]any{"Locks": s.replayLocks(runs), "Title": name, "Tab": "", "Name": name, "Registered": s.store.Registered(id), "Places": rows, "Records": medals[1],
 		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Maps": len(maps), "Runs": total, "Since": first,
 		"Completion": completion, "Recent": recent, "Flagruns": flagruns, "FlagModes": flagModes, "Sections": sections})
 }
@@ -561,15 +576,37 @@ func (s *site) info(w http.ResponseWriter, r *http.Request) {
 	render(w, infoPage, "info.html", map[string]any{"Title": "About", "Tab": "info", "Hub": s.hubAddr})
 }
 
-// replay sends a board entry's signed replay; runs that aren't on a board aren't public.
+// replayLock is when a board entry's replay becomes public, for pages that show the lock.
+type replayLock struct{ Short, Full string }
+
+func (s *site) replayLocks(runs []int64) map[int64]*replayLock {
+	locks := map[int64]*replayLock{}
+	until, err := s.store.ReplayLocks(runs, "")
+	if err != nil {
+		return locks
+	}
+	for run, t := range until {
+		t = t.UTC()
+		locks[run] = &replayLock{Short: t.Format("Jan 2"), Full: t.Format("2006-01-02 15:04") + " UTC"}
+	}
+	return locks
+}
+
+// replay sends a board entry's signed replay; runs that aren't on a board aren't public, nor are
+// replays still within their kind's publish delay.
 func (s *site) replay(w http.ResponseWriter, r *http.Request) {
 	run, err := strconv.ParseInt(r.URL.Query().Get("run"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if ok, err := s.store.Listed(run); err != nil || !ok {
+	until, ok, err := s.store.ReplayLock(run, "")
+	if err != nil || !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if !until.IsZero() {
+		http.Error(w, "this replay is public from "+until.UTC().Format("2006-01-02 15:04")+" UTC", http.StatusForbidden)
 		return
 	}
 	s.sendReplay(w, r, run)

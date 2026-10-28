@@ -1185,6 +1185,18 @@ func TestReplayRequest(t *testing.T) {
 	if m := a.expect(MsgReplayData); m.r.u() != 2 || m.r.u() != 0 {
 		t.Fatal("a refusal is not an empty piece")
 	}
+
+	// within its kind's publish delay a replay is refused with the time it becomes public
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES('k2', 'forge', 'carl', 'flagrun', 17, 9500, 'valid', ?, ?)", time.Now().UnixMilli(), file)
+	if err := store.SetReplayDelay("flagrun", 48); err != nil {
+		t.Fatal(err)
+	}
+	store.Refresh()
+	ask(3)
+	a.expectNotice("public in 1d 23h")
+	if m := a.expect(MsgReplayData); m.r.u() != 3 || m.r.u() != 0 {
+		t.Fatal("a locked replay's refusal is not an empty piece")
+	}
 }
 
 // A result makes the boards rebuild, so the board a client asks for after hearing of it
