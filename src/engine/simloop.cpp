@@ -26,7 +26,7 @@ void resetsimclock(int base)
 // before the frame's game time is scaled from elapsedtime
 void simframestart(int &timeerr)
 {
-    simticking = !multiplayer(false);
+    simticking = !multiplayer(false) || lifesession;
     if(simticking && simclockskip) { elapsedtime = 0; timeerr = 0; simclockskip = false; }
 }
 
@@ -55,11 +55,13 @@ void simupdate(bool draw)
             // starting a game leads to the same first tick
             simrestarted = false;
             insimtick = true;
+            if(lifesession) game::lifeenter();
             detfpmode();
             game::begintick();
             if(!simrestarted) game::updateworld();
             if(!simrestarted) checksleep(lastmillis);
             if(!simrestarted) serverslice(false, 0);
+            game::lifeleave();
             insimtick = false;
             if(simrestarted || !simticking) break;
         }

@@ -1018,7 +1018,7 @@ static char *loadmapfile(const char *name, size_t &len, bool text)
     return buf;
 }
 
-static void addmapdatafile(int role, const char *name)
+static void addmapdatafile(int role, const char *name, const char *recordas = NULL)
 {
     size_t len = 0;
     char *buf = loadmapfile(name, len, role == 1);
@@ -1027,7 +1027,7 @@ static void addmapdatafile(int role, const char *name)
     f.role = role;
     f.size = uint(len);
     // the path with '/' on every platform (path() turns them into '\' on Windows)
-    copystring(f.path, name);
+    copystring(f.path, recordas ? recordas : name);
     for(char *s = f.path; *s; s++) if(*s == '\\') *s = '/';
     blake3_hasher h;
     blake3_hasher_init(&h);
@@ -1287,7 +1287,15 @@ bool load_world(const char *mname, const char *cname)        // still supports a
 
     mapcrc = f->getcrc();
     mapdatafiles.setsize(0);
-    addmapdatafile(0, ogzname);
+    if(cname)
+    {
+        // a map loaded from another file, one a server sent, is recorded as the map it stands for
+        string pakname, mapname, mcfgname, realogz;
+        getmapfilenames(cname, NULL, pakname, mapname, mcfgname);
+        formatstring(realogz, "packages/%s.ogz", mapname);
+        addmapdatafile(0, ogzname, realogz);
+    }
+    else addmapdatafile(0, ogzname);
     delete f;
 
     conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);

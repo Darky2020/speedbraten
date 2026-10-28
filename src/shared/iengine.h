@@ -505,6 +505,8 @@ extern uint getclientip(int n);
 extern int setclientrealip(int n, uint ip);
 extern const char *getclienthostname(int n);
 extern void localconnect();
+extern void lifeconnect();
+extern void lifedisconnect();
 extern const char *disconnectreason(int reason);
 extern void disconnect_client(int n, int reason);
 extern void kicknonlocalclients(int reason = DISC_NONE);
@@ -514,6 +516,9 @@ extern void sendserverinforeply(ucharbuf &p);
 extern bool isdedicatedserver();
 
 // client
+// lifesession: the client plays its own life on the in-process server beside its server
+// connection; lifelocal: that life's world is the active one, so traffic goes in-process
+extern bool lifesession, lifelocal;
 extern void sendclientpacket(ENetPacket *packet, int chan);
 extern void flushclient();
 extern void disconnect(bool async = false, bool cleanup = true);

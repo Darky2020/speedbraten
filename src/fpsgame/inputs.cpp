@@ -1320,6 +1320,14 @@ namespace game
         forcesettings(*feedrun.attempts[0]);
         applysettings();
     });
+    // a player's position as this client knows it, for harnesses that run without rendering
+    ICOMMAND(harnessclientpos, "i", (int *cn),
+    {
+        fpsent *d = getclient(*cn);
+        if(!d) { result(""); return; }
+        defformatstring(pos, "%.1f %.1f %.1f %d", d->o.x, d->o.y, d->o.z, d->state);
+        result(pos);
+    });
 #endif
 
     static void seedattempt(const inputattempt &a)

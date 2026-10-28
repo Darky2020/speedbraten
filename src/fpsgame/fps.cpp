@@ -328,6 +328,8 @@ namespace game
         ai::update();
         moveragdolls();
         gets2c();
+        // a life's world only moves in sim ticks, also in the frame that started it
+        if(lifesession && !insimtick) return;
         updatemovables(curtime);
         updatemonsters(curtime);
         if(connected)

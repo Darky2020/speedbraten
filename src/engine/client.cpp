@@ -5,10 +5,11 @@
 ENetHost *clienthost = NULL;
 ENetPeer *curpeer = NULL, *connpeer = NULL;
 int connmillis = 0, connattempts = 0, discmillis = 0;
+bool lifesession = false, lifelocal = false;
 
 bool multiplayer(bool msg)
 {
-    bool val = curpeer || hasnonlocalclients(); 
+    bool val = (curpeer && !lifelocal) || hasnonlocalclients();
     if(val && msg) conoutf(CON_ERROR, "operation not available in multiplayer");
     return val;
 }
@@ -189,7 +190,7 @@ ICOMMAND(localdisconnect, "", (), { if(haslocalclients()) localdisconnect(); });
 
 void sendclientpacket(ENetPacket *packet, int chan)
 {
-    if(curpeer) enet_peer_send(curpeer, chan, packet);
+    if(curpeer && !lifelocal) enet_peer_send(curpeer, chan, packet);
     else localclienttoserver(chan, packet);
 }
 
@@ -207,7 +208,13 @@ void neterr(const char *s, bool disc)
 void localservertoclient(int chan, ENetPacket *packet)   // processes any updates from the server
 {
     packetbuf p(packet);
-    game::parsepacketclient(chan, p);
+    game::parsepacketlocal(chan, p);
+}
+
+static void remoteservertoclient(int chan, ENetPacket *packet)
+{
+    packetbuf p(packet);
+    game::parsepacketremote(chan, p);
 }
 
 void clientkeepalive() { if(clienthost) enet_host_service(clienthost, NULL, 0); }
@@ -244,7 +251,7 @@ void gets2c()           // get updates from the server
          
         case ENET_EVENT_TYPE_RECEIVE:
             if(discmillis) conoutf("attempting to disconnect...");
-            else localservertoclient(event.channelID, event.packet);
+            else remoteservertoclient(event.channelID, event.packet);
             enet_packet_destroy(event.packet);
             break;
 

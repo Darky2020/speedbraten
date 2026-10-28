@@ -36,6 +36,10 @@ namespace game
 
     extern void gamedisconnect(bool cleanup);
     extern void parsepacketclient(int chan, packetbuf &p);
+    extern void parsepacketremote(int chan, packetbuf &p);
+    extern void parsepacketlocal(int chan, packetbuf &p);
+    extern void lifeenter();
+    extern void lifeleave();
     extern void connectattempt(const char *name, const char *password, const ENetAddress &address);
     extern void connectfail();
     extern void gameconnect(bool _remote);
