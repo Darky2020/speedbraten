@@ -2265,6 +2265,7 @@ void gl_drawhud()
     hudshader->set();
 
     int conw = int(w/conscale), conh = int(h/conscale), abovehud = conh - FONTH, limitgui = abovehud;
+    bool gamehud = false;
     if(!hidehud && !mainmenu)
     {
         if(!hidestats)
@@ -2393,6 +2394,7 @@ void gl_drawhud()
         {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             game::gameplayhud(w, h);
+            gamehud = true;
             limitgui = abovehud = min(abovehud, int(conh*game::abovegameplayhud(w, h)));
         }
 
@@ -2416,6 +2418,12 @@ void gl_drawhud()
     abovehud -= max(fullconsole ? FONTH : 0, commandheight);
     if(!hidehud || fullconsole) renderconsole(conw, conh, abovehud - FONTH/2);
     pophudmatrix();
+
+    if(gamehud)
+    {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        game::runhud(w, h);
+    }
 
     drawcrosshair(w, h);
 

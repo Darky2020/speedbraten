@@ -1231,11 +1231,16 @@ namespace game
             if(hudscore) drawhudscore(w, h);
             if(hudfragmessages==1 || (hudfragmessages==2 && !m_insta)) drawfragmessages(w, h);
         }
+        drawhudedit(w, h);
+    }
+
+    // the run's own HUD, drawn over the console so a busy console never hides the timer
+    void runhud(int w, int h)
+    {
         drawruntimer(w, h);
         drawsplits(w, h);
         drawspeedometer(w, h);
         drawinputtimers(w, h);
-        drawhudedit(w, h);
     }
 
     int clipconsole(int w, int h)

@@ -533,6 +533,9 @@ namespace game
         if(ghostdelta(delta)) { string d, l; formatdelta(d, delta); formatstring(l, "\f4%s %s", ghostname(), d); lines.add(newstring(l)); alphas.add(255); }
     }
 
+    // the split lines' text size, relative to the run timer's
+    MOD(FVARP, splitscale, 0.5, 1.0, 3.0);
+
     static void drawsplitlines(int w, int h)
     {
         vector<char *> lines;
@@ -540,7 +543,7 @@ namespace game
         hudlines(lines, alphas);
         if(lines.empty()) return;
 
-        const float scale = runtimerscale * 0.45f;
+        const float scale = runtimerscale * 0.45f * splitscale;
         pushhudmatrix();
         hudmatrix.scale(scale, scale, 1);
         flushhudmatrix();

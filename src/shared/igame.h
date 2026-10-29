@@ -87,6 +87,7 @@ namespace game
     extern void preload();
     extern float abovegameplayhud(int w, int h);
     extern void gameplayhud(int w, int h);
+    extern void runhud(int w, int h);
     extern bool canjump();
     extern bool canhover();
     extern bool allowmove(physent *d);

@@ -1648,7 +1648,7 @@ namespace game
     static vector<uint> witnessseeds;
     static uint witnessbeat = 0; // the newest BEAT, returned in RUNSTART and TICK
     static string witnesstarget = "";
-    struct awaitingsign { int runid; string file; };
+    struct awaitingsign { int runid; bool finished; string file; };
     static vector<awaitingsign> awaitingsigns;
 
     static void appendsignature(const char *file, const vector<uchar> &payload)
@@ -1703,7 +1703,8 @@ namespace game
                         sbr2::kvfind(sig.extras, "verdict", NULL, verdict, sizeof(verdict));
                         sbr2::kvfind(sig.extras, "reason", NULL, reason, sizeof(reason));
                         if(!strcmp(verdict, "valid")) logoutf("witness verdict on %s: valid", awaitingsigns[i].file);
-                        else conoutf(CON_ERROR, "the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
+                        else if(awaitingsigns[i].finished) conoutf(CON_ERROR, "the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
+                        else logoutf("the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
                         awaitingsigns.remove(i);
                     }
                     break;
@@ -2142,6 +2143,7 @@ namespace game
             memcpy(content, live->s.out.content, sizeof(content));
             awaitingsign &w = awaitingsigns.add();
             w.runid = lastfinished = live->runid;
+            w.finished = finished;
             copystring(w.file, file);
             DELETEP(live);
         }
