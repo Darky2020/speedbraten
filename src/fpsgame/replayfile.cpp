@@ -1703,6 +1703,14 @@ namespace game
                         string verdict = "", reason = "";
                         sbr2::kvfind(sig.extras, "verdict", NULL, verdict, sizeof(verdict));
                         sbr2::kvfind(sig.extras, "reason", NULL, reason, sizeof(reason));
+                        // once per differing set, whatever the verdict: the next run that touches them may fail
+                        static string lastmodels = "";
+                        string models = "";
+                        if(sbr2::kvfind(sig.extras, "models", NULL, models, sizeof(models)) && strcmp(models, lastmodels))
+                        {
+                            copystring(lastmodels, models);
+                            conoutf(CON_WARN, "\f6your copies of these map models differ from the witness's (a different Sauerbraten version or edited files): %s. Runs where you touch them may be rejected.", models);
+                        }
                         if(!strcmp(verdict, "valid")) logoutf("witness verdict on %s: valid", awaitingsigns[i].file);
                         else if(awaitingsigns[i].finished) conoutf(CON_ERROR, "the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);
                         else logoutf("the witness judged %s %s%s%s", awaitingsigns[i].file, verdict, reason[0] ? ": " : "", reason);

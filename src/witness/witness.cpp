@@ -1191,6 +1191,19 @@ namespace witness
         long long finishedms = !strcmp(finished, "true") ? atoi(runtime) : 0;
         string failednames = "";
         jsonfield(json, "failed", failednames, sizeof(failednames));
+        // the judge's model_mismatch array, as "a, b"
+        string models = "";
+        if(const char *list = strstr(json, "\"model_mismatch\":["))
+        {
+            int n = 0;
+            for(const char *p = list + strlen("\"model_mismatch\":["); *p && *p != ']' && n < MAXSTRLEN - 3; p++)
+            {
+                if(*p == '"') continue;
+                if(*p == ',') { models[n++] = ','; models[n++] = ' '; }
+                else models[n++] = *p;
+            }
+            models[n] = '\0';
+        }
         string info[7];
         if(!rowtext("SELECT r.runid, r.content, r.violations, r.seedsok, r.session, s.session, s.nonce || ' ' || r.installkey FROM runs r JOIN sessions s ON s.id = r.session WHERE r.id = ?", row, 7, info)) return;
         const char *verdict = "valid";
@@ -1207,7 +1220,8 @@ namespace witness
         else if(strcmp(ok, "true"))
         {
             verdict = "rejected";
-            if(atoi(desync)) formatstring(reason, "the replay desynced at tick %s", desync);
+            if(atoi(desync) && models[0]) formatstring(reason, "the replay desynced at tick %s; your copies of these map models differ from the witness's: %s", desync, models);
+            else if(atoi(desync)) formatstring(reason, "the replay desynced at tick %s", desync);
             else formatstring(reason, "the re-simulated run (%s ms) differs from the recorded one (%s ms)", runtime, recorded);
         }
         else if(atoi(failed) > 0) { verdict = "rejected"; formatstring(reason, "rules: %s", failednames); }
@@ -1235,6 +1249,7 @@ namespace witness
         sbr2::kvwriter kv;
         kv.str("verdict", verdict);
         if(reason[0]) kv.str("reason", reason);
+        if(models[0]) kv.str("models", models);
         kv.var("runtimems", atoi(runtime));
         kv.var("ticks", atoi(ticks));
         kv.build(sig.extras);
