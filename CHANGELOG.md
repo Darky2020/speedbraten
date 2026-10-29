@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.7alpha
+
+- Speedrun menu → keys: a key that shows or hides the ghosts (your PB's and the hub lobby players').
+- Speedrun menu: a checkbox for showing hub lobby players as ghosts.
+- Maps you don't have are downloaded from the hub when you load one offline, or with "get map" on /board.
+- Flagruns tab: a map menu with previews, pages and search; races tab: a race map list like the game's map menu.
+- The run timer, splits and speedometer stay visible over a busy console.
+- Splits tab: split text size.
+- The witness's verdict on an unfinished attempt goes to the log only instead of the console.
+- crnsp1 ships in the version the witness uses.
+- Website: admins can delay when new replays become public, separately for races, flagruns and campaigns.
+
 ## v0.3.6alpha
 
 - Spectating someone no longer warns that you modified the map.
