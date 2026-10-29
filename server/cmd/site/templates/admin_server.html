@@ -1,5 +1,9 @@
 {{template "top" .}}
 <h1>Server</h1>
+<div class="card"><header><h2>Replay publish delay</h2><span class="dim small">hours after a run is judged; 0 = public at once. The time shows on the boards at once either way.</span></header>
+<form class="filters" method="post" action="/admin/act"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="do" value="replaydelay">
+{{range .Delays}}<label>{{if eq .Kind "race"}}Races{{else if eq .Kind "flagrun"}}Flagruns{{else}}Campaigns <span class="dim small">(DMSP too)</span>{{end}} <input type="number" min="0" step="1" name="hours.{{.Kind}}" value="{{.Hours}}" style="width: 6em"></label>
+{{end}}<button>Save</button></form></div>
 {{with .D}}<div class="tiles">
 <div class="tile"><div class="k">free</div><div class="v">{{bytes .Free}}</div><div class="small dim">of {{bytes .Total}}</div></div>
 <div class="tile"><div class="k">used</div><div class="v">{{.UsedPercent}}%</div><div class="meter" style="margin-top: 8px"><div class="fill {{if ge .UsedPercent 90}}b-ectf{{else if ge .UsedPercent 75}}b-sp{{else}}b-ictf{{end}}" style="width: {{.UsedPercent}}%"></div></div></div>

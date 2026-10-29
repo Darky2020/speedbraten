@@ -12,16 +12,17 @@
 {{end}}</div></div>
 {{template "recentcard" .Recent}}
 </div>
+{{define "timecell"}}{{with index .Locks .Run}}<span class="time" title="replay public on {{.Full}}">{{runtime $.MS}}</span>{{else}}<a class="time" href="/replay?run={{.Run}}" title="replay">{{runtime .MS}}</a>{{end}}{{end}}
 {{define "rank"}}<span class="{{if eq .Rank 1}}rank1{{else if eq .Rank 2}}silver{{else if eq .Rank 3}}bronze{{end}}">#{{.Rank}}</span>{{end}}
 {{if .Flagruns}}<div class="card scroll"><header><h2>Flagruns</h2><span class="dim small">{{len .Flagruns}} maps</span></header><table>
 <tr><th>map</th>{{range .FlagModes}}<th>{{template "badge" .}}</th>{{end}}</tr>
 {{range .Flagruns}}<tr><td>{{template "mapcell" .Key}}</td>
-{{range .Cells}}<td>{{with .Place}}<a class="time" href="/replay?run={{.Entry.Run}}" title="replay">{{runtime .Entry.MS}}</a> <span class="small">{{template "rank" .Entry}}</span><span class="faint small"> / {{.Of}}</span>{{if gt .Entry.Rank 1}}<div class="small slower">+{{gap .Entry.MS .Best}}</div>{{end}}{{else}}<span class="faint">—</span>{{end}}</td>{{end}}</tr>{{end}}
+{{range .Cells}}<td>{{with .Place}}{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}} <span class="small">{{template "rank" .Entry}}</span><span class="faint small"> / {{.Of}}</span>{{if gt .Entry.Rank 1}}<div class="small slower">+{{gap .Entry.MS .Best}}</div>{{end}}{{else}}<span class="faint">—</span>{{end}}</td>{{end}}</tr>{{end}}
 </table></div>{{end}}
 {{range .Sections}}<div class="card scroll"><header><h2>{{.Title}}</h2><span class="dim small">{{len .Places}} maps</span></header><table>
 <tr><th>map</th><th class="num">rank</th><th class="num">time</th><th class="num wide">gap to #1</th><th class="wide">date</th></tr>
 {{range .Places}}<tr><td>{{template "mapcell" .Key}}</td><td class="num">{{template "rank" .Entry}}<span class="faint small"> / {{.Of}}</span></td>
-<td class="num"><a class="time" href="/replay?run={{.Entry.Run}}" title="replay">{{runtime .Entry.MS}}</a></td><td class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td></tr>{{end}}
+<td class="num">{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}}</td><td class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td></tr>{{end}}
 </table></div>{{end}}
 {{if not .Places}}<div class="card"><div class="body dim">No runs yet.</div></div>{{end}}
 {{template "bottom" .}}
