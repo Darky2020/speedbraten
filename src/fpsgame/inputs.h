@@ -272,6 +272,9 @@ namespace game
     extern void hubupdate();
     extern bool witnessseed(uint &seed);
     extern bool witnessstreaming();
+    extern void addmodelfiles(vector<mapdatafile> &files);
+    extern const vector<char *> &inputmodelmismatches();
+    extern void inputclearmodelmismatches();
     extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life, int continues = -1);
     extern int witnesstakefinished();
     extern void witnessdrop(const char *reason);

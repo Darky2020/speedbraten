@@ -978,18 +978,43 @@ namespace game
         return NULL;
     }
 
+    static vector<char *> modelmismatches;
+    const vector<char *> &inputmodelmismatches() { return modelmismatches; }
+    void inputclearmodelmismatches() { modelmismatches.deletearrays(); }
+
+    // a map model whose files here differ from the recording's copy: the game may still play back, so only a warning
+    static void modelmismatch(const char *path)
+    {
+        const char *name = !strncmp(path, "packages/models/", 16) ? path + 16 : path;
+        loopv(modelmismatches) if(!strcmp(modelmismatches[i], name)) return;
+        modelmismatches.add(newstring(name));
+        conoutf(CON_WARN, "\f3model %s differs from the one this replay was recorded with: it may not play back correctly", name);
+    }
+
     static void checkdatafiles(const vector<mapdatafile> &recorded)
     {
-        const vector<mapdatafile> &loaded = getmapdatafiles();
+        vector<mapdatafile> loaded;
+        loaded = getmapdatafiles();
+        bool models = false;
+        loopv(recorded) if(recorded[i].role == 2) models = true;
+        if(models) addmodelfiles(loaded);
         loopv(recorded)
         {
             const mapdatafile *f = finddatafile(loaded, recorded[i].path);
+            if(recorded[i].role == 2)
+            {
+                if(!f || f->size != recorded[i].size || memcmp(f->hash, recorded[i].hash, sizeof(f->hash))) modelmismatch(recorded[i].path);
+                continue;
+            }
             if(!f) conoutf(CON_ERROR, "replay was recorded with %s, which this game did not load", recorded[i].path);
             else if(f->size != recorded[i].size || memcmp(f->hash, recorded[i].hash, sizeof(f->hash)))
                 conoutf(CON_ERROR, "replay was recorded with a different %s: it will likely not play back correctly", recorded[i].path);
         }
         loopv(loaded) if(!finddatafile(recorded, loaded[i].path))
-            conoutf(CON_ERROR, "replay was recorded without %s: it will likely not play back correctly", loaded[i].path);
+        {
+            if(loaded[i].role == 2) modelmismatch(loaded[i].path);
+            else conoutf(CON_ERROR, "replay was recorded without %s: it will likely not play back correctly", loaded[i].path);
+        }
     }
 
     static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng", "server", "actors", "world" };
@@ -1202,6 +1227,7 @@ namespace game
             rec.cfgcrc = getmapcfgcrc();
             rec.hascfgcrc = true;
             rec.files = getmapdatafiles();
+            addmodelfiles(rec.files);
             if(attemptwitnessed && !(replaylifeonly && (rec.flagrun || rec.race)))
             {
                 if(recording.attempts.length() == 1) witnessrunstart(rec, rec, -1, false);

@@ -1175,6 +1175,7 @@ namespace game
         loopvk(run.attempts) loopv(run.attempts[k]->files)
         {
             const mapdatafile &f = run.attempts[k]->files[i];
+            if(f.role > 1) continue;
             files++;
             size_t len = 0;
             char *buf = loadfile(path(f.path, true), &len, false);
@@ -1927,6 +1928,103 @@ namespace game
 
     // the next map of a chained run
     bool witnessstreaming() { return live != NULL; }
+
+    // Map models decide what players and monsters collide with and see, but a replay's map files don't cover
+    // them, and installs differ (models replaced by later Sauerbraten releases, local edits). Each model the
+    // map uses gets one entry (role 2): a BLAKE3 over the config and geometry files of its folder and of the
+    // folder above it, which the loaders fall back to. Images are left out: which ones load depends on the
+    // graphics settings, and the headless judge loads its own set.
+    static const char * const modelfileexts[] = { ".cfg", ".md2", ".md3", ".obj", ".iqm", ".md5mesh", ".md5anim" };
+    static bool modelfile(const char *name, bool &text)
+    {
+        int len = strlen(name);
+        loopi(sizeof(modelfileexts)/sizeof(modelfileexts[0]))
+        {
+            int n = strlen(modelfileexts[i]);
+            if(len > n && !strcasecmp(name + len - n, modelfileexts[i])) { text = i == 0 || i == 3 || i >= 5; return true; }
+        }
+        return false;
+    }
+
+    static bool sortstrings(const char *a, const char *b) { return strcmp(a, b) < 0; }
+
+    static void hashmodel(const char *name, mapdatafile &f)
+    {
+        f.role = 2;
+        f.size = 0;
+        formatstring(f.path, "packages/models/%s", name);
+        vector<char *> files;
+        string dirs[2];
+        copystring(dirs[0], f.path);
+        copystring(dirs[1], f.path);
+        char *up = strrchr(dirs[1], '/');
+        int ndirs = up && up - dirs[1] > int(strlen("packages/models")) ? (*up = '\0', 2) : 1;
+        loopi(ndirs)
+        {
+            vector<char *> names;
+            listfiles(dirs[i], NULL, names);
+            loopvj(names)
+            {
+                bool text;
+                if(modelfile(names[j], text))
+                {
+                    defformatstring(full, "%s/%s", dirs[i], names[j]);
+                    bool dup = false;
+                    loopvk(files) if(!strcmp(files[k], full)) dup = true;
+                    if(!dup) files.add(newstring(full));
+                }
+            }
+            names.deletearrays();
+        }
+        files.sort(sortstrings);
+        blake3_hasher h;
+        blake3_hasher_init(&h);
+        loopv(files)
+        {
+            size_t len = 0;
+            char *buf = loadfile(path(files[i], true), &len, false);
+            if(!buf) continue;
+            bool text;
+            modelfile(files[i], text);
+            if(text)
+            {
+                size_t n = 0;
+                loopk(int(len)) if(buf[k] != '\r' || size_t(k+1) >= len || buf[k+1] != '\n') buf[n++] = buf[k];
+                len = n;
+            }
+            uchar lenbytes[4] = { uchar(len), uchar(len >> 8), uchar(len >> 16), uchar(len >> 24) };
+            blake3_hasher_update(&h, files[i], strlen(files[i]) + 1);
+            blake3_hasher_update(&h, lenbytes, sizeof(lenbytes));
+            blake3_hasher_update(&h, buf, len);
+            f.size += uint(len);
+            delete[] buf;
+        }
+        blake3_hasher_finalize(&h, f.hash, sizeof(f.hash));
+        files.deletearrays();
+    }
+
+    void addmodelfiles(vector<mapdatafile> &files)
+    {
+        static vector<mapdatafile> hashed;
+        const vector<extentity *> &ents = entities::getents();
+        vector<int> used;
+        loopv(ents) if(ents[i]->type == ET_MAPMODEL && ents[i]->attr2 >= 0 && used.find(ents[i]->attr2) < 0) used.add(ents[i]->attr2);
+        vector<const char *> names;
+        loopv(used)
+        {
+            const char *name = mapmodelname(used[i]);
+            if(!name || !name[0]) continue;
+            bool dup = false;
+            loopvj(names) if(!strcmp(names[j], name)) dup = true;
+            if(dup) continue;
+            names.add(name);
+            defformatstring(key, "packages/models/%s", name);
+            int found = -1;
+            loopvj(hashed) if(!strcmp(hashed[j].path, key)) { found = j; break; }
+            if(found < 0) { found = hashed.length(); hashmodel(name, hashed.add()); }
+            files.add(hashed[found]);
+        }
+    }
 
     void witnessnextattempt(const inputattempt &a)
     {
