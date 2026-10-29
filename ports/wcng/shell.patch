@@ -1095,6 +1095,35 @@
          damagedirs[i] = scale > 0 ? (pow(logscale, scale) - 1) / (logscale - 1) : 0;
      }
      if(dirs) gle::end();
+@@ -2248,6 +2256,7 @@
+     hudshader->set();
+ 
+     int conw = int(w/conscale), conh = int(h/conscale), abovehud = conh - FONTH, limitgui = abovehud;
++    bool gamehud = false;
+     if(!hidehud && !mainmenu)
+     {
+         if(!hidestats)
+@@ -2368,6 +2377,7 @@
+         {
+             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+             game::gameplayhud(w, h);
++            gamehud = true;
+             limitgui = abovehud = min(abovehud, int(conh*game::abovegameplayhud(w, h)));
+         }
+ 
+@@ -2391,6 +2401,12 @@
+     extern int fullconsole;
+     if(!hidehud || fullconsole) renderconsole(conw, conh, abovehud - FONTH/2);
+     pophudmatrix();
++
++    if(gamehud)
++    {
++        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
++        game::runhud(w, h);
++    }
+ 
+     drawcrosshair(w, h);
+     gamemod::renderplayerdisplay(w, h, FONTH, w, h); //NEW
 --- a/engine/renderparticles.cpp
 +++ b/engine/renderparticles.cpp
 @@ -711,7 +711,7 @@
@@ -1753,7 +1782,15 @@
          if((m_edit && !name[0]) || !load_world(name))
          {
              emptymap(0, true, name);
-@@ -763,6 +780,7 @@
+@@ -714,6 +731,7 @@
+     {
+         if(!remote)
+         {
++            if(hubfetchmap(name, mode)) return;
+             server::forcemap(name, mode);
+             if(!isconnected()) localconnect();
+         }
+@@ -763,6 +781,7 @@
  
      void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
      {
@@ -1761,7 +1798,7 @@
          if(m_edit) switch(op)
          {
              case EDIT_FLIP:
-@@ -931,7 +949,7 @@
+@@ -931,7 +950,7 @@
  
      bool ispaused() { return gamepaused; }
  
@@ -1770,7 +1807,7 @@
  
      void changegamespeed(int val)
      {
-@@ -946,12 +964,14 @@
+@@ -946,12 +965,14 @@
          else printvar(id, gamespeed);
      });
  
@@ -1786,7 +1823,7 @@
      bool addmsg(int type, const char *fmt, ...)
      {
          if(!connected) return false;
-@@ -1044,6 +1064,7 @@
+@@ -1044,6 +1065,7 @@
  
      void gamedisconnect(bool cleanup)
      {
@@ -1794,7 +1831,7 @@
          if(remote) stopfollowing();
          ignores.setsize(0);
          connected = remote = false;
-@@ -1087,6 +1108,8 @@
+@@ -1087,6 +1109,8 @@
          extern void clearpings();
          clearpings();
          //NEW END
@@ -1803,7 +1840,7 @@
      }
  
      VARP(teamcolorchat, 0, 1, 1);
-@@ -1094,6 +1117,7 @@
+@@ -1094,6 +1118,7 @@
  
      void toserver(char *text) 
      { 
@@ -1811,7 +1848,7 @@
          conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text);
          extern void sendmessages();                     //NEW
          if(mod::bouncerserverhost.host) sendmessages(); //NEW
-@@ -1255,7 +1279,8 @@
+@@ -1255,7 +1280,8 @@
              messagereliable = false;
              messagecn = -1;
          }
@@ -1821,7 +1858,7 @@
          {
              putint(p, N_PING);
              putint(p, addping()); //NEW
-@@ -1541,8 +1566,13 @@
+@@ -1541,8 +1567,13 @@
                  fullyconnected = true;      //NEW
                  rebindpingport();           //NEW
                  mod::extinfo::connect();    //NEW
@@ -1837,7 +1874,7 @@
                  break;
              }
  
-@@ -1775,7 +1805,9 @@
+@@ -1775,7 +1806,9 @@
                  {
                      showscores(false);
                      lasthit = 0;
@@ -1847,7 +1884,7 @@
                  if(cmode) cmode->respawned(s);
  				ai::spawned(s);
                  addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
-@@ -1851,6 +1883,8 @@
+@@ -1851,6 +1884,8 @@
                      particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                  }
                  if(!victim) break;
@@ -2224,14 +2261,15 @@
          }
      }
  
-@@ -650,14 +705,34 @@
+@@ -649,15 +704,35 @@
+     }
  
      VARP(showmodeinfo, 0, 1, 1);
- 
++
 +    // Non-zero forces the gameplay RNG seed, e.g. for reproducible test runs.
 +    VAR(fixedgameseed, 0, 0, INT_MAX);
 +    uint gameseed = 0;
-+
+ 
 +    void seedgame()
 +    {
 +        gameseed = fixedgameseed ? uint(fixedgameseed) : (uint(time(NULL)) * 2654435761U) ^ cosmeticrandom();
@@ -2305,7 +2343,7 @@
  
      bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
  
-@@ -1160,9 +1249,14 @@
+@@ -1160,11 +1249,21 @@
  
          if(!m_edit && !m_sp)
          {
@@ -2313,15 +2351,22 @@
 +            if(gameclock && !racerules() && !flagrunrules()) drawgameclock(w, h);
              if(hudscore) drawhudscore(w, h);
          }
++        drawhudedit(w, h);
+     }
+ 
++    // the run's own HUD, drawn over the console so a busy console never hides the timer
++    void runhud(int w, int h)
++    {
 +        drawruntimer(w, h);
 +        drawsplits(w, h);
 +        drawspeedometer(w, h);
 +        drawinputtimers(w, h);
-+        drawhudedit(w, h);
-     }
- 
++    }
++
      //NEW
-@@ -1516,6 +1610,7 @@
+ 
+     MODVARP(showtimeleft, 0, 1, 1);
+@@ -1516,6 +1615,7 @@
      const char *savedconfig() { return "config.cfg"; }
      const char *restoreconfig() { return "restore.cfg"; }
      const char *defaultconfig() { return "data/defaults.cfg"; }
@@ -2389,15 +2434,15 @@
      extern void spawnitems(bool force = false);
      extern void putitems(packetbuf &p);
      extern void setspawn(int i, bool on);
-@@ -711,6 +717,8 @@
+@@ -710,6 +716,8 @@
+ 
      extern void repammo(fpsent *d, int type, bool local = true);
  }
- 
-+#include "dethasher.h"
 +
++#include "dethasher.h"
+ 
  namespace game
  {
-     struct clientmode
 @@ -796,6 +804,7 @@
      extern time_t gametimestamp; //NEW
      extern int mapstart; //NEW
@@ -2406,18 +2451,19 @@
      extern ENetAddress demoserver; //NEW
      extern string servdesc;
      extern vector<uchar> messages;
-@@ -811,6 +820,10 @@
+@@ -811,6 +820,11 @@
      extern void sendmapinfo();
      extern void stopdemo();
      extern void changemap(const char *name, int mode);
 +    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
 +    extern bool hubchat(const char *text);
++    extern bool hubfetchmap(const char *name, int mode);
 +    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
 +    extern int spectatespeed();
      extern void forceintermission();
      extern void c2sinfo(bool force = false);
      extern void sendposition(fpsent *d, bool reliable = false);
-@@ -821,9 +834,12 @@
+@@ -821,9 +835,12 @@
      extern vector<monster *> monsters;
  
      extern void clearmonsters();
@@ -2430,7 +2476,7 @@
      extern void rendermonsters();
      extern void suicidemonster(monster *m);
      extern void hitmonster(int damage, monster *m, fpsent *at, const vec &vel, int gun);
-@@ -836,8 +852,10 @@
+@@ -836,8 +853,10 @@
      extern vector<movable *> movables;
  
      extern void clearmovables();
@@ -2441,7 +2487,7 @@
      extern void rendermovables();
      extern void suicidemovable(movable *m);
      extern void hitmovable(int damage, movable *m, fpsent *at, const vec &vel, int gun);
-@@ -854,16 +872,19 @@
+@@ -854,16 +873,19 @@
      extern bool intersect(dynent *d, const vec &from, const vec &to, float &dist = intersectdist);
      extern dynent *intersectclosest(const vec &from, const vec &to, fpsent *at, float &dist = intersectdist);
      extern void clearbouncers();
@@ -2461,7 +2507,7 @@
      extern void gunselect(int gun, fpsent *d);
      extern void weaponswitch(fpsent *d);
      extern void avoidweapons(ai::avoidset &obstacles, float radius);
-@@ -895,6 +916,7 @@
+@@ -895,6 +917,7 @@
      extern void moveragdolls();
      extern void changedplayermodel();
      extern const playermodelinfo &getplayermodelinfo(fpsent *d);
@@ -2469,7 +2515,7 @@
      extern int chooserandomplayermodel(int seed);
      extern void swayhudgun(int curtime);
      extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);
-@@ -910,6 +932,13 @@
+@@ -910,6 +933,13 @@
      extern const char *getdemofile(const char *file, bool init);
      extern void forcemap(const char *map, int mode);
      extern void forcepaused(bool paused);
@@ -2483,7 +2529,7 @@
      extern void forcegamespeed(int speed);
      extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
      extern int msgsizelookup(int msg);
-@@ -917,5 +946,7 @@
+@@ -917,5 +947,7 @@
      extern bool delayspawn(int type);
  }
  
@@ -3545,7 +3591,13 @@
      extern const char *autoexec();
      extern const char *wcautoexec(); //NEW
      extern const char *wcconfig(); //NEW
-@@ -84,11 +96,24 @@
+@@ -79,16 +91,30 @@
+     extern void preload();
+     extern float abovegameplayhud(int w, int h);
+     extern void gameplayhud(int w, int h);
++    extern void runhud(int w, int h);
+     extern void rendertimeleft(int w, int h, int fonth);                                       //NEW
+     extern void renderping(int w, int h, int fonth);                                           //NEW
      extern void rendernetwork(int w, int h, int screenw, int screenh, int fonth);              //NEW
      extern bool renderstatsdisplay(int conw, int conh, int FONTH, int woffset, int roffset);   //NEW
      extern bool canjump();
@@ -3577,7 +3629,7 @@
  //NEW END
  
 -string homedir = "";
-+string homedir = "", overridedir = "";
++string homedir = "", overridedir = "", hubmapsdir = "";
  struct packagedir
  {
      char *dir, *filter;
@@ -3591,10 +3643,20 @@
  #else
      if(access(path[0] ? path : ".", mode[0]=='w' || mode[0]=='a' ? W_OK : (mode[0]=='d' ? X_OK : R_OK)) == -1) exists = false;
  #endif
-@@ -496,6 +497,44 @@
+@@ -484,6 +485,7 @@
+     if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
+     streamlocker sl; //NEW
+     copystring(homedir, pdir);
++    formatstring(hubmapsdir, "%shubmaps%c", homedir, PATHDIV);
+     return homedir;
+ }
+ 
+@@ -494,7 +496,45 @@
+     return (const char*)mod::allocatethreadstorage(0, sizeof(homedir), true, homedir, true); //NEW
+ }
  //NEW END
- 
- 
++
++
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
 +{
@@ -3622,7 +3684,7 @@
 +}
 +
 +static vector<char *> checkedoverrides;
-+
+ 
 +static void warnshadowedhome(const char *filename, const char *override)
 +{
 +    if(!homedir[0]) return;
@@ -3632,11 +3694,10 @@
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
 +}
-+
+ 
  const char *addpackagedir(const char *dir)
  {
- //NEW
-@@ -529,6 +568,17 @@
+@@ -529,6 +569,17 @@
      static string locals; //NEW s -> locals
      char *s = (char*)mod::allocatethreadstorage(0, sizeof(locals), true, locals); //NEW
      streamlocker sl; //NEW
@@ -3654,18 +3715,31 @@
      if(homedir[0])
      {
          nformatstring(s, sizeof(locals), "%s%s", homedir, filename); // formatstring -> nformatstring
-@@ -626,6 +676,11 @@
-     if(homedir[0])
-     {
-         formatstring(s, "%s%s", homedir, dirname);
-+        if(listdir(s, false, ext, files)) dirs++;
+@@ -556,6 +607,12 @@
+         nformatstring(s, sizeof(locals), "%s%s", pf.dir, filename); // formatstring -> nformatstring
+         if(fileexists(s, mode)) return s;
+     }
++    // maps downloaded from the hub, used only when no other copy exists
++    if(hubmapsdir[0] && !fileexists(filename, mode))
++    {
++        nformatstring(s, sizeof(locals), "%s%s", hubmapsdir, filename);
++        if(fileexists(s, mode)) return s;
 +    }
+     if(mode[0]=='e') return NULL;
+     return filename;
+ }
+@@ -628,6 +685,11 @@
+         formatstring(s, "%s%s", homedir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
-     }
++        if(listdir(s, false, ext, files)) dirs++;
++    }
      loopv(packagedirs)
+     {
+         packagedir &pf = packagedirs[i];
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -78,6 +78,32 @@
