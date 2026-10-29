@@ -402,6 +402,17 @@ namespace witness
         sendmsg(c, WM_SEED, p);
     }
 
+    // After a run stops, the client may already have spent its seed on a map start it can no longer stream (the
+    // next map of a stopped campaign run), and only a streamed run's seed is replaced; without another, every
+    // later map would play unwitnessed. Unused seeds per session are capped.
+    enum { MAXSPARESEEDS = 16 };
+    static void spareseed(client &c)
+    {
+        int unused = 0;
+        loopv(c.seedsused) if(!c.seedsused[i]) unused++;
+        if(unused < MAXSPARESEEDS) sendseed(c);
+    }
+
     static void livestart(client &c, witnessrun &r);
     static void livecontinue(client &c, witnessrun &r);
     static void releaseidle(long long session);
@@ -429,6 +440,7 @@ namespace witness
         w.var(r.runid);
         w.str(why);
         sendmsg(c, WM_RUNSTOP, p);
+        spareseed(c);
         conoutf("%s: run %d stopped by the witness: %s", c.addressname, r.runid, why);
     }
 
@@ -444,6 +456,7 @@ namespace witness
         w.var(r.runid);
         w.str(why);
         sendmsg(c, WM_RUNERROR, p);
+        spareseed(c);
         conoutf("%s: run %d refused: %s", c.addressname, r.runid, why);
     }
 
@@ -704,6 +717,7 @@ namespace witness
                 string reason;
                 b.str(reason, sizeof(reason));
                 closerun(*r, reason);
+                spareseed(c);
                 conoutf("%s: run %d stopped: %s", c.addressname, runid, reason);
                 break;
             }
@@ -839,10 +853,12 @@ namespace witness
         long long session, lastrow; // live: the session it plays for, and the last run it was given
         vector<jobrun> runs;     // waiting for their JSON line, in order
         unsigned long long idle; // live: since when it has had no run to play, 0 while it has one
+        unsigned long long told; // when it was last given input
     };
     static vector<resimjob *> resimjobs;
     static int maxlive = 4;
     enum { CHAINWAIT = 5 }; // seconds a live job waits for the next run of the life
+    enum { LIVESTALL = 600 }; // seconds a live job may go without input while none of its runs has ended
 
     static bool jsonfield(const char *json, const char *key, char *out, int outlen)
     {
@@ -991,12 +1007,14 @@ namespace witness
         }
         close(fds[0]);
         fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFL, fcntl(fds[1], F_GETFL) | O_NONBLOCK);
         resimjob *job = new resimjob;
         job->pid = pid;
         job->input = fds[1];
         job->live = live;
         job->session = job->lastrow = -1;
         job->idle = 0;
+        job->told = nowus();
         resimjobs.add(job);
         return job;
     }
@@ -1020,9 +1038,19 @@ namespace witness
         return n;
     }
 
+    static void closeinput(resimjob &job);
+
+    // The pipe doesn't block: a judge that stopped reading its input is killed rather than the witness
+    // waiting on it. Its runs then go to batch jobs like those of any live judge that fails.
     static void tell(resimjob &job, const char *line)
     {
-        if(job.input >= 0 && write(job.input, line, strlen(line)) < 0) {}
+        if(job.input < 0) return;
+        job.told = nowus();
+        int len = strlen(line);
+        if(write(job.input, line, len) == len) return;
+        conoutf("judge %d stopped reading its input: killed", int(job.pid));
+        kill(job.pid, SIGKILL);
+        closeinput(job);
     }
 
     static void closeinput(resimjob &job)
@@ -1163,6 +1191,19 @@ namespace witness
         long long finishedms = !strcmp(finished, "true") ? atoi(runtime) : 0;
         string failednames = "";
         jsonfield(json, "failed", failednames, sizeof(failednames));
+        // the judge's model_mismatch array, as "a, b"
+        string models = "";
+        if(const char *list = strstr(json, "\"model_mismatch\":["))
+        {
+            int n = 0;
+            for(const char *p = list + strlen("\"model_mismatch\":["); *p && *p != ']' && n < MAXSTRLEN - 3; p++)
+            {
+                if(*p == '"') continue;
+                if(*p == ',') { models[n++] = ','; models[n++] = ' '; }
+                else models[n++] = *p;
+            }
+            models[n] = '\0';
+        }
         string info[7];
         if(!rowtext("SELECT r.runid, r.content, r.violations, r.seedsok, r.session, s.session, s.nonce || ' ' || r.installkey FROM runs r JOIN sessions s ON s.id = r.session WHERE r.id = ?", row, 7, info)) return;
         const char *verdict = "valid";
@@ -1179,7 +1220,8 @@ namespace witness
         else if(strcmp(ok, "true"))
         {
             verdict = "rejected";
-            if(atoi(desync)) formatstring(reason, "the replay desynced at tick %s", desync);
+            if(atoi(desync) && models[0]) formatstring(reason, "the replay desynced at tick %s; your copies of these map models differ from the witness's: %s", desync, models);
+            else if(atoi(desync)) formatstring(reason, "the replay desynced at tick %s", desync);
             else formatstring(reason, "the re-simulated run (%s ms) differs from the recorded one (%s ms)", runtime, recorded);
         }
         else if(atoi(failed) > 0) { verdict = "rejected"; formatstring(reason, "rules: %s", failednames); }
@@ -1207,6 +1249,7 @@ namespace witness
         sbr2::kvwriter kv;
         kv.str("verdict", verdict);
         if(reason[0]) kv.str("reason", reason);
+        if(models[0]) kv.str("models", models);
         kv.var("runtimems", atoi(runtime));
         kv.var("ticks", atoi(ticks));
         kv.build(sig.extras);
@@ -1287,6 +1330,13 @@ namespace witness
             int status = 0;
             bool exited = waitpid(job.pid, &status, WNOHANG) == job.pid, timedout = false;
             loopvj(job.runs) if(job.runs[j].ended && nowus() - job.runs[j].since > (unsigned long long)RESIMWALL * 1000000) timedout = true;
+            bool anyended = false;
+            loopvj(job.runs) if(job.runs[j].ended) anyended = true;
+            if(!exited && job.live && !anyended && nowus() - job.told > (unsigned long long)LIVESTALL * 1000000)
+            {
+                conoutf("live judge %d got no input for %d s: killed", int(job.pid), int(LIVESTALL));
+                timedout = true;
+            }
             if(!exited && !timedout)
             {
                 if(!job.live) batch = true;

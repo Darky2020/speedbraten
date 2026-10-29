@@ -978,18 +978,43 @@ namespace game
         return NULL;
     }
 
+    static vector<char *> modelmismatches;
+    const vector<char *> &inputmodelmismatches() { return modelmismatches; }
+    void inputclearmodelmismatches() { modelmismatches.deletearrays(); }
+
+    // a map model whose files here differ from the recording's copy: the game may still play back, so only a warning
+    static void modelmismatch(const char *path)
+    {
+        const char *name = !strncmp(path, "packages/models/", 16) ? path + 16 : path;
+        loopv(modelmismatches) if(!strcmp(modelmismatches[i], name)) return;
+        modelmismatches.add(newstring(name));
+        conoutf(CON_WARN, "\f3model %s differs from the one this replay was recorded with: it may not play back correctly", name);
+    }
+
     static void checkdatafiles(const vector<mapdatafile> &recorded)
     {
-        const vector<mapdatafile> &loaded = getmapdatafiles();
+        vector<mapdatafile> loaded;
+        loaded = getmapdatafiles();
+        bool models = false;
+        loopv(recorded) if(recorded[i].role == 2) models = true;
+        if(models) addmodelfiles(loaded);
         loopv(recorded)
         {
             const mapdatafile *f = finddatafile(loaded, recorded[i].path);
+            if(recorded[i].role == 2)
+            {
+                if(!f || f->size != recorded[i].size || memcmp(f->hash, recorded[i].hash, sizeof(f->hash))) modelmismatch(recorded[i].path);
+                continue;
+            }
             if(!f) conoutf(CON_ERROR, "replay was recorded with %s, which this game did not load", recorded[i].path);
             else if(f->size != recorded[i].size || memcmp(f->hash, recorded[i].hash, sizeof(f->hash)))
                 conoutf(CON_ERROR, "replay was recorded with a different %s: it will likely not play back correctly", recorded[i].path);
         }
         loopv(loaded) if(!finddatafile(recorded, loaded[i].path))
-            conoutf(CON_ERROR, "replay was recorded without %s: it will likely not play back correctly", loaded[i].path);
+        {
+            if(loaded[i].role == 2) modelmismatch(loaded[i].path);
+            else conoutf(CON_ERROR, "replay was recorded without %s: it will likely not play back correctly", loaded[i].path);
+        }
     }
 
     static const char * const hashgroupnames[DETHASH_GROUPS] = { "player", "monsters", "projectiles", "movables", "entities", "rng", "server", "actors", "world" };
@@ -1202,6 +1227,7 @@ namespace game
             rec.cfgcrc = getmapcfgcrc();
             rec.hascfgcrc = true;
             rec.files = getmapdatafiles();
+            addmodelfiles(rec.files);
             if(attemptwitnessed && !(replaylifeonly && (rec.flagrun || rec.race)))
             {
                 if(recording.attempts.length() == 1) witnessrunstart(rec, rec, -1, false);
@@ -1385,7 +1411,8 @@ namespace game
         uint seed;
         // a campaign run that starts after the campaign's first map is practice: no witness
         const char *firstmap = chained && recording.attempts.length() ? recording.attempts[0]->map : name;
-        attemptwitnessed = !fixedgameseed && campaignmap(firstmap, NULL) <= 0 && witnessseed(seed);
+        // the next map of a run the witness no longer watches can't be streamed: its seed would be wasted
+        attemptwitnessed = !fixedgameseed && campaignmap(firstmap, NULL) <= 0 && (!chained || witnessstreaming()) && witnessseed(seed);
         if(attemptwitnessed) { gameseed = seed; seedMT(gameseed); logoutf("game seed: %u (from the witness)", gameseed); }
         else if(feeding && feedseed && !strcmp(name, feedrun.attempts[0]->map)) { gameseed = feedrun.attempts[0]->seed; seedMT(gameseed); logoutf("game seed: %u (harnessfeed)", gameseed); }
         if(!chained && !recording.empty()) recording.moveto(previous);
@@ -1521,6 +1548,19 @@ namespace game
     bool inputreplayneeds(int known)
     {
         return replaying && replayattempt == replaydata.attempts.length()-1 && curtick+1 >= known;
+    }
+
+    // A file still being written only gets its attempts' tick counts with its trailer. An attempt that a later
+    // one already follows, played well past everything recorded for it, missed the recording's map change
+    // (a desync), so it can only end with those tick counts.
+    bool inputreplayoverrun()
+    {
+        if(!replaying || replayattempt >= replaydata.attempts.length()-1) return false;
+        const inputattempt &a = replaycur();
+        int last = 0;
+        if(a.hashes.length()) last = max(last, a.hashes[a.hashes.length()-1].tick);
+        if(a.events.length()) last = max(last, a.events[a.events.length()-1].tick);
+        return curtick > last + 5*REPLAYSEGMENTTICKS;
     }
 
     int inputreplayattempts() { return replaydata.attempts.length(); }

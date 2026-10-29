@@ -101,7 +101,9 @@ namespace game
 
     void resimwait()
     {
-        if(resimlive) while(!resimcomplete && inputreplayneeds(resimknown)) resimmore(false);
+        if(!resimlive) return;
+        while(!resimcomplete && inputreplayneeds(resimknown)) resimmore(false);
+        while(!resimcomplete && inputreplayoverrun()) resimmore(true);
     }
 
     bool resimstart(const char *file)
@@ -162,7 +164,11 @@ namespace game
         printf(",\"recorded_finished\":%s,\"recorded_runtime_ms\":%d", resiminfo.finished ? "true" : "false", resiminfo.runtime);
         printf(",\"desync_tick\":%d,\"hash\":\"", desync);
         loopi(DETHASH_GROUPS) printf("%08x", hash[i]);
-        printf("\",\"ok\":%s", ok ? "true" : "false");
+        printf("\",\"ok\":%s,\"model_mismatch\":[", ok ? "true" : "false");
+        const vector<char *> &models = inputmodelmismatches();
+        loopv(models) { if(i) putchar(','); jsonstring(models[i]); }
+        putchar(']');
+        inputclearmodelmismatches();
         if(resimkey[0])
         {
             printf(",\"rules_read\":%s,\"rules_failed\":%d,\"rules_warned\":%d,\"missing_files\":%d,\"failed\":", resimrulesread ? "true" : "false", resimfails, resimwarns, resimmissing);
