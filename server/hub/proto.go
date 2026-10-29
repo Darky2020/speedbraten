@@ -26,6 +26,7 @@ const (
 	MsgRunTime     = 15
 	MsgBoard       = 16
 	MsgReplay      = 17
+	MsgGetMap      = 18
 
 	MsgWelcome     = 101
 	MsgWitness     = 102
@@ -45,6 +46,8 @@ const (
 	MsgBoardRows   = 116
 	MsgFlagrunMaps = 117
 	MsgReplayData  = 118
+	MsgMapData     = 119
+	MsgRaceMaps    = 120
 
 	StateMenu    = 0
 	StatePlaying = 1

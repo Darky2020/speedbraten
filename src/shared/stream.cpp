@@ -286,7 +286,7 @@ char *cubecasefind(const char *haystack, const char *needle)
 #include <dirent.h>
 #endif
 
-string homedir = "", overridedir = "";
+string homedir = "", overridedir = "", hubmapsdir = "";
 struct packagedir
 {
     char *dir, *filter;
@@ -450,6 +450,7 @@ const char *sethomedir(const char *dir)
     copystring(pdir, dir);
     if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
     copystring(homedir, pdir);
+    formatstring(hubmapsdir, "%shubmaps%c", homedir, PATHDIV);
     return homedir;
 }
 
@@ -550,6 +551,12 @@ const char *findfile(const char *filename, const char *mode)
         packagedir &pf = packagedirs[i];
         if(pf.filter && strncmp(filename, pf.filter, pf.filterlen)) continue;
         formatstring(s, "%s%s", pf.dir, filename);
+        if(fileexists(s, mode)) return s;
+    }
+    // maps downloaded from the hub, used only when no other copy exists
+    if(hubmapsdir[0] && !fileexists(filename, mode))
+    {
+        formatstring(s, "%s%s", hubmapsdir, filename);
         if(fileexists(s, mode)) return s;
     }
     if(mode[0]=='e') return NULL;

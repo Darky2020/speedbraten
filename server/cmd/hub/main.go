@@ -110,6 +110,8 @@ func main() {
 	admins := flag.String("admins", "", "file of admin install keys")
 	witnessDB := flag.String("witnessdb", "", "the witness's witness.db, to announce PBs and records and serve the boards")
 	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
+	maps := flag.String("maps", "", "game data dir whose packages/base maps players may download (the witness's)")
+	raceMaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), listed and downloadable")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -120,7 +122,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	h, err := hub.New(hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm})
+	h, err := hub.New(hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps})
 	if err != nil {
 		log.Fatal(err)
 	}

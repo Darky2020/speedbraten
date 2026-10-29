@@ -42,7 +42,7 @@ namespace game
         hubboard() : mode(0), myrank(0), myms(0), legacyms(0), have(false) { map[0] = kind[0] = legacyname[0] = legacysource[0] = '\0'; }
     };
     // the maps flagrun boards are kept for, as the hub last sent them
-    static vector<char *> flagrunmaps;
+    static vector<char *> flagrunmaps, racemaps;
     // the board of the run being played (HUD, flag boards) and the one menus show (board page)
     static hubboard curboard, viewboard;
     static string viewmap = "", viewkind = "";
@@ -139,6 +139,133 @@ namespace game
         useboardreplay(downloadfile, downloadwatch, downloadlabel);
     }
 
+    // Maps a player lacks come from the hub, which serves the witness's copies. They are kept in
+    // hubmaps/ in the home dir, which the engine searches last, so a player's own copy always wins.
+    static string mapdownload = "";
+    static int mapdownloadmode = INT_MAX; // the mode to load the map in once it is here, INT_MAX: none
+    static vector<uchar> mapdownloadcfg, mapdownloadogz;
+    enum { MAPFILE_OGZ = 0, MAPFILE_CFG, MAXMAPFILE = 32<<20 };
+
+    static void mapdownloadend()
+    {
+        mapdownload[0] = '\0';
+        mapdownloadmode = INT_MAX;
+        mapdownloadcfg.setsize(0);
+        mapdownloadogz.setsize(0);
+    }
+
+    static bool hubmapname(const char *name)
+    {
+        if(!name[0] || strlen(name) > 64) return false;
+        for(const char *c = name; *c; c++) if(!isalnum(uchar(*c)) && *c != '_' && *c != '-') return false;
+        return true;
+    }
+
+    // writes beside the final name first, so a failed save leaves no half map; no data: removes it
+    static bool savehubmapfile(const char *name, const char *ext, const vector<uchar> &data)
+    {
+        defformatstring(file, "hubmaps/packages/base/%s.%s", name, ext);
+        defformatstring(partfile, "%s.part", file);
+        string dst, part;
+        copystring(dst, findfile(path(file, true), "w"));
+        copystring(part, findfile(path(partfile, true), "w"));
+        if(data.empty()) { remove(dst); return true; }
+        stream *f = openrawfile(path(partfile, true), "wb");
+        bool ok = f && f->write(data.getbuf(), data.length()) == size_t(data.length());
+        delete f;
+        if(ok) { remove(dst); ok = rename(part, dst) == 0; }
+        if(!ok) remove(part);
+        return ok;
+    }
+
+    static void mapdata(const char *name, int role, int size, int offset, const uchar *data, int len)
+    {
+        if(!mapdownload[0] || strcmp(name, mapdownload)) return;
+        if(role == MAPFILE_OGZ && !size) { mapdownloadend(); return; }
+        vector<uchar> &buf = role == MAPFILE_CFG ? mapdownloadcfg : mapdownloadogz;
+        if((role != MAPFILE_OGZ && role != MAPFILE_CFG) || offset != buf.length() || size > MAXMAPFILE || offset + len > size)
+        {
+            conoutf(CON_ERROR, "the download of %s went wrong", name);
+            mapdownloadend();
+            return;
+        }
+        int before = buf.length();
+        buf.put(data, len);
+        if(role == MAPFILE_OGZ && size >= (1<<20) && before*4/size != buf.length()*4/size && buf.length() < size)
+            conoutf("hub: %s %.1f MB .. %d%%", name, size/float(1<<20), buf.length()*100/size);
+        if(role != MAPFILE_OGZ || buf.length() < size) return;
+        string got;
+        copystring(got, name);
+        int mode = mapdownloadmode;
+        bool ok = savehubmapfile(got, "cfg", mapdownloadcfg) && savehubmapfile(got, "ogz", mapdownloadogz);
+        mapdownloadend();
+        if(!ok) { conoutf(CON_ERROR, "could not save the map %s", got); return; }
+        conoutf("map %s saved from the hub", got);
+        if(mode != INT_MAX) changemap(got, mode);
+    }
+
+    static bool hubready();
+    static void puttext(sbr2::byteswriter &w, const char *s);
+
+    // asks the hub for a map; mode: load it in that mode once it is here (INT_MAX: just keep it)
+    static bool hubgetmap(const char *name, int mode)
+    {
+        if(mapdownload[0] || !hubready() || !hubmapname(name)) return false;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        puttext(w, name);
+        if(!hubsend(HM_GETMAP, p.getbuf(), p.length())) return false;
+        copystring(mapdownload, name);
+        mapdownloadmode = mode;
+        conoutf("asking the hub for %s..", name);
+        return true;
+    }
+
+    static bool havemap(const char *name)
+    {
+        defformatstring(file, "packages/base/%s.ogz", name);
+        return fileexists(findfile(path(file, true), "r"), "r");
+    }
+
+    // a map change to a map this player lacks: fetch it from the hub and change map once it is here
+    bool hubfetchmap(const char *name, int mode)
+    {
+        return hubmapname(name) && !havemap(name) && hubgetmap(name, mode);
+    }
+
+    ICOMMAND(hubgetmap, "s", (char *name),
+    {
+        if(!hubmapname(name)) conoutf(CON_ERROR, "no map is named that");
+        else if(mapdownload[0]) conoutf(CON_ERROR, "%s is already downloading", mapdownload);
+        else if(!hubready()) conoutf(CON_ERROR, "connect to the hub to download maps");
+        else hubgetmap(name, INT_MAX);
+    });
+    ICOMMAND(havemap, "s", (char *name), intret(havemap(name) ? 1 : 0));
+
+    // the map browser: the hub's flagrun or race maps whose names contain a search text, any case
+    static vector<char *> browsedmaps;
+
+    static bool namecontains(const char *name, const char *text)
+    {
+        int n = strlen(text);
+        for(const char *s = name; *s; s++)
+        {
+            int i = 0;
+            while(i < n && s[i] && tolower(uchar(s[i])) == tolower(uchar(text[i]))) i++;
+            if(i == n) return true;
+        }
+        return !n;
+    }
+
+    ICOMMAND(mapbrowse, "ss", (char *kind, char *text),
+    {
+        browsedmaps.deletearrays();
+        const vector<char *> &maps = !strcmp(kind, "flagrun") ? flagrunmaps : racemaps;
+        loopv(maps) if(namecontains(maps[i], text)) browsedmaps.add(newstring(maps[i]));
+        intret(browsedmaps.length());
+    });
+    ICOMMAND(mapbrowsename, "i", (int *i), result(browsedmaps.inrange(*i) ? browsedmaps[*i] : ""));
+
     static void hubreset()
     {
         hubplayers.setsize(0);
@@ -154,6 +281,7 @@ namespace game
         spectateend("lost the connection to the hub");
         curboard = viewboard = hubboard();
         replaydownloadend();
+        mapdownloadend();
         boardaskedmap[0] = '\0';
         boardreaskat = 0;
     }
@@ -719,11 +847,34 @@ namespace game
                     loopv(maps) flagrunmaps.add(maps[i]);
                     break;
                 }
+                case HM_RACEMAPS:
+                {
+                    vector<char *> maps;
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 10000; i++)
+                    {
+                        string m;
+                        gettext(r, m, sizeof(m));
+                        maps.add(newstring(m));
+                    }
+                    if(!r.ok) { maps.deletearrays(); break; }
+                    racemaps.deletearrays();
+                    loopv(maps) racemaps.add(maps[i]);
+                    break;
+                }
                 case HM_REPLAYDATA:
                 {
                     uint run = uint(r.var());
                     int size = int(r.var()), offset = int(r.var());
                     if(r.ok) replaydata(run, size, offset, r.p, r.left());
+                    break;
+                }
+                case HM_MAPDATA:
+                {
+                    char name[MAXSTRLEN] = "";
+                    gettext(r, name, sizeof(name));
+                    int role = int(r.var()), size = int(r.var()), offset = int(r.var());
+                    if(r.ok) mapdata(name, role, size, offset, r.p, r.left());
                     break;
                 }
                 case HM_NOTICE:

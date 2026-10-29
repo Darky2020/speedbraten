@@ -41,8 +41,13 @@ type Config struct {
 	Key    noise.DHKey
 	DB     string
 	Admins map[string]bool // install keys, hex
-	Now    func() time.Time
-	Logf   func(format string, args ...any)
+	// Maps: a game data dir (packages/base/<map>.ogz and .cfg) whose maps players may download;
+	// the witness's, so that a downloaded map is the one runs on it are judged against
+	Maps string
+	// RaceMaps: a package dir like Maps whose maps are the race maps, listed to players
+	RaceMaps string
+	Now      func() time.Time
+	Logf     func(format string, args ...any)
 }
 
 type Hub struct {
@@ -82,6 +87,7 @@ type player struct {
 	stat       runStat
 	boardBusy  bool // a BOARD request is being answered
 	replayBusy bool // a REPLAY request is being answered
+	mapBusy    bool // a GETMAP request is being answered
 	out        chan []byte
 	closed     bool
 }
@@ -356,6 +362,7 @@ func (h *Hub) join(p *player, want string) {
 	refusal := h.rename(p, want)
 	h.welcome(p, refusal)
 	h.send(p, MsgFlagrunMaps, flagrunMapsMsg())
+	h.send(p, MsgRaceMaps, h.raceMapsMsg())
 	if h.witness != nil {
 		h.send(p, MsgWitness, h.witness)
 	}
@@ -582,6 +589,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.boardRequest(p, &r)
 	case MsgReplay:
 		return h.replayRequest(p, &r)
+	case MsgGetMap:
+		return h.mapRequest(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {

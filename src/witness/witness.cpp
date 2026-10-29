@@ -12,9 +12,10 @@
 // Sessions, runs, seeds, signatures and verdicts are recorded in witness.db (SQLite).
 //
 //   sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>]
-//                 [-e<sauer_resim> -r<game data dir> [-o<overrides dir>] [-R]]
+//                 [-e<sauer_resim> -r<game data dir> [-o<overrides dir>] [-k<package dir>] [-R]]
 //
 // Without -e and -r runs are signed but get no verdict. -R judges every finished run again.
+// -k: an extra package dir for sauer_resim (absolute), e.g. the hub's race maps.
 //
 // The channel key file holds the X25519 private key in hex; it is created if missing. The
 // signing seed comes from server/cmd/witnesskeys.
@@ -68,7 +69,7 @@ namespace witness
     enum { EVENT_CONTROLS = 0 }; // INPUT_CONTROLS
 
     static uchar channelkey[noise::KEYLEN], signingseed[32];
-    static string datadir = "", resimexe = "", resimdata = "", resimoverrides = "";
+    static string datadir = "", resimexe = "", resimdata = "", resimoverrides = "", resimpackages = "";
     enum { RESIMCPU = 600, RESIMWALL = 900 }; // seconds
     static sqlite3 *db = NULL;
     static unsigned long long signcounter = 0;
@@ -957,6 +958,7 @@ namespace witness
         tohexstr(pub, 32, pubhex);
         defformatstring(qarg, "-q%s", home);
         defformatstring(oarg, "-o%s", resimoverrides);
+        defformatstring(karg, "-k%s", resimpackages);
         defformatstring(varg, "-V%s", pubhex);
         int fds[2] = { -1, -1 };
         if(pipe(fds) < 0) return NULL;
@@ -974,11 +976,12 @@ namespace witness
             if(fd >= 0) dup2(fd, 1);
             if(null >= 0) dup2(null, 2);
             if(chdir(resimdata) < 0) _exit(3);
-            const char *argv[8];
+            const char *argv[9];
             int n = 0;
             argv[n++] = resimexe;
             argv[n++] = qarg;
             if(resimoverrides[0]) argv[n++] = oarg;
+            if(resimpackages[0]) argv[n++] = karg;
             argv[n++] = varg;
             argv[n++] = "-L";
             argv[n++] = file;
@@ -1479,12 +1482,13 @@ int main(int argc, char **argv)
         case 'e': copystring(resimexe, &argv[i][2]); break;
         case 'r': copystring(resimdata, &argv[i][2]); break;
         case 'o': copystring(resimoverrides, &argv[i][2]); break;
+        case 'k': copystring(resimpackages, &argv[i][2]); break;
         case 'R': rejudge = true; break;
         case 'j': maxlive = max(atoi(&argv[i][2]), 0); break;
         case 'P': backfill = true; break;
         case 'l': if(!setlimit(&argv[i][2])) fatal("unknown limit: %s", &argv[i][2]); break;
     }
-    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-j<live re-simulations>] [-R]] [-P] [-l<limit>=<value>]");
+    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-k<extra package dir, e.g. race maps>] [-j<live re-simulations>] [-R]] [-P] [-l<limit>=<value>]");
     mkdir(datadir, 0700);
     defformatstring(runsdir, "%s/runs", datadir);
     mkdir(runsdir, 0700);

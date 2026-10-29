@@ -677,6 +677,7 @@ namespace game
     {
         if(!remote && !lifesession)
         {
+            if(hubfetchmap(name, mode)) return;
             server::forcemap(name, mode);
             if(!isconnected()) localconnect();
         }

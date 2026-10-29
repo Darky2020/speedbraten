@@ -795,6 +795,7 @@ namespace game
     extern void changemap(const char *name, int mode);
     // say away from a game server goes to the hub (hub.cpp); false if it can't take it
     extern bool hubchat(const char *text);
+    extern bool hubfetchmap(const char *name, int mode);
     // spectating through the hub (spectate.cpp): percent of normal speed while catching up
     extern int spectatespeed();
     extern void forceintermission();
