@@ -612,22 +612,6 @@ void localconnect()
     game::gameconnect(false);
     server::localconnect(c.num);
 }
-
-void lifeconnect()
-{
-    client &c = addclient(ST_LOCAL);
-    copystring(c.hostname, "local");
-    server::localconnect(c.num);
-}
-
-void lifedisconnect()
-{
-    loopv(clients) if(clients[i]->type==ST_LOCAL)
-    {
-        server::localdisconnect(i);
-        delclient(clients[i]);
-    }
-}
 #endif
 
 #ifdef WIN32
