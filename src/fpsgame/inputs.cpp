@@ -1523,6 +1523,19 @@ namespace game
         return replaying && replayattempt == replaydata.attempts.length()-1 && curtick+1 >= known;
     }
 
+    // A file still being written only gets its attempts' tick counts with its trailer. An attempt that a later
+    // one already follows, played well past everything recorded for it, missed the recording's map change
+    // (a desync), so it can only end with those tick counts.
+    bool inputreplayoverrun()
+    {
+        if(!replaying || replayattempt >= replaydata.attempts.length()-1) return false;
+        const inputattempt &a = replaycur();
+        int last = 0;
+        if(a.hashes.length()) last = max(last, a.hashes[a.hashes.length()-1].tick);
+        if(a.events.length()) last = max(last, a.events[a.events.length()-1].tick);
+        return curtick > last + 5*REPLAYSEGMENTTICKS;
+    }
+
     int inputreplayattempts() { return replaydata.attempts.length(); }
 
     // Called where a replay of a whole file would end, after its last tick; it may hand

@@ -358,6 +358,7 @@ namespace game
     extern bool (*replaywaitattempt)();
     extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
     extern bool inputreplayneeds(int known);
+    extern bool inputreplayoverrun();
     extern int inputreplayattempts();
     extern void (*replaychainhook)();
     extern bool inputreplaycontinue(const inputrun &src);

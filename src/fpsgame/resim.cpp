@@ -101,7 +101,9 @@ namespace game
 
     void resimwait()
     {
-        if(resimlive) while(!resimcomplete && inputreplayneeds(resimknown)) resimmore(false);
+        if(!resimlive) return;
+        while(!resimcomplete && inputreplayneeds(resimknown)) resimmore(false);
+        while(!resimcomplete && inputreplayoverrun()) resimmore(true);
     }
 
     bool resimstart(const char *file)
