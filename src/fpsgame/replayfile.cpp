@@ -1926,6 +1926,8 @@ namespace game
     }
 
     // the next map of a chained run
+    bool witnessstreaming() { return live != NULL; }
+
     void witnessnextattempt(const inputattempt &a)
     {
         if(!live) return;

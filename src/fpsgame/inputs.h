@@ -271,6 +271,7 @@ namespace game
     // the hub (hub.cpp)
     extern void hubupdate();
     extern bool witnessseed(uint &seed);
+    extern bool witnessstreaming();
     extern void witnessrunstart(const inputattempt &header, const inputattempt &data, int skiptick, bool life, int continues = -1);
     extern int witnesstakefinished();
     extern void witnessdrop(const char *reason);
