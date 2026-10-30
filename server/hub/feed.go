@@ -46,7 +46,7 @@ func (h *Hub) feedJoined(p *player) {
 		delete(h.feed.gone, p.key)
 		return
 	}
-	h.feedPost(feedName(p.name) + " joined the hub")
+	h.feedPost("👋 " + feedName(p.name) + " joined the hub")
 }
 
 // feedLeft: a named player left. Runs with h.mu held.
@@ -88,7 +88,7 @@ func (h *Hub) FeedTick() {
 	}
 	sort.Strings(left)
 	for _, name := range left {
-		h.cfg.Feed.Post(feedName(name) + " left the hub")
+		h.cfg.Feed.Post("🚪 " + feedName(name) + " left the hub")
 	}
 	if send {
 		h.cfg.Feed.Status(status)
@@ -98,8 +98,8 @@ func (h *Hub) FeedTick() {
 
 func (h *Hub) feedPost(text string) { h.cfg.Feed.Post(text) }
 
-// lobbyStatus is one line per lobby: its map and category, its members (the host first) and who
-// watches. Runs with h.mu held.
+// lobbyStatus is one line per lobby: its map and category, its members (the host first, crowned)
+// and who watches. Runs with h.mu held.
 func (h *Hub) lobbyStatus() string {
 	var ls []*lobby
 	for _, l := range h.lobbies {
@@ -111,24 +111,25 @@ func (h *Hub) lobbyStatus() string {
 	for _, l := range ls {
 		players += len(l.members)
 	}
-	fmt.Fprintf(&b, "**%d %s in %d %s**", players, plural(players, "player", "players"), len(ls), plural(len(ls), "lobby", "lobbies"))
+	fmt.Fprintf(&b, "🎮 **%d %s in %d %s**", players, plural(players, "player", "players"), len(ls), plural(len(ls), "lobby", "lobbies"))
 	for _, l := range ls {
 		var names []string
+		if l.host != nil {
+			names = append(names, "👑 "+feedName(l.host.name))
+		}
 		for _, m := range l.members {
-			n := feedName(m.name)
-			if m == l.host {
-				n += " (host)"
+			if m != l.host {
+				names = append(names, feedName(m.name))
 			}
-			names = append(names, n)
 		}
 		k := board.Key{Map: l.mapname, Kind: l.kind, Mode: int(l.mode)}
-		fmt.Fprintf(&b, "\n%s (%s): %s", feedName(k.MapLabel()), k.KindLabel(), strings.Join(names, ", "))
+		fmt.Fprintf(&b, "\n%s %s (%s): %s", kindEmoji(l.kind), feedName(k.MapLabel()), k.KindLabel(), strings.Join(names, ", "))
 		if len(l.specs) > 0 {
 			var specs []string
 			for _, s := range l.specs {
 				specs = append(specs, feedName(s.name))
 			}
-			fmt.Fprintf(&b, "; watching: %s", strings.Join(specs, ", "))
+			fmt.Fprintf(&b, " · 👀 %s", strings.Join(specs, ", "))
 		}
 	}
 	return b.String()
@@ -140,7 +141,11 @@ func (h *Hub) feedRecord(name string, k board.Key, ms uint64, prev string, previ
 	if h.cfg.Feed == nil {
 		return
 	}
-	text := fmt.Sprintf("%s set a new record on %s (%s): **%s**", feedName(name), feedName(k.MapLabel()), k.KindLabel(), board.Time(int64(ms)))
+	icon := "🏆"
+	if legacy != nil {
+		icon = "🏆📜"
+	}
+	text := icon + " " + fmt.Sprintf("%s set a new record on %s (%s): **%s**", feedName(name), feedName(k.MapLabel()), k.KindLabel(), board.Time(int64(ms)))
 	switch {
 	case previous < 0:
 	case prev == name:
@@ -152,6 +157,18 @@ func (h *Hub) feedRecord(name string, k board.Key, ms uint64, prev string, previ
 		text += fmt.Sprintf(", and beat the legacy record of %s (%s)", feedName(legacy.Player), board.Time(legacy.MS))
 	}
 	h.feedPost(text)
+}
+
+func kindEmoji(kind string) string {
+	switch kind {
+	case "flagrun":
+		return "🚩"
+	case "race":
+		return "🏁"
+	case "campaign":
+		return "🗺️"
+	}
+	return "🎮"
 }
 
 func plural(n int, one, many string) string {

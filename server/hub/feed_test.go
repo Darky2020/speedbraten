@@ -56,7 +56,7 @@ func TestFeedJoinLeave(t *testing.T) {
 	f, feed := newFeedFixture(t)
 	alice := newKey()
 	a := f.connect(alice, "1.1.1.1", "alice")
-	if posts, _ := feed.take(); len(posts) != 1 || posts[0] != "alice joined the hub" {
+	if posts, _ := feed.take(); len(posts) != 1 || posts[0] != "👋 alice joined the hub" {
 		t.Fatalf("join: %q", posts)
 	}
 
@@ -83,7 +83,7 @@ func TestFeedJoinLeave(t *testing.T) {
 	f.clock.add(31 * time.Second)
 	f.h.FeedTick()
 	f.h.FeedTick()
-	if posts, _ := feed.take(); len(posts) != 1 || posts[0] != "alice left the hub" {
+	if posts, _ := feed.take(); len(posts) != 1 || posts[0] != "🚪 alice left the hub" {
 		t.Fatalf("leave: %q", posts)
 	}
 
@@ -112,8 +112,8 @@ func TestFeedStatus(t *testing.T) {
 	b.waitLobby(func(l lobbyinfo) bool { return len(l.members) == 2 })
 	f.h.FeedTick()
 	_, status := feed.take()
-	if len(status) != 1 || !strings.HasPrefix(status[0], "**2 players in 1 lobby**") || !strings.Contains(status[0], "forge") ||
-		!strings.Contains(status[0], "alice (host), bob") {
+	if len(status) != 1 || !strings.HasPrefix(status[0], "🎮 **2 players in 1 lobby**") ||
+		!strings.Contains(status[0], "\n🚩 forge (flagrun, ctf): 👑 alice, bob") {
 		t.Fatalf("status: %q", status)
 	}
 
@@ -157,10 +157,10 @@ func TestFeedRecords(t *testing.T) {
 	f.h.feedRecord("m_r*x", board.Key{Map: "mpsp6a", Kind: "campaign", Mode: -3}, 133090, "", -1, nil)
 	posts, _ := feed.take()
 	want := []string{
-		"alice set a new record on dust2 (flagrun, ctf): **0:06.130**",
-		"bob set a new record on dust2 (flagrun, ctf): **0:06.100**, beating alice's 0:06.130",
-		"bob set a new record on dust2 (flagrun, ctf): **0:06.050**, improving their own 0:06.100, and beat the legacy record of Buck (0:06.070)",
-		`m\_r\*x set a new record on An Army Of One (campaign): **2:13.090**`,
+		"🏆 alice set a new record on dust2 (flagrun, ctf): **0:06.130**",
+		"🏆 bob set a new record on dust2 (flagrun, ctf): **0:06.100**, beating alice's 0:06.130",
+		"🏆📜 bob set a new record on dust2 (flagrun, ctf): **0:06.050**, improving their own 0:06.100, and beat the legacy record of Buck (0:06.070)",
+		`🏆 m\_r\*x set a new record on An Army Of One (campaign): **2:13.090**`,
 	}
 	if len(posts) != len(want) {
 		t.Fatalf("posts %q", posts)
@@ -177,7 +177,7 @@ func TestFeedRecords(t *testing.T) {
 		t.Fatalf("a PB was posted: %q", posts)
 	}
 	f.h.announce("", "carol", "dust2", "flagrun", 11, 6000, true, 6050)
-	if posts, _ := feed.take(); len(posts) != 1 || !strings.HasPrefix(posts[0], "carol set a new record on dust2") {
+	if posts, _ := feed.take(); len(posts) != 1 || !strings.HasPrefix(posts[0], "🏆 carol set a new record on dust2") {
 		t.Fatalf("record from the witness: %q", posts)
 	}
 }
