@@ -768,5 +768,28 @@ namespace game
         if(!readreplay(attemptlist[*i].replay, &run, info)) { conoutf(CON_ERROR, "could not read %s", attemptlist[*i].replay); return; }
         viewinputrun(run, attemptlist[*i].replay);
     });
+
+    // statsaverage map kind mode: the average of a category's last 10 finished normal runs, "" without any
+    ICOMMAND(statsaverage, "ssi", (char *map, char *kind, int *mode),
+    {
+        int avg = queryint("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND finished AND NOT assisted AND splices = 0 "
+                           "ORDER BY date DESC, id DESC LIMIT 10)", map, kind, *mode, -1);
+        result(avg >= 0 ? formatms(avg) : "");
+    });
+
+    // statswatchpb map kind mode [check]: watches the replay of a category's PB; with check, 1 if there is one
+    ICOMMAND(statswatchpb, "ssii", (char *map, char *kind, int *mode, int *check),
+    {
+        string file;
+        int side = 0;
+        bool found = statspbreplay(map, kind, *mode, false, side, file);
+        if(found) { stream *f = openrawfile(path(file, true), "rb"); found = f != NULL; delete f; }
+        if(*check) { intret(found ? 1 : 0); return; }
+        if(!found || multiplayer(false)) return;
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
+        viewinputrun(run, file);
+    });
 #endif
 }
