@@ -46,8 +46,10 @@ type Config struct {
 	Maps string
 	// RaceMaps: a package dir like Maps whose maps are the race maps, listed to players
 	RaceMaps string
-	Now      func() time.Time
-	Logf     func(format string, args ...any)
+	// Feed, if set, hears of joins, leaves, records and the lobbies (feed.go)
+	Feed Feed
+	Now  func() time.Time
+	Logf func(format string, args ...any)
 }
 
 type Hub struct {
@@ -66,6 +68,7 @@ type Hub struct {
 	wdb       *sqlite.DB // the witness's database, for results
 	boards    *board.Store
 	maxView   int
+	feed      feedState
 }
 
 type player struct {
@@ -90,6 +93,7 @@ type player struct {
 	mapBusy    bool // a GETMAP request is being answered
 	out        chan []byte
 	closed     bool
+	fed        bool // the feed was told this connection's player joined
 }
 
 type lobby struct {
@@ -377,6 +381,7 @@ func (h *Hub) join(p *player, want string) {
 	if p.name != "" {
 		h.broadcast(MsgPlayer, h.playerMsg(p))
 	}
+	h.feedJoined(p)
 }
 
 func (h *Hub) leave(p *player) {
@@ -394,6 +399,7 @@ func (h *Hub) leave(p *player) {
 		w.u(p.id)
 		h.broadcast(MsgGone, w.b)
 	}
+	h.feedLeft(p)
 }
 
 // validName: 1 to 15 printable characters (UTF-8, as the game's names allow), no spaces.
@@ -448,6 +454,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		if p.name != had {
 			h.broadcast(MsgPlayer, h.playerMsg(p))
 		}
+		h.feedJoined(p)
 	case MsgStatus:
 		state, mapname, mode, kind := r.u(), r.str(64), r.s(), r.str(16)
 		if err := r.done(); err != nil {

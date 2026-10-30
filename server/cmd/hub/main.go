@@ -1,13 +1,15 @@
 // hub is the speedbraten hub server: names, presence, lobbies and chat (package hub).
 //
 //	hub -d <data dir> [-listen :28791] [-witness <host:port players use>] [-witnessask <host:port>]
-//	    [-witnessdb <witness.db>] [-admins <file>]
+//	    [-witnessdb <witness.db>] [-admins <file>] [-discord <webhook url | @file>]
 //
 // The data dir holds hub.key (the channel's static private key, made on first start) and
 // hub.db. With -witness, the hub asks that witness (or -witnessask, when it is reached by
 // another address from here) for its keys and hands address and keys to every player.
 // With -witnessdb (on the witness's machine) it announces PBs and records to everyone. The
 // admins file lists install keys (hex, one per line, # comments) allowed to #mute and #kick.
+// With -discord it posts joins, leaves and records to that Discord webhook and keeps a message
+// there with the lobbies up to date.
 package main
 
 import (
@@ -27,6 +29,7 @@ import (
 	"github.com/flynn/noise"
 
 	"speedbraten/server/board"
+	"speedbraten/server/discord"
 	"speedbraten/server/hub"
 	"speedbraten/server/noisechan"
 )
@@ -44,6 +47,22 @@ func loadKey(path string) (noise.DHKey, error) {
 		return noise.DHKey{}, err
 	}
 	return noisechan.KeyFromPrivate(priv)
+}
+
+// readSetting is the value itself, or with "@path" the first line of that file
+func readSetting(v string) (string, error) {
+	if !strings.HasPrefix(v, "@") {
+		return v, nil
+	}
+	b, err := os.ReadFile(v[1:])
+	if err != nil {
+		return "", err
+	}
+	line, _, _ := strings.Cut(string(b), "\n")
+	if line = strings.TrimSpace(line); line == "" {
+		return "", errors.New(v[1:] + " is empty")
+	}
+	return line, nil
 }
 
 func loadAdmins(path string) (map[string]bool, error) {
@@ -112,6 +131,7 @@ func main() {
 	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
 	maps := flag.String("maps", "", "game data dir whose packages/base maps players may download (the witness's)")
 	raceMaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), listed and downloadable")
+	discordHook := flag.String("discord", "", "Discord webhook URL for joins, leaves, records and the lobbies; @file reads it from a file")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -122,9 +142,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	h, err := hub.New(hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps})
+	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps}
+	if *discordHook != "" {
+		url, err := readSetting(*discordHook)
+		if err != nil {
+			log.Fatalf("-discord: %v", err)
+		}
+		cfg.Feed = discord.New(url, log.Printf)
+	}
+	h, err := hub.New(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if cfg.Feed != nil {
+		go func() {
+			for {
+				h.FeedTick()
+				time.Sleep(5 * time.Second)
+			}
+		}()
 	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
