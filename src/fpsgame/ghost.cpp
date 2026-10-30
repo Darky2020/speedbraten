@@ -8,6 +8,7 @@
 namespace game
 {
     VARP(ghost, 0, 1, 1);     // draw the ghost
+    VARP(ghostidle, 0, 0, 1); // also while the run timer is stopped: before a flagrun starts, after the finish
     VARP(ghostdiff, 0, 1, 1); // show the live time difference to it
     VARP(ghostdiffwindow, 1, 3, 600); // seconds of the ghost's path searched either side of the run time
     VARP(ghostdiffsmooth, 0, 100, 2000); // ms of real time the shown difference is averaged over
@@ -178,6 +179,7 @@ namespace game
         if(!ghost || !connected || !runtimerkindname() || watchingghost()) return false;
         bool running;
         int t = runtimerticks(running);
+        if(!running && !ghostidle) return false;
         return ghostat(running || t > 0 ? t : 0, g);
     }
 
