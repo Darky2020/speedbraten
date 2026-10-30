@@ -2251,7 +2251,15 @@
          if(m_hold || m_protect == (f.team==team))
          {
              loopvj(flags) if(flags[j].owner==ci->clientnum) return;
-@@ -924,6 +942,7 @@
+@@ -564,6 +582,7 @@
+                 break;
+             }
+         }
++        if(flagrunrules() && !flagrunminimap) return;
+ 
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         int s = 1800/4, x = 1800*w/h - s - s/10, y = s/10;
+@@ -924,6 +943,7 @@
  
      void scoreflag(fpsent *d, int relay, int relayversion, int goal, int goalversion, int goalspawn, int team, int score, int dflags)
      {
@@ -2259,7 +2267,7 @@
          setscore(team, score);
          if(flags.inrange(goal))
          {
-@@ -951,7 +970,7 @@
+@@ -951,7 +971,7 @@
          conoutf(CON_GAMEINFO, "%s scored for %s", teamcolorname(d), teamcolor("your team", ctfflagteam(team), "the enemy team"));
          playsound(team==ctfteamflag(player1->team) ? S_FLAGSCORE : S_FLAGFAIL);
  
@@ -2268,7 +2276,7 @@
      }
  
      void takeflag(fpsent *d, int i, int version)
-@@ -964,6 +983,7 @@
+@@ -964,6 +984,7 @@
          if(m_hold) conoutf(CON_GAMEINFO, "%s picked up the flag for %s", teamcolorname(d), teamcolor("your team", d->team, "the enemy team"));
          else if(m_protect || f.droptime) conoutf(CON_GAMEINFO, "%s picked up %s", teamcolorname(d), teamcolorflag(f));
          else conoutf(CON_GAMEINFO, "%s stole %s", teamcolorname(d), teamcolorflag(f));
@@ -2276,7 +2284,7 @@
          ownflag(i, d, lastmillis, m_hold ? ctfteamflag(d->team) : -1);
          teamsound(d, S_FLAGPICKUP);
      }
-@@ -1029,6 +1049,7 @@
+@@ -1029,6 +1050,7 @@
  
      int respawnwait(fpsent *d, int delay = 0)
      {
@@ -2284,7 +2292,7 @@
          return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
      }
  
-@@ -1270,7 +1291,21 @@
+@@ -1270,7 +1292,21 @@
  };
  
  extern ctfclientmode ctfmode;

@@ -1952,7 +1952,15 @@
          if(m_hold || m_protect == (f.team==team))
          {
              loopvj(flags) if(flags[j].owner==ci->clientnum) return;
-@@ -936,6 +954,7 @@
+@@ -567,6 +585,7 @@
+                 break;
+             }
+         }
++        if(flagrunrules() && !flagrunminimap) return;
+ 
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         int s = 1800/4, x = 1800*w/h - s - s/10, y = s/10;
+@@ -936,6 +955,7 @@
  
      void scoreflag(fpsent *d, int relay, int relayversion, int goal, int goalversion, int goalspawn, int team, int score, int dflags)
      {
@@ -1960,7 +1968,7 @@
          setscore(team, score);
          bool wasdropped = false; //NEW
          if(flags.inrange(goal))
-@@ -971,7 +990,7 @@
+@@ -971,7 +991,7 @@
          conoutf(CON_GAMEINFO, "%s scored for %s%s", teamcolorname(d), teamcolor("your team", ctfflagteam(team), "the enemy team"), append); //NEW append
          playsound(team==ctfteamflag(player1->team) ? S_FLAGSCORE : S_FLAGFAIL);
  
@@ -1969,7 +1977,7 @@
          {
              if(score == FLAGLIMIT) mod::event::run(mod::event::COAF, "s", team==1 ? "good" : (team==2 ? "evil" : "unknown")); //NEW
              conoutf(CON_GAMEINFO, "%s captured %d flags", teamcolor("your team", ctfflagteam(team), "the enemy team"), score);
-@@ -992,6 +1011,7 @@
+@@ -992,6 +1012,7 @@
          if(m_hold) conoutf(CON_GAMEINFO, "%s picked up the flag for %s%s", teamcolorname(d), teamcolor("your team", d->team, "the enemy team"), append); //NEW append
          else if(m_protect || f.droptime) conoutf(CON_GAMEINFO, "%s picked up %s%s", teamcolorname(d), teamcolorflag(f), append); //NEW append
          else conoutf(CON_GAMEINFO, "%s stole %s%s", teamcolorname(d), teamcolorflag(f), append); //NEW append
@@ -1977,7 +1985,7 @@
          ownflag(i, d, lastmillis, m_hold ? ctfteamflag(d->team) : -1);
          teamsound(d, S_FLAGPICKUP);
      }
-@@ -1057,6 +1077,7 @@
+@@ -1057,6 +1078,7 @@
  
      int respawnwait(fpsent *d, int delay = 0)
      {
@@ -1985,7 +1993,7 @@
          return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
      }
  
-@@ -1298,7 +1319,21 @@
+@@ -1298,7 +1320,21 @@
  };
  
  extern ctfclientmode ctfmode;

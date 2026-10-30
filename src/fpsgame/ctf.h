@@ -592,6 +592,7 @@ struct ctfclientmode : clientmode
                 break;
             }
         }
+        if(flagrunrules() && !flagrunminimap) return;
 
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         int s = 1800/4, x = 1800*w/h - s - s/10, y = s/10;

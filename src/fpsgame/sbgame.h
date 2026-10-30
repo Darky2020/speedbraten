@@ -118,5 +118,6 @@ extern void drawhudedit(int w, int h);
 extern bool flagheldby(int flag, fpsent *d);
 extern bool flagspawnloc(bool own, vec &loc);
 extern bool flagrunrules();
+extern int flagrunminimap;
 extern bool racerules();
 extern bool mapchained(int mode);
