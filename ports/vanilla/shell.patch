@@ -1400,6 +1400,264 @@
  
      int encodeping(int millis)
      {
+@@ -274,12 +274,13 @@
+     vector<int> attr;
+     ENetAddress address;
+     bool keep;
++    string favtab;
+     const char *password;
+ 
+     serverinfo()
+         : port(-1), numplayers(0), resolved(UNRESOLVED), keep(false), password(NULL)
+     {
+-        name[0] = map[0] = sdesc[0] = '\0';
++        name[0] = map[0] = sdesc[0] = favtab[0] = '\0';
+         clearpings();
+         setoffset();
+     }
+@@ -560,20 +561,155 @@
+ 
+ serverinfo *selectedserver = NULL;
+ 
+-const char *showservers(g3d_gui *cgui, uint *header, int pagemin, int pagemax)
++// draws a table of servers with header on each page; sets sc to the clicked server
++typedef void (*serverlistfn)(g3d_gui *g, uint *header, int pagemin, int pagemax, const vector<serverinfo *> &list, serverinfo *&sc);
++
++// Favourite servers are the kept servers (keepserver in servers.cfg: never cleared from the list,
++// sorted to the top), sorted into tabs the player names. servers.cfg holds the tabs as favtab lines
++// and each favourite's tab as the fourth keepserver argument.
++static vector<char *> favtabs;
++static serverinfo *favpick = NULL; // a [+] was clicked with several tabs: which one to add it to
++static int favrename = -1;         // the tab whose name is being edited
++
++static int findfavtab(const char *name) { loopv(favtabs) if(!strcmp(favtabs[i], name)) return i; return -1; }
++
++static int addfavtab(const char *name)
+ {
+-    refreshservers();
+-    if(servers.empty())
+-    {
+-        if(header) execute(header);
+-        return NULL;
++    if(!name[0]) return -1;
++    int i = findfavtab(name);
++    if(i >= 0) return i;
++    favtabs.add(newstring(name, MAXSTRLEN-1));
++    return favtabs.length() - 1;
++}
++ICOMMAND(favtab, "s", (const char *name), addfavtab(name));
++
++static const char *favtabof(const serverinfo &si) { return si.favtab[0] && findfavtab(si.favtab) >= 0 ? si.favtab : favtabs[0]; }
++
++static void setfavourite(serverinfo &si, const char *tab)
++{
++    si.keep = true;
++    copystring(si.favtab, tab);
++    writeservercfg();
++    // a new favourite is pinged now rather than when its turn comes
++    if(pingsock != ENET_SOCKET_NULL && si.address.host != ENET_HOST_ANY)
++    {
++        ENetBuffer buf;
++        uchar ping[MAXTRANS];
++        buildping(buf, ping, si);
++        enet_socket_send(pingsock, &si.address, &buf, 1);
+     }
+-    serverinfo *sc = NULL;
+-    for(int start = 0; start < servers.length();)
++}
++
++static void removefavourite(serverinfo &si)
++{
++    si.keep = false;
++    si.favtab[0] = '\0';
++    writeservercfg();
++}
++
++// the favourite column beside rows [start, end) of a server table: [+] adds, [x] removes
++static void favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
++{
++    serverinfo *clicked = NULL;
++    g->space(2);
++    g->pushlist();
++    g->text("favourite", 0xFFFF80);
++    for(int j = start; j < end; j++) if(g->button(list[j]->keep ? "\f3[x]" : "\f0[+]", 0xFFFFFF)&G3D_UP) clicked = list[j];
++    g->poplist();
++    if(!clicked) return;
++    if(clicked->keep) removefavourite(*clicked);
++    else if(favtabs.length() > 1) favpick = clicked;
++    else setfavourite(*clicked, favtabs[0]);
++}
++
++// while a [+] waits for its tab: one button per tab
++static void favpickrow(g3d_gui *g)
++{
++    if(!favpick) return;
++    g->pushlist();
++    defformatstring(title, "add %s to: ", favpick->sdesc[0] ? favpick->sdesc : favpick->name);
++    g->text(title, 0xFFFF80);
++    int chosen = -1;
++    loopv(favtabs) if(g->button(favtabs[i], 0x80FF80)&G3D_UP) chosen = i;
++    g->space(2);
++    bool cancel = (g->button("cancel", 0xFF8080)&G3D_UP) != 0;
++    g->poplist();
++    if(chosen >= 0) setfavourite(*favpick, favtabs[chosen]);
++    if(chosen >= 0 || cancel) favpick = NULL;
++}
++
++// one tab per favourites tab, each listing its servers with drawlist, and the tab's own buttons
++static void showfavtabs(g3d_gui *g, uint *header, int pagemin, int pagemax, serverlistfn drawlist, serverinfo *&sc)
++{
++    if(favtabs.empty()) addfavtab("favourites");
++    static vector<serverinfo *> shown;
++    int deltab = -1;
++    bool newtab = false;
++    loopvj(favtabs)
++    {
++        shown.setsize(0);
++        loopv(servers) if(servers[i]->keep && !strcmp(favtabof(*servers[i]), favtabs[j])) shown.add(servers[i]);
++        g->tab(favtabs[j], 0xFFDD88);
++        if(shown.empty())
++        {
++            if(header) execute(header);
++            g->text("no servers in this tab yet: click [+] beside a server in the server list", 0xFFFFDD);
++        }
++        else drawlist(g, header, pagemin, pagemax, shown, sc);
++        g->pushlist();
++        if(favrename == j)
++        {
++            g->text("new name (enter): ", 0xFFFF80);
++            char *name = g->field("favrenametab", 0xFFFFFF, 16, 0, favtabs[j]);
++            if(name && name[0] && strcmp(name, favtabs[j]) && findfavtab(name) < 0)
++            {
++                loopv(servers) if(servers[i]->keep && !strcmp(favtabof(*servers[i]), favtabs[j])) copystring(servers[i]->favtab, name);
++                delete[] favtabs[j];
++                favtabs[j] = newstring(name, MAXSTRLEN-1);
++                favrename = -1;
++                writeservercfg();
++            }
++            if(g->button(" cancel", 0xFF8080)&G3D_UP) favrename = -1;
++        }
++        else
++        {
++            if(g->button("rename tab", 0xFFFFDD)&G3D_UP) favrename = j;
++            g->space(2);
++            if(g->button("+ new tab", 0x80FF80)&G3D_UP) newtab = true;
++            if(favtabs.length() > 1)
++            {
++                g->space(2);
++                if(g->button("delete tab", 0xFF8080)&G3D_UP) deltab = j;
++            }
++        }
++        g->poplist();
++    }
++    if(newtab)
+     {
++        string name;
++        for(int n = favtabs.length() + 1;; n++) { formatstring(name, "favourites %d", n); if(findfavtab(name) < 0) break; }
++        favrename = addfavtab(name);
++        writeservercfg();
++    }
++    if(deltab >= 0)
++    {
++        // the deleted tab's servers stay favourites, in the first remaining tab
++        const char *into = favtabs[deltab ? 0 : 1];
++        loopv(servers) if(servers[i]->keep && !strcmp(favtabof(*servers[i]), favtabs[deltab])) copystring(servers[i]->favtab, into);
++        delete[] favtabs.remove(deltab);
++        favrename = -1;
++        writeservercfg();
++    }
++}
++
++static void showserverlist(g3d_gui *cgui, uint *header, int pagemin, int pagemax, const vector<serverinfo *> &list, serverinfo *&sc)
++{
++    for(int start = 0; start < list.length();)
++    {
+         if(start > 0) cgui->tab();
+         if(header) execute(header);
+-        int end = servers.length();
++        if(!start) favpickrow(cgui);
++        int end = list.length();
+         cgui->pushlist();
+         loopi(10)
+         {
+@@ -581,7 +717,7 @@
+             for(int j = start; j < end; j++)
+             {
+                 if(!i && j+1 - start >= pagemin && (j+1 - start >= pagemax || cgui->shouldtab())) { end = j; break; }
+-                serverinfo &si = *servers[j];
++                serverinfo &si = *list[j];
+                 const char *sdesc = si.sdesc;
+                 if(si.address.host == ENET_HOST_ANY) sdesc = "[unknown host]";
+                 else if(si.ping == serverinfo::WAITING) sdesc = "[waiting for response]";
+@@ -590,9 +726,22 @@
+             }
+             game::serverinfoendcolumn(cgui, i);
+         }
++        favcolumn(cgui, list, start, end);
+         cgui->poplist();
+         start = end;
+     }
++}
++
++const char *showservers(g3d_gui *cgui, uint *header, int pagemin, int pagemax)
++{
++    refreshservers();
++    serverinfo *sc = NULL;
++    if(servers.empty())
++    {
++        if(header) execute(header);
++    }
++    else showserverlist(cgui, header, pagemin, pagemax, servers, sc);
++    showfavtabs(cgui, header, pagemin, pagemax, showserverlist, sc);
+     if(selectedserver || !sc) return NULL;
+     selectedserver = sc;
+     return "connectselected";
+@@ -613,6 +762,7 @@
+     if(full) servers.deletecontents();
+     else loopvrev(servers) if(!servers[i]->keep) delete servers.remove(i);
+     selectedserver = NULL;
++    favpick = NULL;
+ }
+ 
+ #define RETRIEVELIMIT 20000
+@@ -713,7 +863,12 @@
+ }
+ 
+ ICOMMAND(addserver, "sis", (const char *name, int *port, const char *password), addserver(name, *port, password[0] ? password : NULL));
+-ICOMMAND(keepserver, "sis", (const char *name, int *port, const char *password), addserver(name, *port, password[0] ? password : NULL, true));
++ICOMMAND(keepserver, "siss", (const char *name, int *port, const char *password, const char *tab),
++{
++    addserver(name, *port, password[0] ? password : NULL, true);
++    if(*port <= 0) *port = server::serverport();
++    if(tab[0]) loopv(servers) if(!strcmp(servers[i]->name, name) && servers[i]->port == *port) { copystring(servers[i]->favtab, tab); break; }
++});
+ ICOMMAND(clearservers, "i", (int *full), clearservers(*full!=0));
+ COMMAND(updatefrommaster, "");
+ COMMAND(initservers, "");
+@@ -723,14 +878,21 @@
+     if(!game::savedservers()) return;
+     stream *f = openutf8file(path(game::savedservers(), true), "w");
+     if(!f) return;
++    if(favtabs.length())
++    {
++        f->printf("// tabs of the favourite servers\n\n");
++        loopv(favtabs) f->printf("favtab %s\n", escapestring(favtabs[i]));
++        f->printf("\n");
++    }
+     int kept = 0;
+     loopv(servers)
+     {
+         serverinfo *s = servers[i];
+         if(s->keep)
+         {
+-            if(!kept) f->printf("// servers that should never be cleared from the server list\n\n");
+-            if(s->password) f->printf("keepserver %s %d %s\n", escapeid(s->name), s->port, escapestring(s->password));
++            if(!kept) f->printf("// favourite servers, never cleared from the server list\n\n");
++            if(s->favtab[0]) f->printf("keepserver %s %d %s %s\n", escapeid(s->name), s->port, escapestring(s->password ? s->password : ""), escapestring(s->favtab));
++            else if(s->password) f->printf("keepserver %s %d %s\n", escapeid(s->name), s->port, escapestring(s->password));
+             else f->printf("keepserver %s %d\n", escapeid(s->name), s->port);
+             kept++;
+         }
 --- a/engine/sound.cpp
 +++ b/engine/sound.cpp
 @@ -1,7 +1,11 @@
