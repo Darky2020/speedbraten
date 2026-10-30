@@ -793,8 +793,8 @@ namespace game
     extern void sendmapinfo();
     extern void stopdemo();
     extern void changemap(const char *name, int mode);
-    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
-    extern bool hubchat(const char *text);
+    // say (everyone) and sayteam (the lobby) away from a game server go to the hub (hub.cpp); false if it can't take them
+    extern bool hubchat(const char *text, bool lobby = false);
     extern bool hubfetchmap(const char *name, int mode);
     // spectating through the hub (spectate.cpp): percent of normal speed while catching up
     extern int spectatespeed();

@@ -50,11 +50,11 @@ namespace game
 
     extern void saverunreplay(const inputrun &run, bool finished, int runtime, bool started);
 
-    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed", "racestart", "flagrunrestart" };
+    static const char * const simsettings[] = { "skill", "killsendsp", "slowmosp", "spawnwait", "attackspawn", "jumpspawn", "deadpush", "aiforcegun", "floatspeed", "racestart", "flagrunrestart", "flagrunspawn" };
     enum { NUMSIMSETTINGS = sizeof(simsettings)/sizeof(simsettings[0]) };
     // settings added after replays started recording settings (the last ones of simsettings),
     // with the value that matches replays and saved states made before them
-    static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 }, { "flagrunrestart", 0 } };
+    static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 }, { "flagrunrestart", 0 }, { "flagrunspawn", 0 } };
     enum { NUMLATESETTINGS = sizeof(latesettings)/sizeof(latesettings[0]), NUMOLDSETTINGS = NUMSIMSETTINGS - NUMLATESETTINGS };
     static void readsettings(int *vals);
 
@@ -1404,6 +1404,7 @@ namespace game
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
+        hubspectateleave();
         if(chained) {}
         else if(unstarted) witnessdrop("the map changed");
         else witnessstop("the map changed");

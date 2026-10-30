@@ -1528,20 +1528,104 @@ namespace game
         return true;
     }
 
+    // The folder under replays/ (or replays/kept/) a run's replay goes in: flagrun/<map>/<effic|insta|weaponless>,
+    // race/<map>, campaign/<first map> or other/<map>.
+    static void replaysubdir(char *dst, const char *firstmap, int mode, bool flagrun, bool race)
+    {
+        string map;
+        safename(map, firstmap);
+        if(flagrun) nformatstring(dst, MAXSTRLEN, "flagrun/%s/%s", map, m_check(mode, M_EFFICIENCY) ? "effic" : m_check(mode, M_INSTA) ? "insta" : "weaponless");
+        else if(race) nformatstring(dst, MAXSTRLEN, "race/%s", map);
+        else if(m_check(mode, M_DMSP | M_CLASSICSP)) nformatstring(dst, MAXSTRLEN, "campaign/%s", map);
+        else nformatstring(dst, MAXSTRLEN, "other/%s", map);
+    }
+
+    static const char *replaybasename(const char *file) { const char *b = strrchr(file, '/'); return b ? b+1 : file; }
+
+    // every .sbr in dir and its folders, as paths; replays/kept/ and replays/downloaded/ are left out of replays/
+    static void listreplaytree(const char *dir, vector<char *> &out, int depth = 0)
+    {
+        vector<char *> names;
+        listfiles(dir, NULL, names);
+        loopv(names)
+        {
+            const char *n = names[i];
+            if(n[0] == '.') continue;
+            defformatstring(full, "%s/%s", dir, n);
+            int len = strlen(n);
+            if(len > 4 && !strcmp(n + len - 4, ".sbr"))
+            {
+                bool dup = false;
+                loopvj(out) if(!strcmp(out[j], full)) { dup = true; break; }
+                if(!dup) out.add(newstring(full));
+            }
+            else if(depth < 3 && !strchr(n, '.') && (depth || (strcmp(n, "kept") && strcmp(n, "downloaded")))) listreplaytree(full, out, depth + 1);
+        }
+        names.deletearrays();
+    }
+
+    // Replays saved before replays were sorted into folders lie directly in replays/ or replays/kept/: the
+    // first listing of a session moves each into its folder.
+    static void sortflatreplays()
+    {
+        static bool sorted = false;
+        if(sorted) return;
+        sorted = true;
+        int moved = 0;
+        loopk(2)
+        {
+            const char *root = k ? "replays/kept" : "replays";
+            vector<char *> files;
+            listfiles(root, "sbr", files);
+            loopv(files)
+            {
+                defformatstring(from, "%s/%s.sbr", root, files[i]);
+                replayinfo info;
+                if(!readreplay(from, NULL, info)) continue;
+                string sub;
+                replaysubdir(sub, info.map, info.mode, info.flagrun != 0, info.race != 0);
+                defformatstring(to, "%s/%s/%s.sbr", root, sub, files[i]);
+                string src;
+                copystring(src, realpath(from));
+                const char *dst = realpath(to);
+                if(fileexists(dst, "r") || rename(src, dst)) continue;
+                statsreplaymoved(from, to);
+                moved++;
+            }
+            files.deletearrays();
+        }
+        if(moved) conoutf("moved %d replays into folders by kind, map and mode", moved);
+    }
+
+    // the replays under replays/ (kept: replays/kept/)
+    static void listreplays(bool kept, vector<char *> &files)
+    {
+        sortflatreplays();
+        listreplaytree(kept ? "replays/kept" : "replays", files);
+    }
+
+    static bool bybasename(const char *a, const char *b) { return strcmp(replaybasename(a), replaybasename(b)) < 0; }
+
     // Keeps the newest replaymaxunfinished autosaved unfinished replays in replays/; finished, renamed
     // and kept (replays/kept/) ones are never deleted.
     static void rotatereplays()
     {
         vector<char *> files;
-        listfiles("replays", "sbr", files);
+        listreplays(false, files);
         vector<char *> dnf;
-        loopv(files) if(autounfinished(files[i])) dnf.add(files[i]);
-        dnf.sort();
+        loopv(files)
+        {
+            string name;
+            copystring(name, replaybasename(files[i]));
+            int len = strlen(name);
+            if(len > 4) name[len-4] = '\0';
+            if(autounfinished(name)) dnf.add(files[i]);
+        }
+        dnf.sort(bybasename);
         for(int i = 0; i < dnf.length() - replaymaxunfinished; i++)
         {
-            defformatstring(file, "replays/%s.sbr", dnf[i]);
-            remove(realpath(file));
-            statsreplaymoved(file, NULL);
+            remove(realpath(dnf[i]));
+            statsreplaymoved(dnf[i], NULL);
         }
         files.deletearrays();
     }
@@ -2233,10 +2317,12 @@ namespace game
         if(finished) formatrunfilename(result, runtime);
         else copystring(result, "dnf");
         if(info.splices) concatstring(result, "_seg");
-        formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+        string sub;
+        replaysubdir(sub, first.map, first.mode, first.flagrun != 0, first.race != 0);
+        formatstring(file, "replays/%s/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s.sbr", sub, lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                      lt->tm_hour, lt->tm_min, lt->tm_sec, map, result);
         for(int n = 2; fileexists(realpath(file), "r") && n < 100; n++)
-            formatstring(file, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+            formatstring(file, "replays/%s/%04d-%02d-%02d_%02d-%02d-%02d_%s_%s_%d.sbr", sub, lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
                          lt->tm_hour, lt->tm_min, lt->tm_sec, map, result, n);
         uchar content[sbr2::HASHSIZE];
         sbr2stream whole;
@@ -2336,14 +2422,14 @@ namespace game
         return false;
     }
 
-    static void scanreplaydir(const char *dir, bool kept)
+    static void scanreplaydir(bool kept)
     {
         vector<char *> files;
-        listfiles(dir, "sbr", files);
+        listreplays(kept, files);
         loopv(files)
         {
             replayentry e;
-            formatstring(e.file, "%s/%s.sbr", dir, files[i]);
+            copystring(e.file, files[i]);
             if(!readreplay(e.file, NULL, e.info) || !containsnocase(e.info.map, replayfilter) || !replaylisted(e.info, kept)) continue;
             e.pb = listedin(pbfiles, e.file);
             e.assisted = listedin(assistedfiles, e.file);
@@ -2368,8 +2454,8 @@ namespace game
         statspbreplays(pbfiles);
         assistedfiles.deletearrays();
         statsassistedreplays(assistedfiles);
-        scanreplaydir("replays", false);
-        scanreplaydir("replays/kept", true);
+        scanreplaydir(false);
+        scanreplaydir(true);
         replaylist.sort(replaysort ? fasterreplay : newerreplay);
         intret(replaylist.length());
     });
@@ -2387,13 +2473,11 @@ namespace game
         double total = 0;
         loopi(2)
         {
-            const char *dir = i ? "replays/kept" : "replays";
             vector<char *> files;
-            listfiles(dir, "sbr", files);
+            listreplays(i != 0, files);
             loopvj(files)
             {
-                defformatstring(file, "%s/%s.sbr", dir, files[j]);
-                stream *f = openrawfile(path(file, true), "rb");
+                stream *f = openrawfile(path(files[j], true), "rb");
                 if(!f) continue;
                 count++;
                 total += f->size();
@@ -2494,10 +2578,12 @@ namespace game
         replaylist.remove(*i);
     });
 
-    static bool movereplay(replayentry &e, const char *dir, const char *name)
+    // moves e to replays/ or replays/kept/, in the folder of its kind, map and mode, as name
+    static bool movereplay(replayentry &e, bool kept, const char *name)
     {
-        string dst;
-        formatstring(dst, "%s/%s.sbr", dir, name);
+        string sub, dst;
+        replaysubdir(sub, e.info.map, e.info.mode, e.info.flagrun != 0, e.info.race != 0);
+        formatstring(dst, "%s/%s/%s.sbr", kept ? "replays/kept" : "replays", sub, name);
         string from;
         copystring(from, realpath(e.file));
         const char *to = realpath(dst);
@@ -2516,7 +2602,7 @@ namespace game
         copystring(name, base ? base+1 : e.file);
         int len = strlen(name);
         if(len > 4) name[len-4] = '\0';
-        if(movereplay(e, e.kept ? "replays" : "replays/kept", name)) e.kept = !e.kept;
+        if(movereplay(e, !e.kept, name)) e.kept = !e.kept;
         else conoutf(CON_ERROR, "could not move %s", e.file);
     });
 
@@ -2526,7 +2612,7 @@ namespace game
         replayentry &e = replaylist[*i];
         string name;
         safename(name, newname);
-        if(!movereplay(e, e.kept ? "replays/kept" : "replays", name)) conoutf(CON_ERROR, "could not rename %s", e.file);
+        if(!movereplay(e, e.kept, name)) conoutf(CON_ERROR, "could not rename %s", e.file);
     });
 }
 
@@ -2604,11 +2690,11 @@ namespace game
         if(rules.empty()) return;
         vector<cleanupfile> all;
         vector<char *> files;
-        listfiles("replays", "sbr", files);
+        listreplays(false, files);
         loopv(files)
         {
             cleanupfile c;
-            formatstring(c.file, "replays/%s.sbr", files[i]);
+            copystring(c.file, files[i]);
             inputrun run;
             if(!readreplay(c.file, &run, c.info)) continue;
             c.idle = replaylongestidle(run);

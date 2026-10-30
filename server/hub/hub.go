@@ -479,7 +479,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			h.notice(p, "there are too many lobbies right now")
 			return nil
 		}
-		h.stopWatching(p)
+		h.endWatching(p, "you opened a lobby")
 		h.leaveLobby(p)
 		h.nextLobby++
 		l := &lobby{id: h.nextLobby, host: p, mapname: mapname, mode: mode, kind: kind, members: []*player{p}}
@@ -505,7 +505,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		case len(l.members) >= MaxLobbyMembers:
 			h.notice(p, "that lobby is full")
 		default:
-			h.stopWatching(p)
+			h.endWatching(p, "you joined a lobby")
 			h.leaveLobby(p)
 			l.members = append(l.members, p)
 			p.lobby = l
@@ -521,11 +521,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		}
 		switch {
 		case p.watching:
-			var w writer
-			w.u(p.spec.target.id)
-			w.str("you left the lobby")
-			h.send(p, MsgSpecEnd, w.b)
-			h.stopWatching(p)
+			h.endWatching(p, "you left the lobby")
 		case p.lobby != nil:
 			h.leaveLobby(p)
 			h.broadcast(MsgPlayer, h.playerMsg(p))

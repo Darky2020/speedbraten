@@ -106,6 +106,18 @@ func (h *Hub) watch(p *player) {
 	h.broadcast(MsgPlayer, h.playerMsg(p))
 }
 
+// endWatching tells p its spectating is over and stops it.
+func (h *Hub) endWatching(p *player, why string) {
+	if p.spec == nil {
+		return
+	}
+	var w writer
+	w.u(p.spec.target.id)
+	w.str(why)
+	h.send(p, MsgSpecEnd, w.b)
+	h.stopWatching(p)
+}
+
 // stopWatching ends p's spectating and takes it out of the lobby it watched from.
 func (h *Hub) stopWatching(p *player) {
 	p.spec = nil

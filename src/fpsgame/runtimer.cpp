@@ -218,6 +218,8 @@ namespace game
     // flagruns: walking back into the flag's pickup sphere puts the run back to holding, so the
     // timer starts again when the player leaves it (a replay-forced sim setting)
     MOD(VARP, flagrunrestart, 0, 1, 1);
+    // 0 hides the minimap in flagruns
+    MOD(VARP, flagrunminimap, 0, 1, 1);
 
     static void updaterun()
     {

@@ -2,9 +2,9 @@
 #include "embedded_cfgs.h"
 
 namespace game {
-    struct embeddedfile<17267> menus_cfg = {
+    struct embeddedfile<17277> menus_cfg = {
         "data/p1xbraten/menus.cfg.gz",
-        0x0515e953,
+        0x200df984,
         {
             #include "../../data/p1xbraten/menus.cfg.gz.xxd"
         }
@@ -34,9 +34,9 @@ namespace game {
         }
     };
 
-    struct embeddedfile<9989> speedbraten_cfg = {
+    struct embeddedfile<10250> speedbraten_cfg = {
         "data/p1xbraten/speedbraten.cfg.gz",
-        0x207a2ce3,
+        0x478b7a24,
         {
             #include "../../data/p1xbraten/speedbraten.cfg.gz.xxd"
         }

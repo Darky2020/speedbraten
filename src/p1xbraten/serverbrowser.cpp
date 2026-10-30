@@ -152,24 +152,14 @@ namespace game { namespace mod
         g->poplist();
     }
 
-    const char *showservers(g3d_gui *cgui, uint *header, int pagemin, int pagemax)
+    static void showserverlist(g3d_gui *cgui, uint *header, int pagemin, int pagemax, const vector<serverinfo *> &list, serverinfo *&sc)
     {
-        refreshservers();
-        static vector<serverinfo *> filteredservers;
-        filteredservers.shrink(0);
-        loopv(servers) if(servermatches(servers[i])) filteredservers.add(servers[i]);
-        if(filteredservers.empty())
-        {
-            if(header) execute(header);
-            cgui->title("no servers", COL_ORANGE);
-            return NULL;
-        }
-        serverinfo *sc = NULL;
-        for(int start = 0; start < filteredservers.length();)
+        for(int start = 0; start < list.length();)
         {
             if(start > 0) cgui->tab();
             if(header) execute(header);
-            int end = filteredservers.length();
+            if(!start) favpickrow(cgui);
+            int end = list.length();
             cgui->pushlist();
             loopi(sizeof(names)/sizeof(names[0]))
             {
@@ -177,7 +167,7 @@ namespace game { namespace mod
                 for(int j = start; j < end; j++)
                 {
                     if(!i && j+1 - start > pagemin && (j+1 - start >= pagemax || cgui->shouldtab())) { end = j; break; }
-                    serverinfo &si = *filteredservers[j];
+                    serverinfo &si = *list[j];
                     const char *sdesc = si.sdesc;
                     if(si.address.host == ENET_HOST_ANY) sdesc = "[unknown host]";
                     else if(si.ping == serverinfo::WAITING) sdesc = "[waiting for response]";
@@ -187,9 +177,26 @@ namespace game { namespace mod
                 if(end-start < pagemin) cgui->space(pagemin-(end-start));
                 serverinfoendcolumn(cgui, i);
             }
+            if(favcolumn(cgui, list, start, end)) sc = NULL;
             cgui->poplist();
             start = end;
         }
+    }
+
+    const char *showservers(g3d_gui *cgui, uint *header, int pagemin, int pagemax)
+    {
+        refreshservers();
+        static vector<serverinfo *> filteredservers;
+        filteredservers.shrink(0);
+        loopv(servers) if(servermatches(servers[i])) filteredservers.add(servers[i]);
+        serverinfo *sc = NULL;
+        if(filteredservers.empty())
+        {
+            if(header) execute(header);
+            cgui->title("no servers", COL_ORANGE);
+        }
+        else showserverlist(cgui, header, pagemin, pagemax, filteredservers, sc);
+        showfavtabs(cgui, header, pagemin, pagemax, showserverlist, sc);
         if(selectedserver || !sc) return NULL;
         selectedserver = sc;
         return "connectselected";

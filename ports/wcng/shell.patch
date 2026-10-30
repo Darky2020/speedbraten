@@ -1144,16 +1144,16 @@
          lastupdate = -1;
          return p;
      }
-@@ -986,6 +986,9 @@
+@@ -985,6 +985,9 @@
+ }
  
  VARP(particleglare, 0, 2, 100);
- 
++
 +// harness: the number of live particles
 +ICOMMAND(harnessparticles, "", (), { int n = 0; loopi(sizeof(parts)/sizeof(parts[0])) n += parts[i]->count(); intret(n); });
-+
+ 
  VARN(debugparticles, dbgparts, 0, 0, 1);
  
- void debugparticles()
 @@ -1108,20 +1111,20 @@
          int x, y, z;
          do
@@ -1296,6 +1296,16 @@
              break;
          }
          case 3: //fire ball - <size> <rgb>
+@@ -1493,7 +1496,8 @@
+ 
+     if(minimized) { canemit = false; return; }
+ 
+-    if(lastmillis - lastemitframe >= emitmillis)
++    // the clock starts over at every map start, so a frame time from before it is also stale
++    if(lastmillis - lastemitframe >= emitmillis || lastmillis < lastemitframe)
+     {
+         canemit = true;
+         lastemitframe = lastmillis - (lastmillis%emitmillis);
 --- a/engine/server.cpp
 +++ b/engine/server.cpp
 @@ -18,7 +18,9 @@
@@ -1848,6 +1858,15 @@
          conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text);
          extern void sendmessages();                     //NEW
          if(mod::bouncerserverhost.host) sendmessages(); //NEW
+@@ -1103,7 +1128,7 @@
+     }
+     COMMANDN(say, toserver, "C");
+ 
+-    void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
++    void sayteam(char *text) { if(!remote && hubchat(text, true)) return; conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
+     COMMAND(sayteam, "C");
+ 
+     ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
 @@ -1255,7 +1280,8 @@
              messagereliable = false;
              messagecn = -1;
@@ -1943,7 +1962,15 @@
          if(m_hold || m_protect == (f.team==team))
          {
              loopvj(flags) if(flags[j].owner==ci->clientnum) return;
-@@ -936,6 +954,7 @@
+@@ -567,6 +585,7 @@
+                 break;
+             }
+         }
++        if(flagrunrules() && !flagrunminimap) return;
+ 
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         int s = 1800/4, x = 1800*w/h - s - s/10, y = s/10;
+@@ -936,6 +955,7 @@
  
      void scoreflag(fpsent *d, int relay, int relayversion, int goal, int goalversion, int goalspawn, int team, int score, int dflags)
      {
@@ -1951,7 +1978,7 @@
          setscore(team, score);
          bool wasdropped = false; //NEW
          if(flags.inrange(goal))
-@@ -971,7 +990,7 @@
+@@ -971,7 +991,7 @@
          conoutf(CON_GAMEINFO, "%s scored for %s%s", teamcolorname(d), teamcolor("your team", ctfflagteam(team), "the enemy team"), append); //NEW append
          playsound(team==ctfteamflag(player1->team) ? S_FLAGSCORE : S_FLAGFAIL);
  
@@ -1960,7 +1987,7 @@
          {
              if(score == FLAGLIMIT) mod::event::run(mod::event::COAF, "s", team==1 ? "good" : (team==2 ? "evil" : "unknown")); //NEW
              conoutf(CON_GAMEINFO, "%s captured %d flags", teamcolor("your team", ctfflagteam(team), "the enemy team"), score);
-@@ -992,6 +1011,7 @@
+@@ -992,6 +1012,7 @@
          if(m_hold) conoutf(CON_GAMEINFO, "%s picked up the flag for %s%s", teamcolorname(d), teamcolor("your team", d->team, "the enemy team"), append); //NEW append
          else if(m_protect || f.droptime) conoutf(CON_GAMEINFO, "%s picked up %s%s", teamcolorname(d), teamcolorflag(f), append); //NEW append
          else conoutf(CON_GAMEINFO, "%s stole %s%s", teamcolorname(d), teamcolorflag(f), append); //NEW append
@@ -1968,7 +1995,7 @@
          ownflag(i, d, lastmillis, m_hold ? ctfteamflag(d->team) : -1);
          teamsound(d, S_FLAGPICKUP);
      }
-@@ -1057,6 +1077,7 @@
+@@ -1057,6 +1078,7 @@
  
      int respawnwait(fpsent *d, int delay = 0)
      {
@@ -1976,7 +2003,7 @@
          return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
      }
  
-@@ -1298,7 +1319,21 @@
+@@ -1298,7 +1320,21 @@
  };
  
  extern ctfclientmode ctfmode;
@@ -2455,8 +2482,8 @@
      extern void sendmapinfo();
      extern void stopdemo();
      extern void changemap(const char *name, int mode);
-+    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
-+    extern bool hubchat(const char *text);
++    // say (everyone) and sayteam (the lobby) away from a game server go to the hub (hub.cpp); false if it can't take them
++    extern bool hubchat(const char *text, bool lobby = false);
 +    extern bool hubfetchmap(const char *name, int mode);
 +    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
 +    extern int spectatespeed();

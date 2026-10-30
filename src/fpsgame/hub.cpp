@@ -1175,11 +1175,12 @@ namespace game
         hubsend(HM_CHAT, p.getbuf(), p.length());
     }
 
-    // say, away from a game server: to the lobby when in one, else to everyone
-    bool hubchat(const char *text)
+    // say and sayteam away from a game server: say talks to everyone on the hub, sayteam to the lobby
+    bool hubchat(const char *text, bool lobby)
     {
         if(!hubready() || !hubmyname[0]) return false;
-        sendchat(mylobby() ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
+        if(lobby && !mylobby()) { conoutf(CON_ERROR, "not in a lobby: say talks to everyone"); return true; }
+        sendchat(lobby ? HUBCHAT_LOBBY : HUBCHAT_GLOBAL, text);
         return true;
     }
 
@@ -1438,13 +1439,29 @@ namespace game
         hubsend(HM_SPECTATE, b.getbuf(), b.length());
         conoutf("\f2waiting for %s's run", p->name);
     });
+    static void sendstopspectate()
+    {
+        if(!hubready()) return;
+        vector<uchar> b;
+        sbr2::byteswriter w(b);
+        w.var(0);
+        hubsend(HM_SPECTATE, b.getbuf(), b.length());
+    }
     ICOMMAND(hubstopspectate, "", (),
     {
         if(!spectating()) return;
-        if(hubready()) { vector<uchar> b; sbr2::byteswriter w(b); w.var(0); hubsend(HM_SPECTATE, b.getbuf(), b.length()); }
+        sendstopspectate();
         spectatestop();
         autolobbydue = true;
     });
+    void hubspectateleave()
+    {
+        if(!spectating()) return;
+        conoutf("\f2stopped spectating %s", spectatingname());
+        sendstopspectate();
+        spectatequit();
+        autolobbydue = true;
+    }
     ICOMMAND(hubspectating, "", (), result(spectatingname()));
     ICOMMAND(hubspectatebehind, "", (), { defformatstring(s, "%.1f", spectatebehind()); result(s); });
 

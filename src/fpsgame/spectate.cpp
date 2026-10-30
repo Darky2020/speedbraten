@@ -32,10 +32,10 @@ namespace game
     // the simulation waits for the file to catch up with playback
     bool spectatehold() { return spectarget && specstarted && inputreplayneeds(specswitch ? oldknown : specknown); }
 
-    // percent of normal speed: fast while more than two segments behind
+    // percent of normal speed: fast while the spectated run plays more than two segments behind
     int spectatespeed()
     {
-        if(!spectarget || !specstarted) return 100;
+        if(!spectarget || !specstarted || !inputreplayactive()) return 100;
         return (specswitch ? oldknown : specknown) - inputtick() > 2*VIEWSEGMENT ? CATCHUPSPEED : 100;
     }
 
@@ -112,6 +112,14 @@ namespace game
     void spectatestop() { if(spectarget) spectatefinish(true); }
     // stops without going back, for a map load that follows straight away
     void spectatequit() { if(spectarget) spectatefinish(false); }
+
+    // harness: the spectate state
+    ICOMMAND(spectatestate, "", (),
+    {
+        defformatstring(res, "target=%u started=%d switch=%d known=%d tick=%d replay=%d speed=%d map=%s", spectarget, specstarted ? 1 : 0,
+                        specswitch ? 1 : 0, specswitch ? oldknown : specknown, inputtick(), inputreplayactive() ? 1 : 0, spectatespeed(), clientmap);
+        result(res);
+    });
 
     // once per frame: plays what has arrived
     void spectateupdate()
