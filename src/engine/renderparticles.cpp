@@ -1496,7 +1496,8 @@ void updateparticles()
 
     if(minimized) { canemit = false; return; }
 
-    if(lastmillis - lastemitframe >= emitmillis)
+    // the clock starts over at every map start, so a frame time from before it is also stale
+    if(lastmillis - lastemitframe >= emitmillis || lastmillis < lastemitframe)
     {
         canemit = true;
         lastemitframe = lastmillis - (lastmillis%emitmillis);
