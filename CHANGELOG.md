@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.8alpha
+
+- Main menu: flagrun maps and race maps buttons.
+- Picking a map opens its page: picture, your PB and average, watch or race your PB, start.
+- Server browser: favourite servers in named tabs (speedbraten and vanilla clients).
+- Hub chat: say talks to everyone, sayteam to your lobby.
+- Flagruns start at the spawn nearest the enemy flag.
+- Custom flagrun spawns are saved per team.
+- Flagruns tab: minimap checkbox, and the ghost can hide while the timer is stopped.
+- Replays are saved in folders by kind, map and mode; existing ones are moved.
+- Loading a map while spectating stops spectating instead of running the game fast.
+- Map particles no longer stop after loading a map.
+- A warning when your map models differ from the official ones.
+- Flagrun map grid: no empty space on the right.
+
 ## v0.3.7alpha
 
 - Speedrun menu → keys: a key that shows or hides the ghosts (your PB's and the hub lobby players').
