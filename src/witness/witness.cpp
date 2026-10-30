@@ -243,13 +243,15 @@ namespace witness
         }
     }
 
-    // -F0: no aim fingerprints and no copy check. Fingerprints are kept for runs that reached the finish only:
-    // a copy is only worth making of those, and every new finished run is compared with all of them.
-    static bool fingerprints = true;
+    // -F<percent>: every run that reaches the finish is checked against the stored fingerprints, but only those
+    // of valid runs within that many percent of their map's record are kept, as a copy is only worth making of
+    // a run near the record. Slower runs lose theirs once judged, or once a new record leaves them behind.
+    // -F0: no fingerprints and no copy check. -F-1: keep those of every finished run.
+    static int printkeep = 10;
 
     static void storeprints(long long row, const vector<unsigned long long> &prints)
     {
-        if(prints.empty() || !fingerprints) return;
+        if(prints.empty() || !printkeep) return;
         sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
         sqlite3_stmt *st = NULL;
         if(sqlite3_prepare_v2(db, "INSERT INTO prints(hash, run) VALUES(?, ?)", -1, &st, NULL) == SQLITE_OK)
@@ -264,6 +266,29 @@ namespace witness
             sqlite3_finalize(st);
         }
         sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+    }
+
+    // Drops the fingerprints of judged runs that no longer qualify (see printkeep): of one map, kind and mode, or of
+    // every run with map NULL. Runs without a verdict yet, or unverified, keep theirs.
+    static void pruneprints(const char *map = NULL, const char *runkind = NULL, long long mode = 0)
+    {
+        if(printkeep < 0) return;
+        const char *keep =
+            "r.verdict = 'valid' AND IFNULL(r.runtimems, 0) > 0 AND r.runtimems * 100 <= "
+            "IFNULL((SELECT MIN(b.runtimems) FROM bests b WHERE b.map = r.map AND b.runkind = r.runkind AND b.mode = r.mode), 0) * (100 + ?1)";
+        if(map)
+        {
+            char sql[1024];
+            nformatstring(sql, sizeof(sql), "DELETE FROM prints WHERE run IN (SELECT r.id FROM runs r WHERE r.map = ?2 AND r.runkind = ?3 AND r.mode = ?4 "
+                "AND r.verdict IN ('valid', 'rejected') AND NOT (%s))", keep);
+            run(sql, "issi", (long long)printkeep, map, runkind, mode);
+        }
+        else
+        {
+            char sql[1024];
+            nformatstring(sql, sizeof(sql), "DELETE FROM prints WHERE run IN (SELECT r.id FROM runs r WHERE r.verdict IN ('valid', 'rejected') AND NOT (%s))", keep);
+            run(sql, "i", (long long)printkeep);
+        }
     }
 
     static void checkcopy(long long row);
@@ -600,7 +625,7 @@ namespace witness
                 DELETEP(r.file);
             }
             conoutf("%s: run %d signed: %d segments, %d bytes, %s, %d violations, max lag %d ms", c.addressname, r.runid, r.reader.segment, r.bytes, r.seedsok ? "witness seeds" : "unknown seed", r.violations, r.maxlagms);
-            if(r.reachedend && fingerprints)
+            if(r.reachedend && printkeep)
             {
                 storeprints(r.row, r.prints);
                 checkcopy(r.row);
@@ -922,7 +947,7 @@ namespace witness
         vector<bool> needprints;
         sqlite3_stmt *st = NULL;
         if(sqlite3_prepare_v2(db, "SELECT id, ?1 AND IFNULL(runtimems, 0) > 0 AND id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR runkind IS NULL OR (?1 AND IFNULL(runtimems, 0) > 0 AND id NOT IN (SELECT DISTINCT run FROM prints)) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
-        sqlite3_bind_int(st, 1, fingerprints ? 1 : 0);
+        sqlite3_bind_int(st, 1, printkeep ? 1 : 0);
         while(sqlite3_step(st) == SQLITE_ROW) { rows.add(sqlite3_column_int64(st, 0)); needprints.add(sqlite3_column_int(st, 1) != 0); }
         sqlite3_finalize(st);
         loopv(rows)
@@ -1273,6 +1298,12 @@ namespace witness
         // the JSON is kept in runs.resim
         unlink(job.out);
         if(!strcmp(verdict, "valid")) notebest(row, finishedms);
+        string group[3];
+        if(rowtext("SELECT IFNULL(map, ''), IFNULL(runkind, ''), IFNULL(mode, 0) FROM runs WHERE id = ?", row, 3, group))
+        {
+            if(group[0][0] && group[1][0]) pruneprints(group[0], group[1], atoll(group[2]));
+            else if(printkeep >= 0) run("DELETE FROM prints WHERE run = ?", "i", row);
+        }
         string file[1];
         if(strcmp(verdict, "unverified") && rowtext("SELECT file FROM runs WHERE id = ?", row, 1, file))
         {
@@ -1550,10 +1581,10 @@ int main(int argc, char **argv)
         case 'R': rejudge = true; break;
         case 'j': maxlive = max(atoi(&argv[i][2]), 0); break;
         case 'P': backfill = true; break;
-        case 'F': fingerprints = atoi(&argv[i][2]) != 0; break;
+        case 'F': printkeep = argv[i][2] ? atoi(&argv[i][2]) : -1; break;
         case 'l': if(!setlimit(&argv[i][2])) fatal("unknown limit: %s", &argv[i][2]); break;
     }
-    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-k<extra package dir, e.g. race maps>] [-j<live re-simulations>] [-R]] [-P] [-F0 (no aim fingerprints)] [-l<limit>=<value>]");
+    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-k<extra package dir, e.g. race maps>] [-j<live re-simulations>] [-R]] [-P] [-F<percent of the record to keep aim fingerprints within, 10; 0 none, -1 every finished run>] [-l<limit>=<value>]");
     mkdir(datadir, 0700);
     defformatstring(runsdir, "%s/runs", datadir);
     mkdir(runsdir, 0700);
@@ -1564,6 +1595,13 @@ int main(int argc, char **argv)
     if(resimexe[0] && !resimdata[0]) fatal("-e needs -r<game data dir> to run sauer_resim in");
     if(datadir[0] != '/') { char cwd[4096]; if(getcwd(cwd, sizeof(cwd))) { defformatstring(abs, "%s/%s", cwd, datadir); copystring(datadir, abs); } }
     if(backfill) backfillprints();
+    if(printkeep > 0)
+    {
+        long long before = scalar("SELECT COUNT(*) FROM prints", "");
+        pruneprints();
+        long long after = scalar("SELECT COUNT(*) FROM prints", "");
+        if(after < before) conoutf("dropped %lld aim fingerprints of slower or invalid runs, kept %lld", before - after, after);
+    }
     if(resimexe[0]) queueunjudged(rejudge);
     signal(SIGPIPE, SIG_IGN);
     if(enet_initialize() < 0) fatal("could not initialise networking");
