@@ -10,6 +10,7 @@
 
 #include "engine.h"
 #include "noise.h"
+#include "hubproto.h"
 
 namespace witnessnet
 {
@@ -356,7 +357,13 @@ bool hublearnedkey(uchar *channelkey)
     return true;
 }
 
-bool hubsend(int type, const uchar *data, int len) { return witnessnet::hub.sendmessage(type, data, len); }
+// harness: prints the type of every message sent to the hub, except the frequent position, view and run time ones
+VAR(hubtrace, 0, 0, 1);
+bool hubsend(int type, const uchar *data, int len)
+{
+    if(hubtrace && type != HM_POS && type != HM_VIEW && type != HM_VIEWDATA && type != HM_RUNTIME) conoutf("hubsend %d (%d bytes)", type, len);
+    return witnessnet::hub.sendmessage(type, data, len);
+}
 bool hubreceive(int &type, vector<uchar> &payload) { return witnessnet::receive(witnessnet::hub, type, payload); }
 
 // The interop check against server/cmd/noiseecho: sends count messages of growing size and

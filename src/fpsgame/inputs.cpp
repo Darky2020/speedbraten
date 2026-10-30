@@ -1404,6 +1404,7 @@ namespace game
             conoutf(replaydesync ? CON_ERROR : CON_INFO, "input replay ended%s", replaydesync ? " (desynced)" : "");
             chained = false;
         }
+        hubspectateleave();
         if(chained) {}
         else if(unstarted) witnessdrop("the map changed");
         else witnessstop("the map changed");

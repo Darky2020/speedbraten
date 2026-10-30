@@ -890,6 +890,27 @@ func TestLobbySpectators(t *testing.T) {
 	}
 	b.chat(ChatLobby, "anyone?")
 	b.expectNotice("aren't in a lobby")
+
+	// opening or joining a lobby while spectating ends the spectating, and the spectator hears of it
+	w = writer{}
+	w.u(a.id)
+	b.send(MsgSpectate, w.b)
+	a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 1 })
+	b.mapmsg(MsgLobbyCreate, "nadefly", 4)
+	if m := b.expect(MsgSpecEnd); m.r.u() != a.id {
+		t.Fatal("no specend on opening a lobby")
+	}
+	w = writer{}
+	w.u(a.id)
+	b.send(MsgSpectate, w.b)
+	l = a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 1 })
+	w = writer{}
+	w.u(l.id)
+	b.send(MsgLobbyJoin, w.b)
+	if m := b.expect(MsgSpecEnd); m.r.u() != a.id {
+		t.Fatal("no specend on joining a lobby")
+	}
+	l = a.waitLobby(func(l lobbyinfo) bool { return len(l.members) == 2 && len(l.specs) == 0 })
 }
 
 type statinfo struct {

@@ -355,6 +355,8 @@ namespace game
     extern void spectatestop();
     extern void spectatequit();
     extern void spectateupdate();
+    // a map the player loads while spectating ends the spectating (hub.cpp)
+    extern void hubspectateleave();
     // file: the replay file it was read from, or NULL
     extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern void viewinputrun(const inputrun &run, const char *file);
