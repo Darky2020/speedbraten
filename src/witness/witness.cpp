@@ -534,7 +534,6 @@ namespace witness
         return true;
     }
 
-    // a newly parsed chunk of a run's file
     // A client keeps playing the map it loaded when its connection drops, so after it reconnects (the witness
     // may have restarted) its lives carry a seed from an earlier session of the same install.
     enum { EARLIERSEEDHOURS = 24 };
@@ -545,6 +544,7 @@ namespace witness
                       "isi", (long long)seed, c.installhex, since) > 0;
     }
 
+    // a newly parsed chunk of a run's file
     static void handlechunk(client &c, witnessrun &r, const sbr2::chunk &ch)
     {
         sbr2::bytesreader b(ch.data.getbuf(), ch.data.length());
@@ -1423,6 +1423,50 @@ namespace witness
         if(!batch && resimqueue.length()) startbatch(resimqueue.remove(0));
     }
 
+    // Runs streamed with a seed from an earlier session of their install, before the witness accepted those, are
+    // checked again at start: their seeds are read from their files, and finished ones are judged again.
+    static void recheckseeds()
+    {
+        sqlite3_stmt *st = NULL;
+        if(sqlite3_prepare_v2(db, "SELECT id, installkey, started, file, finished FROM runs WHERE seedsok = 0", -1, &st, NULL) != SQLITE_OK) return;
+        vector<long long> ok, rejudge;
+        while(sqlite3_step(st) == SQLITE_ROW)
+        {
+            long long row = sqlite3_column_int64(st, 0), started = sqlite3_column_int64(st, 2);
+            const char *install = (const char *)sqlite3_column_text(st, 1), *file = (const char *)sqlite3_column_text(st, 3);
+            if(!install || !file) continue;
+            stream *f = openrawfile(file, "rb");
+            if(!f) continue;
+            vector<uchar> buf;
+            buf.growbuf(int(f->size()));
+            buf.advance(int(f->read(buf.getbuf(), buf.capacity())));
+            delete f;
+            sbr2::streamreader reader;
+            reader.feed(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS);
+            int seeds = 0, known = 0;
+            loopv(reader.chunks) if(!memcmp(reader.chunks[i]->type, "ATTM", 4))
+            {
+                sbr2::bytesreader b(reader.chunks[i]->data.getbuf(), reader.chunks[i]->data.length());
+                string map;
+                b.var();
+                b.str(map, sizeof(map));
+                b.u32(); b.u8(); b.u32();
+                uint seed = b.u32();
+                if(!b.ok) continue;
+                seeds++;
+                if(scalar("SELECT COUNT(*) FROM seeds d JOIN sessions s ON s.id = d.session WHERE d.seed = ? AND s.installkey = ? AND d.issued <= ? AND d.issued > ?",
+                          "isii", (long long)seed, install, started, started - EARLIERSEEDHOURS*3600LL*1000) > 0) known++;
+            }
+            if(!seeds || known < seeds) continue;
+            ok.add(row);
+            if(sqlite3_column_int(st, 4)) rejudge.add(row);
+        }
+        sqlite3_finalize(st);
+        loopv(ok) run("UPDATE runs SET seedsok = 1 WHERE id = ?", "i", ok[i]);
+        loopv(rejudge) if(resimqueue.find(rejudge[i]) < 0) resimqueue.add(rejudge[i]);
+        if(ok.length()) conoutf("%d runs used a seed from an earlier session of their install: accepted, %d finished ones judged again", ok.length(), rejudge.length());
+    }
+
     // all: every finished run (after a change to the rules), otherwise those without a verdict
     static void queueunjudged(bool all)
     {
@@ -1622,6 +1666,7 @@ int main(int argc, char **argv)
         if(after < before) conoutf("dropped %lld aim fingerprints of slower or invalid runs, kept %lld", before - after, after);
     }
     if(resimexe[0]) queueunjudged(rejudge);
+    recheckseeds();
     signal(SIGPIPE, SIG_IGN);
     if(enet_initialize() < 0) fatal("could not initialise networking");
     return serve(port);
