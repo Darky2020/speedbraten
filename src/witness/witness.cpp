@@ -535,6 +535,16 @@ namespace witness
     }
 
     // a newly parsed chunk of a run's file
+    // A client keeps playing the map it loaded when its connection drops, so after it reconnects (the witness
+    // may have restarted) its lives carry a seed from an earlier session of the same install.
+    enum { EARLIERSEEDHOURS = 24 };
+    static bool earlierseed(const client &c, uint seed)
+    {
+        long long since = (long long)(nowus()/1000) - EARLIERSEEDHOURS*3600LL*1000;
+        return scalar("SELECT COUNT(*) FROM seeds d JOIN sessions s ON s.id = d.session WHERE d.seed = ? AND s.installkey = ? AND d.issued > ?",
+                      "isi", (long long)seed, c.installhex, since) > 0;
+    }
+
     static void handlechunk(client &c, witnessrun &r, const sbr2::chunk &ch)
     {
         sbr2::bytesreader b(ch.data.getbuf(), ch.data.length());
@@ -564,7 +574,7 @@ namespace witness
                 r.startlo = beatsentat(c, r.lastbeat);
             }
             int found = c.seeds.find(seed);
-            if(!b.ok || found < 0) { r.seedsok = false; run("UPDATE runs SET seedsok = 0 WHERE id = ?", "i", r.row); }
+            if(!b.ok || (found < 0 && !earlierseed(c, seed))) { r.seedsok = false; run("UPDATE runs SET seedsok = 0 WHERE id = ?", "i", r.row); }
             else if(!c.seedsused[found]) { c.seedsused[found] = true; run("UPDATE seeds SET used = ? WHERE session = ? AND seed = ?", "iii", (long long)(nowus()/1000), c.sessionrow, (long long)seed); sendseed(c); }
             r.segticks = 0;
             if(r.livepid) livemore(r);
