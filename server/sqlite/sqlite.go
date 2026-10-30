@@ -3,7 +3,7 @@
 package sqlite
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../../src/sqlite -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=1
+#cgo CFLAGS: -I${SRCDIR}/../../src/sqlite -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_DBSTAT_VTAB
 #cgo linux LDFLAGS: -lm -ldl -lpthread
 #include <stdlib.h>
 #include "sqlite3.h"
