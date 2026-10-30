@@ -123,6 +123,9 @@ func (h *Hub) announce(installpub, player, mapname, kind string, mode int64, ms 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.newPB(installpub, mapname, kind, mode, ms)
+	if record {
+		h.feedRecord(name, board.Key{Map: mapname, Kind: kind, Mode: int(mode)}, ms, x.prev, previous, x.legacy)
+	}
 	for _, q := range h.players {
 		if q.name != "" {
 			h.send(q, MsgResult, w.b)
