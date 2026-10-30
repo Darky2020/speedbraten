@@ -87,6 +87,8 @@ extern void renderghost(bool mainpass);
 extern void snapruntimer(snapio &s);
 extern void snapspawns(snapio &s);
 extern void resetspawns(snapio &s);
+extern void snapteamspawns(snapio &s);
+extern void resetteamspawns(snapio &s);
 extern void snaprespawn(snapio &s);
 extern void resetrespawn(snapio &s);
 extern void snaplatesettings(snapio &s);
