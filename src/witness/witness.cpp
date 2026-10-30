@@ -32,6 +32,7 @@
 #include <sys/statvfs.h>
 #include <sys/resource.h>
 #include <dirent.h>
+#include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -649,6 +650,13 @@ namespace witness
         return NULL;
     }
 
+    // A new run can only continue the newest one, so older runs that are over are freed: each holds its
+    // stream reader's buffers and decompression context, megabytes over a long session.
+    static void freeoldruns(client &c)
+    {
+        for(int i = c.runs.length() - 3; i >= 0; i--) if(c.runs[i]->done && !c.runs[i]->livepid) delete c.runs.remove(i);
+    }
+
     static witnessrun *findrun(client &c, int runid)
     {
         loopv(c.runs) if(c.runs[i]->runid == runid) return c.runs[i];
@@ -667,6 +675,7 @@ namespace witness
             {
                 if(r) { c.closing = true; return; }
                 loopv(c.runs) if(!c.runs[i]->done) closerun(*c.runs[i], "a new run started");
+                freeoldruns(c);
                 int kind = int(b.var()), starttick = int(b.var()), continues = kind == WITNESSRUN_CHAIN ? int(b.var()) : -1;
                 bool beats = b.left() > 0;
                 uint beat = beats ? uint(b.var()) : 0;
@@ -1013,9 +1022,9 @@ namespace witness
         defformatstring(karg, "-k%s", resimpackages);
         defformatstring(varg, "-V%s", pubhex);
         int fds[2] = { -1, -1 };
-        if(pipe(fds) < 0) return NULL;
+        if(pipe(fds) < 0) { conoutf("judge for %s not started: pipe: %s", file, strerror(errno)); return NULL; }
         pid_t pid = fork();
-        if(pid < 0) { close(fds[0]); close(fds[1]); return NULL; }
+        if(pid < 0) { conoutf("judge for %s not started: fork: %s", file, strerror(errno)); close(fds[0]); close(fds[1]); return NULL; }
         if(!pid)
         {
             struct rlimit cpu = { RESIMCPU, RESIMCPU };
