@@ -1415,7 +1415,7 @@
          clearpings();
          setoffset();
      }
-@@ -560,20 +561,155 @@
+@@ -560,20 +561,158 @@
  
  serverinfo *selectedserver = NULL;
  
@@ -1473,8 +1473,10 @@
 +    writeservercfg();
 +}
 +
-+// the favourite column beside rows [start, end) of a server table: [+] adds, [x] removes
-+static void favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
++// The favourite column beside rows [start, end) of a server table: [+] adds, [x] removes. The table's
++// columns merge hits by row, so a click here also hits its server's row: true then, and the caller
++// drops that click.
++static bool favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
 +{
 +    serverinfo *clicked = NULL;
 +    g->space(2);
@@ -1482,10 +1484,11 @@
 +    g->text("favourite", 0xFFFF80);
 +    for(int j = start; j < end; j++) if(g->button(list[j]->keep ? "\f3[x]" : "\f0[+]", 0xFFFFFF)&G3D_UP) clicked = list[j];
 +    g->poplist();
-+    if(!clicked) return;
++    if(!clicked) return false;
 +    if(clicked->keep) removefavourite(*clicked);
 +    else if(favtabs.length() > 1) favpick = clicked;
 +    else setfavourite(*clicked, favtabs[0]);
++    return true;
 +}
 +
 +// while a [+] waits for its tab: one button per tab
@@ -1512,7 +1515,7 @@
 +    int deltab = -1;
 +    bool newtab = false;
 +    loopvj(favtabs)
-+    {
+     {
 +        shown.setsize(0);
 +        loopv(servers) if(servers[i]->keep && !strcmp(favtabof(*servers[i]), favtabs[j])) shown.add(servers[i]);
 +        g->tab(favtabs[j], 0xFFDD88);
@@ -1551,7 +1554,7 @@
 +        g->poplist();
 +    }
 +    if(newtab)
-     {
++    {
 +        string name;
 +        for(int n = favtabs.length() + 1;; n++) { formatstring(name, "favourites %d", n); if(findfavtab(name) < 0) break; }
 +        favrename = addfavtab(name);
@@ -1580,7 +1583,7 @@
          cgui->pushlist();
          loopi(10)
          {
-@@ -581,7 +717,7 @@
+@@ -581,7 +720,7 @@
              for(int j = start; j < end; j++)
              {
                  if(!i && j+1 - start >= pagemin && (j+1 - start >= pagemax || cgui->shouldtab())) { end = j; break; }
@@ -1589,11 +1592,11 @@
                  const char *sdesc = si.sdesc;
                  if(si.address.host == ENET_HOST_ANY) sdesc = "[unknown host]";
                  else if(si.ping == serverinfo::WAITING) sdesc = "[waiting for response]";
-@@ -590,9 +726,22 @@
+@@ -590,9 +729,22 @@
              }
              game::serverinfoendcolumn(cgui, i);
          }
-+        favcolumn(cgui, list, start, end);
++        if(favcolumn(cgui, list, start, end)) sc = NULL;
          cgui->poplist();
          start = end;
      }
@@ -1612,7 +1615,7 @@
      if(selectedserver || !sc) return NULL;
      selectedserver = sc;
      return "connectselected";
-@@ -613,6 +762,7 @@
+@@ -613,6 +765,7 @@
      if(full) servers.deletecontents();
      else loopvrev(servers) if(!servers[i]->keep) delete servers.remove(i);
      selectedserver = NULL;
@@ -1620,7 +1623,7 @@
  }
  
  #define RETRIEVELIMIT 20000
-@@ -713,7 +863,12 @@
+@@ -713,7 +866,12 @@
  }
  
  ICOMMAND(addserver, "sis", (const char *name, int *port, const char *password), addserver(name, *port, password[0] ? password : NULL));
@@ -1634,7 +1637,7 @@
  ICOMMAND(clearservers, "i", (int *full), clearservers(*full!=0));
  COMMAND(updatefrommaster, "");
  COMMAND(initservers, "");
-@@ -723,14 +878,21 @@
+@@ -723,14 +881,21 @@
      if(!game::savedservers()) return;
      stream *f = openutf8file(path(game::savedservers(), true), "w");
      if(!f) return;

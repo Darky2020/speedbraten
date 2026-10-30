@@ -177,7 +177,7 @@ namespace game { namespace mod
                 if(end-start < pagemin) cgui->space(pagemin-(end-start));
                 serverinfoendcolumn(cgui, i);
             }
-            favcolumn(cgui, list, start, end);
+            if(favcolumn(cgui, list, start, end)) sc = NULL;
             cgui->poplist();
             start = end;
         }

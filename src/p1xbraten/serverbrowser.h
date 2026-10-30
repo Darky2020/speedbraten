@@ -141,6 +141,6 @@ struct serverinfo : pingattempts
 
 // draws a table of servers with header on each page; sets sc to the clicked server
 typedef void (*serverlistfn)(g3d_gui *g, uint *header, int pagemin, int pagemax, const vector<serverinfo *> &list, serverinfo *&sc);
-extern void favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end);
+extern bool favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end);
 extern void favpickrow(g3d_gui *g);
 extern void showfavtabs(g3d_gui *g, uint *header, int pagemin, int pagemax, serverlistfn drawlist, serverinfo *&sc);

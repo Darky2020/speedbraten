@@ -467,8 +467,10 @@ static void removefavourite(serverinfo &si)
     writeservercfg();
 }
 
-// the favourite column beside rows [start, end) of a server table: [+] adds, [x] removes
-void favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
+// The favourite column beside rows [start, end) of a server table: [+] adds, [x] removes. The table's
+// columns merge hits by row, so a click here also hits its server's row: true then, and the caller
+// drops that click.
+bool favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
 {
     serverinfo *clicked = NULL;
     g->space(2);
@@ -476,10 +478,11 @@ void favcolumn(g3d_gui *g, const vector<serverinfo *> &list, int start, int end)
     g->text("favourite", 0xFFFF80);
     for(int j = start; j < end; j++) if(g->button(list[j]->keep ? "\f3[x]" : "\f0[+]", 0xFFFFFF)&G3D_UP) clicked = list[j];
     g->poplist();
-    if(!clicked) return;
+    if(!clicked) return false;
     if(clicked->keep) removefavourite(*clicked);
     else if(favtabs.length() > 1) favpick = clicked;
     else setfavourite(*clicked, favtabs[0]);
+    return true;
 }
 
 // while a [+] waits for its tab: one button per tab
@@ -586,7 +589,7 @@ static void showserverlist(g3d_gui *cgui, uint *header, int pagemin, int pagemax
             }
             game::serverinfoendcolumn(cgui, i);
         }
-        favcolumn(cgui, list, start, end);
+        if(favcolumn(cgui, list, start, end)) sc = NULL;
         cgui->poplist();
         start = end;
     }
