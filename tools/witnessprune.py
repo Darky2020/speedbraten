@@ -61,6 +61,8 @@ def main():
     t = time.time()
     print('compacting %s (this takes a while for a large database)' % mb(size(dbpath)), flush=True)
     db.execute("VACUUM")
+    # in WAL mode the compacted pages land in witness.db-wal until a checkpoint writes them back
+    db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     db.close()
     phase('compacting', t)
     print('witness.db: %s -> %s' % (mb(before), mb(size(dbpath))), flush=True)
