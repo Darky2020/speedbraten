@@ -12,7 +12,14 @@
 </div>
 <div class="card scroll"><header><h2>Speedbraten's folders</h2></header><table>
 <tr><th>what</th><th>folder</th><th class="num">files</th><th class="num">size</th><th class="num">share</th></tr>
-{{range .Folders}}<tr><td>{{.Name}}</td><td class="small"><code>{{.Path}}</code>{{if .Err}} <span class="rejected small">{{.Err}}</span>{{end}}</td><td class="num dim">{{.Files}}</td><td class="num time">{{bytes .Size}}</td><td class="num dim small">{{percent .Size $.D.Ours}}</td></tr>
-{{else}}<tr><td colspan="5" class="dim">No folders given (-disk).</td></tr>{{end}}
-</table></div>{{end}}
+{{range .Folders}}{{$folder := .}}<tr><td>{{.Name}}</td><td class="small"><code>{{.Path}}</code>{{if .Err}} <span class="rejected small">{{.Err}}</span>{{end}}</td><td class="num dim">{{.Files}}</td><td class="num time">{{bytes .Size}}</td><td class="num dim small">{{percent .Size $.D.Ours}}</td></tr>
+{{range .Entries}}<tr><td></td><td class="small" style="padding-left: 2em"><code>{{.Name}}</code></td><td class="num dim small">{{.Files}}</td><td class="num small">{{bytes .Size}}</td><td class="num dim small">{{percent .Size $folder.Size}}</td></tr>
+{{range .Entries}}<tr><td></td><td class="small dim" style="padding-left: 4em"><code>{{.Name}}</code></td><td class="num dim small">{{.Files}}</td><td class="num dim small">{{bytes .Size}}</td><td></td></tr>
+{{end}}{{end}}{{else}}<tr><td colspan="5" class="dim">No folders given (-disk).</td></tr>{{end}}
+</table></div>
+{{if .Databases}}<div class="card scroll"><header><h2>Databases</h2><span class="dim small">by table and index, as stored on disk</span></header><table>
+<tr><th>database / table or index</th><th>kind</th><th class="num">rows</th><th class="num">size</th><th class="num">share</th></tr>
+{{range .Databases}}{{$db := .}}<tr><td><code class="small">{{.Path}}</code>{{if .Err}} <span class="rejected small">{{.Err}}</span>{{end}}</td><td class="dim small">database{{if .WAL}}, + {{bytes .WAL}} write-ahead log{{end}}</td><td></td><td class="num time">{{bytes .Size}}</td><td></td></tr>
+{{range .Objects}}<tr><td class="small" style="padding-left: 2em">{{.Name}}</td><td class="dim small">{{.Type}}</td><td class="num dim small">{{if ge .Rows 0}}{{.Rows}}{{end}}</td><td class="num small">{{bytes .Size}}</td><td class="num dim small">{{percent .Size $db.Size}}</td></tr>
+{{end}}{{end}}</table></div>{{end}}{{end}}
 {{template "bottom" .}}

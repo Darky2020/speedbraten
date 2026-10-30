@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"speedbraten/server/sqlite"
 )
 
 const password = "correct horse battery"
@@ -271,6 +274,73 @@ func TestAdminServer(t *testing.T) {
 	}
 	if _, err := parseFolders("noequals"); err == nil {
 		t.Fatal("a folder without a name")
+	}
+}
+
+func TestDiskBreakdown(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, n int) {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, n), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("runs/a/1.sbr", 4000)
+	write("runs/a/2.sbr", 4000)
+	for i := 0; i < 5; i++ {
+		write(fmt.Sprintf("resimhome/resim-%d.json", i), 100)
+	}
+	write("resimhome/packages/base/map.ogz", 20000)
+	db, err := sqlite.Create(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"CREATE TABLE prints(hash INTEGER, run INTEGER)", "CREATE INDEX prints_hash ON prints(hash)",
+		"WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 3000) INSERT INTO prints SELECT i*7919, i FROM n"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	db.Close()
+
+	w := &diskWatch{folders: []folderSize{{Name: "witness data", Path: dir}}, ttl: time.Minute}
+	r := w.report()
+	f := r.Folders[0]
+	names := map[string]entrySize{}
+	for _, e := range f.Entries {
+		names[e.Name] = e
+	}
+	if names["resimhome/"].Size != 20500 || names["runs/"].Files != 2 || names["test.db"].Size == 0 {
+		t.Fatalf("entries %+v", f.Entries)
+	}
+	var nested []string
+	for _, e := range names["resimhome/"].Entries {
+		nested = append(nested, e.Name)
+	}
+	if len(nested) != 2 || nested[0] != "packages/" || nested[1] != "*.json" {
+		t.Fatalf("resimhome breaks down into %v", nested)
+	}
+	if len(r.Databases) != 1 || r.Databases[0].Err != "" {
+		t.Fatalf("databases %+v", r.Databases)
+	}
+	objs := map[string]dbObject{}
+	for _, o := range r.Databases[0].Objects {
+		objs[o.Name] = o
+	}
+	if objs["prints"].Rows != 3000 || objs["prints"].Type != "table" || objs["prints_hash"].Type != "index" || objs["prints_hash"].Size == 0 {
+		t.Fatalf("objects %+v", r.Databases[0].Objects)
+	}
+
+	f2 := newAdminFixture(t)
+	f2.a.disk = w
+	body := f2.do("GET", "/admin/server", password, nil, "10.0.0.1").Body.String()
+	for _, want := range []string{"Databases", "prints_hash", "*.json", "packages/", "3000"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("server page lacks %q", want)
+		}
 	}
 }
 

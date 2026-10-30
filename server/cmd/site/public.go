@@ -172,10 +172,10 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	recent, _ := s.store.RecentRuns(homeRuns)
+	records, _ := s.store.Records(homeRuns)
 	holders, _ := s.store.TopHolders(8)
 	oldest, _ := s.store.OldestRecords(homeRuns)
-	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "Recent": recent,
+	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "RecentRecords": records,
 		"Holders": holders, "Oldest": oldest, "More": "/records"})
 }
 
@@ -678,12 +678,12 @@ const (
 	homeRuns      = 10
 )
 
-// addCategory adds a category page's newest records, recent runs, top record holders and oldest
-// standing records, all of the boards of one kind.
+// addCategory adds a category page's newest records, top record holders and oldest standing records, all of the
+// boards of one kind.
 func (s *site) addCategory(data map[string]any, boards []*board.Board, kind string) {
-	runs, _ := s.store.RecentRuns(100000)
-	var recent []board.Run
-	for _, r := range runs {
+	all, _ := s.store.Records(100000)
+	var recent []board.Record
+	for _, r := range all {
 		if r.Key.Kind == kind && len(recent) < recentRuns {
 			recent = append(recent, r)
 		}
@@ -715,7 +715,7 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 		data["ModeHolders"] = split
 	}
 	more := map[string]string{"race": "race", "flagrun": "flagrun", "campaign": "sp"}[kind]
-	data["Recent"], data["Holders"], data["Oldest"] = recent, holders, oldest
+	data["RecentRecords"], data["Holders"], data["Oldest"] = recent, holders, oldest
 	data["More"] = "/records"
 	if more != "" {
 		data["More"] = "/records?mode=" + more

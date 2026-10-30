@@ -5,6 +5,13 @@
 {{else}}<tr><td colspan="4" class="dim">No runs yet.</td></tr>{{end}}
 </table></div></div>{{end}}
 
+{{define "recordscard"}}<div class="card"><header><h2>Recent records</h2><a class="more" href="{{.More}}">all records →</a></header><div class="scroll"><table>
+<tr><th>map</th><th>player</th><th class="num">time</th><th class="num wide">gained</th><th class="wide">when</th></tr>
+{{range .RecentRecords}}<tr><td><a href="{{mapURL .Key}}">{{.Key.MapLabel}}</a> {{template "badge" .Key}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td>
+<td class="num time"><span class="rank1" title="a record">★ </span>{{runtime .MS}}</td><td class="num small wide">{{if ge .Prev 0}}<span class="faster">−{{gap .Prev .MS}}</span>{{else}}<span class="dim">first</span>{{end}}</td><td class="dim small wide">{{ago .When}}</td></tr>
+{{else}}<tr><td colspan="5" class="dim">No records yet.</td></tr>{{end}}
+</table></div></div>{{end}}
+
 {{define "holderscard"}}<div class="card"><header><h2>Top record holders</h2></header><div class="scroll"><table>
 <tr><th>#</th><th>player</th><th class="num">records</th></tr>
 {{range $i, $h := .}}<tr><td class="{{if eq $i 0}}rank1{{end}}">{{inc $i}}</td><td><a href="{{playerURL $h.Install}}">{{template "pname" $h}}</a></td><td class="num">{{$h.Records}}</td></tr>
@@ -26,6 +33,6 @@
 {{template "recentoldest" .}}{{end}}{{end}}
 
 {{define "recentoldest"}}<div class="cols2">
-<div>{{template "recentcard" .Recent}}</div>
+<div>{{template "recordscard" .}}</div>
 <div>{{template "oldestcard" .}}</div>
 </div>{{end}}
