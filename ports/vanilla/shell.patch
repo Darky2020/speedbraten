@@ -2152,7 +2152,7 @@
          if(remote) stopfollowing();
          ignores.setsize(0);
          connected = remote = false;
-@@ -937,12 +959,14 @@
+@@ -937,15 +959,17 @@
              nextmode = gamemode = INT_MAX;
              clientmap[0] = '\0';
          }
@@ -2167,7 +2167,11 @@
 +    void toserver(char *text) { if(!remote && hubchat(text)) return; conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
      COMMANDN(say, toserver, "C");
  
-     void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
+-    void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
++    void sayteam(char *text) { if(!remote && hubchat(text, true)) return; conoutf(CON_TEAMCHAT, "\fs\f8[%s]\fr %s: \f8%s", player1->state==CS_SPECTATOR ? "spec" : "team", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
+     COMMAND(sayteam, "C");
+ 
+     ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
 @@ -1061,7 +1085,8 @@
              messagereliable = false;
              messagecn = -1;
@@ -2758,8 +2762,8 @@
      extern void sendmapinfo();
      extern void stopdemo();
      extern void changemap(const char *name, int mode);
-+    // say away from a game server goes to the hub (hub.cpp); false if it can't take it
-+    extern bool hubchat(const char *text);
++    // say (everyone) and sayteam (the lobby) away from a game server go to the hub (hub.cpp); false if it can't take them
++    extern bool hubchat(const char *text, bool lobby = false);
 +    extern bool hubfetchmap(const char *name, int mode);
 +    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
 +    extern int spectatespeed();

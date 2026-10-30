@@ -1033,7 +1033,7 @@ namespace game
     void toserver(char *text) { if(!remote && hubchat(text)) return; conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); if(demorecord) recordmsg(N_TEXT, "rcs", player1, text); }
     COMMANDN(say, toserver, "C");
 
-    void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[team]\fr %s: \f8%s", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
+    void sayteam(char *text) { if(!remote && hubchat(text, true)) return; conoutf(CON_TEAMCHAT, "\fs\f8[team]\fr %s: \f8%s", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
     COMMAND(sayteam, "C");
 
     ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
