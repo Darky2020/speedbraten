@@ -243,9 +243,13 @@ namespace witness
         }
     }
 
+    // -F0: no aim fingerprints and no copy check. Fingerprints are kept for runs that reached the finish only:
+    // a copy is only worth making of those, and every new finished run is compared with all of them.
+    static bool fingerprints = true;
+
     static void storeprints(long long row, const vector<unsigned long long> &prints)
     {
-        if(prints.empty()) return;
+        if(prints.empty() || !fingerprints) return;
         sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
         sqlite3_stmt *st = NULL;
         if(sqlite3_prepare_v2(db, "INSERT INTO prints(hash, run) VALUES(?, ?)", -1, &st, NULL) == SQLITE_OK)
@@ -315,6 +319,7 @@ namespace witness
         hashtable<int, uint> stored; // tick -> combined state hash, from the HASH chunks
         vector<vector<uchar> > signatures;
         int livepid; // the re-simulation playing the run while it streams, 0 without one
+        bool reachedend; // its RSLT says it finished
         int lastinput; // tick of the player's last input event, or of the attempt's start
         long long follows; // the row of the run this one continues (the next run of a life), -1 if none
         bool ended;        // its END was taken
@@ -324,7 +329,7 @@ namespace witness
         aimtrail trail;
         vector<unsigned long long> prints; // fingerprints not stored yet
 
-        witnessrun() : row(-1), runid(0), kind(0), starttick(0), maxlagms(0), violations(0), inpslo(0), segticks(0), t0(0), seedsok(true), done(false), seenchunks(0), bytes(0), file(NULL), livepid(0), lastinput(0), follows(-1), ended(false), beats(false), startlo(-1), starthi(-1), lastbeat(0) { refused[0] = '\0'; }
+        witnessrun() : row(-1), runid(0), kind(0), starttick(0), maxlagms(0), violations(0), inpslo(0), segticks(0), t0(0), seedsok(true), done(false), seenchunks(0), bytes(0), file(NULL), livepid(0), reachedend(false), lastinput(0), follows(-1), ended(false), beats(false), startlo(-1), starthi(-1), lastbeat(0) { refused[0] = '\0'; }
         ~witnessrun() { DELETEP(file); }
     };
 
@@ -566,11 +571,13 @@ namespace witness
             vector<uchar> none;
             sign(c, r, sbr2::signature::SEGMENT, index, &r.reader.heads[index * sbr2::HASHSIZE], none);
             run("UPDATE runs SET segments = ? WHERE id = ?", "ii", (long long)(index + 1), r.row);
-            storeprints(r.row, r.prints);
-            r.prints.setsize(0);
             // the hub passes closed segments on to spectators from the file
             if(r.file) r.file->flush();
             livemore(r);
+        }
+        else if(!memcmp(ch.type, "RSLT", 4))
+        {
+            r.reachedend = b.u8() != 0;
         }
         else if(!memcmp(ch.type, "END ", 4))
         {
@@ -593,9 +600,12 @@ namespace witness
                 DELETEP(r.file);
             }
             conoutf("%s: run %d signed: %d segments, %d bytes, %s, %d violations, max lag %d ms", c.addressname, r.runid, r.reader.segment, r.bytes, r.seedsok ? "witness seeds" : "unknown seed", r.violations, r.maxlagms);
-            storeprints(r.row, r.prints);
+            if(r.reachedend && fingerprints)
+            {
+                storeprints(r.row, r.prints);
+                checkcopy(r.row);
+            }
             r.prints.setsize(0);
-            checkcopy(r.row);
             if(r.livepid) liveend(r);
             else if(resimexe[0]) queuebatch(r.row);
         }
@@ -911,7 +921,8 @@ namespace witness
         vector<long long> rows;
         vector<bool> needprints;
         sqlite3_stmt *st = NULL;
-        if(sqlite3_prepare_v2(db, "SELECT id, id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR runkind IS NULL OR id NOT IN (SELECT DISTINCT run FROM prints) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
+        if(sqlite3_prepare_v2(db, "SELECT id, ?1 AND IFNULL(runtimems, 0) > 0 AND id NOT IN (SELECT DISTINCT run FROM prints) FROM runs WHERE map IS NULL OR runkind IS NULL OR (?1 AND IFNULL(runtimems, 0) > 0 AND id NOT IN (SELECT DISTINCT run FROM prints)) ORDER BY started", -1, &st, NULL) != SQLITE_OK) return;
+        sqlite3_bind_int(st, 1, fingerprints ? 1 : 0);
         while(sqlite3_step(st) == SQLITE_ROW) { rows.add(sqlite3_column_int64(st, 0)); needprints.add(sqlite3_column_int(st, 1) != 0); }
         sqlite3_finalize(st);
         loopv(rows)
@@ -1161,6 +1172,7 @@ namespace witness
         jobrun *run = livejobrun(r, job);
         r.livepid = 0;
         if(!run) return;
+        unlink(run->out);
         job->runs.remove(int(run - job->runs.getbuf()));
         closeinput(*job);
     }
@@ -1258,6 +1270,8 @@ namespace witness
         sig.write(payload);
         run("INSERT INTO signatures(run, scope, segment, recvus, payload) VALUES(?, ?, 0, ?, ?)", "iiib", row, (long long)sig.scope, (long long)sig.recvus, payload.getbuf(), payload.length());
         run("UPDATE runs SET verdict = ?, reason = ?, resim = ?, judged = ?, runtimems = ? WHERE id = ?", "sssiii", verdict, reason, json, (long long)(nowus()/1000), finishedms, row);
+        // the JSON is kept in runs.resim
+        unlink(job.out);
         if(!strcmp(verdict, "valid")) notebest(row, finishedms);
         string file[1];
         if(strcmp(verdict, "unverified") && rowtext("SELECT file FROM runs WHERE id = ?", row, 1, file))
@@ -1536,9 +1550,10 @@ int main(int argc, char **argv)
         case 'R': rejudge = true; break;
         case 'j': maxlive = max(atoi(&argv[i][2]), 0); break;
         case 'P': backfill = true; break;
+        case 'F': fingerprints = atoi(&argv[i][2]) != 0; break;
         case 'l': if(!setlimit(&argv[i][2])) fatal("unknown limit: %s", &argv[i][2]); break;
     }
-    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-k<extra package dir, e.g. race maps>] [-j<live re-simulations>] [-R]] [-P] [-l<limit>=<value>]");
+    if(!datadir[0] || !seedfile) fatal("usage: sauer_witness -d<data dir> -s<signing seed file> [-c<channel key file>] [-p<port>] [-e<sauer_resim> -r<game data dir> [-o<overrides>] [-k<extra package dir, e.g. race maps>] [-j<live re-simulations>] [-R]] [-P] [-F0 (no aim fingerprints)] [-l<limit>=<value>]");
     mkdir(datadir, 0700);
     defformatstring(runsdir, "%s/runs", datadir);
     mkdir(runsdir, 0700);
