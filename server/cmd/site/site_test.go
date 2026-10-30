@@ -78,10 +78,13 @@ func TestPublicPages(t *testing.T) {
 	s := newSite(store)
 
 	code, body := get(t, s, "/")
-	for _, want := range []string{"Recently submitted runs", "Oldest standing records", "Top record holders", "forge", "ECTF", "An Army Of One", "alice", "0:09.000", "6:09.260"} {
+	for _, want := range []string{"Recent records", "Oldest standing records", "Top record holders", "forge", "ECTF", "An Army Of One", "alice", "0:09.000", "6:09.260", ">first<"} {
 		if code != 200 || !strings.Contains(body, want) {
 			t.Fatalf("home %d lacks %q", code, want)
 		}
+	}
+	if strings.Contains(body, "Recently submitted runs") {
+		t.Fatal("the home page still lists recent runs instead of recent records")
 	}
 	if strings.Contains(body, "<script>bob") {
 		t.Fatal("a player name isn't escaped")
@@ -100,12 +103,12 @@ func TestPublicPages(t *testing.T) {
 
 	// each category page has its own newest records, recent runs, holders and oldest records
 	_, body = get(t, s, "/flagruns")
-	for _, want := range []string{"Recently submitted runs", "Top ctf runners", "Top insta ctf runners", "Top effic ctf runners", "Oldest standing records", `href="/records?mode=flagrun"`} {
+	for _, want := range []string{"Recent records", "Top ctf runners", "Top insta ctf runners", "Top effic ctf runners", "Oldest standing records", `href="/records?mode=flagrun"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("flagruns page lacks %q", want)
 		}
 	}
-	if strings.Index(body, "Recently submitted runs") > strings.Index(body, `<h2 class="section">Maps`) {
+	if strings.Index(body, "Recent records") > strings.Index(body, `<h2 class="section">Maps`) {
 		t.Fatal("the category lists aren't above the maps")
 	}
 	if _, body = get(t, s, "/races"); !strings.Contains(body, "Top record holders") {
