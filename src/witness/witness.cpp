@@ -363,7 +363,7 @@ namespace witness
         ENetSocket sock;
         ENetAddress address;
         string addressname, build, host;
-        int connected;
+        long long connected; // ms since the epoch
         noise::handshake *hs;
         noise::cipherstate send, recv;
         bool open, closing, answered; // answered: closes once the key reply is sent
@@ -1420,8 +1420,8 @@ namespace witness
     // run is queued.
     static void pollrejudge()
     {
-        static int last = 0;
-        int now = int(nowus() / 1000);
+        static long long last = 0;
+        long long now = (long long)(nowus() / 1000);
         if(now - last < 5000) return;
         last = now;
         defformatstring(dir, "%s/rejudge", datadir);
@@ -1505,8 +1505,8 @@ namespace witness
             bool anyopen = false;
             loopv(clients) if(clients[i]->open) anyopen = true;
             if(enet_socketset_select(maxsock, &readset, &writeset, resimjobs.length() || resimqueue.length() ? 100 : anyopen ? WITNESSBEATMS : 1000) < 0) continue;
-            int now = int(nowus() / 1000);
-            static int lastbeat = 0;
+            long long now = (long long)(nowus() / 1000);
+            static long long lastbeat = 0;
             if(now - lastbeat >= WITNESSBEATMS)
             {
                 lastbeat = now;
