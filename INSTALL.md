@@ -9,10 +9,12 @@ Each package is listed in `SHA256SUMS` next to it.
 
 | System | Package | Needs |
 |---|---|---|
-| Windows 10/11 (x64) | `speedbraten-<version>-windows-x64.zip` | Sauerbraten 2020 for Windows |
-| Linux x86_64 | `speedbraten-<version>-linux-x86_64.tar.gz` | Sauerbraten 2020 for Linux, glibc 2.29+ (Ubuntu 20.04, Debian 11, Fedora 30 or newer), SDL2 |
-| Linux ARM64 | `speedbraten-<version>-linux-aarch64.tar.gz` | same as above |
-| macOS 11+ (Apple Silicon and Intel) | `speedbraten-<version>-macos.zip` | Sauerbraten 2020 for macOS |
+| Windows 10/11 (x64) | `speedbraten-<version>-windows-x64-<build>.zip` | Sauerbraten 2020 for Windows |
+| Linux x86_64 | `speedbraten-<version>-linux-x86_64-<build>.tar.gz` | Sauerbraten 2020 for Linux, glibc 2.29+ (Ubuntu 20.04, Debian 11, Fedora 30 or newer), SDL2 |
+| Linux ARM64 | `speedbraten-<version>-linux-aarch64-<build>.tar.gz` | same as above |
+| macOS 11+ (Apple Silicon and Intel) | `speedbraten-<version>-macos-<build>.zip` | Sauerbraten 2020 for macOS |
+
+`<build>` is `p1xbraten`, `vanilla` or `wcng`, see below.
 
 Get Sauerbraten 2020 from [sauerbraten.org](http://sauerbraten.org/) if you do not have it.
 
@@ -23,13 +25,13 @@ the witness and the boards are the same in all of them; they differ in the rest 
 
 | Build | Package name ends in | Based on |
 |---|---|---|
-| p1xbraten (default) | no suffix, e.g. `-windows-x64.zip` | [p1xbraten](https://github.com/sauerbraten/p1xbraten): its scoreboard, frag messages and menus |
+| p1xbraten | `-p1xbraten`, e.g. `-windows-x64-p1xbraten.zip` | [p1xbraten](https://github.com/sauerbraten/p1xbraten): its scoreboard, frag messages and menus |
 | Vanilla | `-vanilla`, e.g. `-windows-x64-vanilla.zip` | plain Sauerbraten, nothing else changed |
 | wc-ng | `-wcng`, e.g. `-windows-x64-wcng.zip` | [wc-ng](https://github.com/tpoechtrager/wc-ng): its server browser extras, player info, geoip and chat |
 
 Every build has its own launcher and files, so you can unpack several of them into the same
 Sauerbraten folder and keep them side by side. They all use the same home folder, settings,
-replays and statistics. The steps below use the default build; for the others, the names change
+replays and statistics. The steps below use the p1xbraten build; for the others, the names change
 as follows:
 
 | | p1xbraten | Vanilla | wc-ng |
@@ -63,7 +65,7 @@ happens because the game is not signed with a paid certificate.
 2. Unpack the tarball into your Sauerbraten folder (the one with `sauerbraten_unix`):
 
    ```sh
-   tar xzf speedbraten-<version>-linux-x86_64.tar.gz -C ~/sauerbraten
+   tar xzf speedbraten-<version>-linux-x86_64-p1xbraten.tar.gz -C ~/sauerbraten
    ```
 
 3. Start the game:

@@ -245,14 +245,14 @@ jobs:
           for d in bin64/*.dll; do case $d in *EOSSDK*) ;; *) cp "$d" $w/bin64_speedbraten/ ;; esac; done
           cp speedbraten.bat $w/
           cp -R data/overrides $w/speedbraten_overrides
-          (cd $w && zip -qr ../../dist/speedbraten-$v-windows-x64.zip .)
+          (cd $w && zip -qr ../../dist/speedbraten-$v-windows-x64-p1xbraten.zip .)
           # Linux: unpacked into the Sauerbraten folder
           for a in x86_64 aarch64; do
             l=pkg/linux-$a; mkdir -p $l/bin_unix
             cp art/client-linux-$a/speedbraten_${a}_client $l/bin_unix/; chmod +x $l/bin_unix/*
             cp speedbraten.sh $l/; chmod +x $l/speedbraten.sh
             cp -R data/overrides $l/speedbraten_overrides
-            tar czf dist/speedbraten-$v-linux-$a.tar.gz -C $l .
+            tar czf dist/speedbraten-$v-linux-$a-p1xbraten.tar.gz -C $l .
           done
           # macOS: a separate app that uses the data of Sauerbraten.app
           app=pkg/Speedbraten.app/Contents; mkdir -p $app/MacOS
@@ -262,7 +262,7 @@ jobs:
           tar xf art/client-macos-universal/Frameworks.tar -C $app
           sed "s/VERSION/${v#v}/" tools/release/macos/Info.plist > $app/Info.plist
           codesign --force --deep --sign - pkg/Speedbraten.app
-          (cd pkg && ditto -c -k --keepParent Speedbraten.app ../dist/speedbraten-$v-macos.zip)
+          (cd pkg && ditto -c -k --keepParent Speedbraten.app ../dist/speedbraten-$v-macos-p1xbraten.zip)
           for b in vanilla wcng; do bash tools/release/packagebase.sh $b art dist $v; done
           (cd dist && shasum -a 256 * > SHA256SUMS)
           ls -la dist; cat dist/SHA256SUMS
