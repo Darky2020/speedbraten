@@ -1686,8 +1686,10 @@ namespace game
         // the kept state is the spawn's, standing at its playerstart's angle, as a load leaves it.
         fpsent &d = *player1;
         float yaw = d.yaw, pitch = d.pitch;
+        bool keys[6] = { d.k_left, d.k_right, d.k_forward, d.k_backward, d.k_up, d.k_down };
         int move = d.move, strafe = d.strafe;
         bool jumping = d.jumping, attacking = d.attacking;
+        d.k_left = d.k_right = d.k_forward = d.k_backward = d.k_up = d.k_down = false;
         d.move = d.strafe = 0;
         d.jumping = d.attacking = false;
         const vector<extentity *> &ents = entities::getents();
@@ -1697,6 +1699,7 @@ namespace game
         if(start) { d.yaw = start->attr1; d.pitch = 0; }
         bool taken = takesnapshot(mapstartstate);
         d.yaw = yaw; d.pitch = pitch;
+        d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
         d.move = move; d.strafe = strafe;
         d.jumping = jumping; d.attacking = attacking;
         if(!taken) { mapstartstate.setsize(0); return; }
