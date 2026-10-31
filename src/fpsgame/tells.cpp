@@ -235,6 +235,18 @@ namespace game
 
     static const char * const inputsettings[] = { "sensitivity", "sensitivityscale", "mouseaccel", "invmouse", "zoomsens", "zoomaccel", "zoomautosens", "fov" };
 
+    // version: prints (and returns) this client's version, base, commit and platform
+    ICOMMAND(version, "", (),
+    {
+        ident *id = getident(SPEEDBRATEN_VERSIONVAR);
+        const char *v = id && id->type == ID_SVAR ? *id->storage.s : "";
+        const char *base = strchr(SPEEDBRATEN_CLIENT, '-');
+        defformatstring(text, "speedbraten %s (%s, commit %s%s, %s-%s)", v[0] && v[0] != '<' ? v : "development build",
+                        base ? base + 1 : "p1xbraten", SPEEDBRATEN_COMMIT, SPEEDBRATEN_DIRTY ? " modified" : "", TELLS_OS, TELLS_ARCH);
+        conoutf("%s", text);
+        result(text);
+    });
+
     void tellsencode(const inputrun &r, const replayinfo &info, vector<runchunk *> &out)
     {
         const tellcounters &run = savinglife ? life : game::run;
