@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.9
+
+- The console says how many players are on the hub when you connect.
+- The console shows players joining and leaving the hub.
+- /version shows your client's version, build and platform.
+
 ## v0.3.8alpha
 
 - Main menu: flagrun maps and race maps buttons.
