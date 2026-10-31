@@ -11,6 +11,9 @@ extern int unescapestring(char *dst, const char *src, const char *end);
 extern int zoom;
 
 extern void rebasesleeps(int delta);
+extern string picname;
+extern Texture *textureload(const char *name, int clamp, bool mipit, bool msg);
+extern void renderbackground(const char *caption, Texture *mapshot, const char *mapname, const char *mapinfo, bool restore, bool force);
 
 namespace game
 {
@@ -1670,6 +1673,9 @@ namespace game
     MOD(VARP, speedrunresetidle, 0, 1000, 10000);
     // 0: a reset always loads the map again
     MOD(VARP, speedruninstantreset, 0, 1, 1);
+    // ms an instant reset shows the loading screen for, as a load would: keys pressed meanwhile reach the
+    // first tick, the same way every time
+    MOD(VARP, speedrunresetload, 0, 200, 10000);
 
     static void takemapstartstate()
     {
@@ -1732,6 +1738,11 @@ namespace game
         execident("mapstart");
         mapstartstate.setsize(0);
         mapstartstate.put(start.getbuf(), start.length());
+        if(speedrunresetload > 0)
+        {
+            renderbackground("loading...", textureload(picname, 3, true, false), map, getmapinfo(), false, true);
+            for(Uint32 until = SDL_GetTicks() + speedrunresetload; int(until - SDL_GetTicks()) > 0;) SDL_Delay(1);
+        }
         copystring(mapstartmap, map);
         mapstartmode = mode;
         conoutf("\f2run reset");
