@@ -1676,7 +1676,24 @@ namespace game
         if(replaying || recordingoff || recording.attempts.length() != 1 || multiplayer(false) || havebots() ||
            !m_check(gamemode, M_DMSP | M_CLASSICSP) || worldedited())
             return;
-        if(!takesnapshot(mapstartstate)) { mapstartstate.setsize(0); return; }
+        // The frames between the load and the first tick already apply the player's live keys and mouse;
+        // the kept state is the spawn's, standing at its playerstart's angle, as a load leaves it.
+        fpsent &d = *player1;
+        float yaw = d.yaw, pitch = d.pitch;
+        int move = d.move, strafe = d.strafe;
+        bool jumping = d.jumping, attacking = d.attacking;
+        d.move = d.strafe = 0;
+        d.jumping = d.attacking = false;
+        const vector<extentity *> &ents = entities::getents();
+        const extentity *start = NULL;
+        float closest = 32;
+        loopv(ents) if(ents[i]->type == PLAYERSTART && ents[i]->o.dist(d.o) < closest) { start = ents[i]; closest = ents[i]->o.dist(d.o); }
+        if(start) { d.yaw = start->attr1; d.pitch = 0; }
+        bool taken = takesnapshot(mapstartstate);
+        d.yaw = yaw; d.pitch = pitch;
+        d.move = move; d.strafe = strafe;
+        d.jumping = jumping; d.attacking = attacking;
+        if(!taken) { mapstartstate.setsize(0); return; }
         copystring(mapstartmap, recording.attempts[0]->map);
         mapstartmode = recording.attempts[0]->mode;
     }
