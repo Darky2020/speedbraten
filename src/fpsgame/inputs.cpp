@@ -1668,6 +1668,8 @@ namespace game
     }
 
     MOD(VARP, speedrunresetidle, 0, 1000, 10000);
+    // 0: a reset always loads the map again
+    MOD(VARP, speedruninstantreset, 0, 1, 1);
 
     static void takemapstartstate()
     {
@@ -1729,9 +1731,9 @@ namespace game
         const inputrun &run = replaying ? replaydata : recording;
         const char *map = run.attempts.length() ? run.attempts[0]->map : getclientmap();
         int mode = run.attempts.length() ? run.attempts[0]->mode : gamemode;
-        if(instantresetok(map, mode)) { instantreset(); return; }
+        if(speedruninstantreset && instantresetok(map, mode)) { instantreset(); return; }
         // flagruns and races judge each life on its own, from a fresh map start: a respawn is a reset
-        if(!replaying && !multiplayer(false) && !strcmp(map, getclientmap()) && (server::flagrunactive() || server::racerulesactive()))
+        if(speedruninstantreset && !replaying && !multiplayer(false) && !strcmp(map, getclientmap()) && (server::flagrunactive() || server::racerulesactive()))
         {
             queueinput(INPUT_COMMAND, 0, "respawnnow");
             return;
