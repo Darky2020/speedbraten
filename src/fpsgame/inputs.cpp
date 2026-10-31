@@ -1723,6 +1723,13 @@ namespace game
         // restored keep their times
         resetsimclock(lastmillis - SIMTICK);
         rebasesleeps(SIMTICK);
+        // what a game start resets outside the simulation: the hit crosshair and respawn flash would otherwise
+        // wait for the clock to pass their old times
+        extern int lastspawnattempt;
+        lasthit = lastspawnattempt = 0;
+        maprealtime = 0;
+        showscores(false);
+        execident("mapstart");
         mapstartstate.setsize(0);
         mapstartstate.put(start.getbuf(), start.length());
         copystring(mapstartmap, map);
