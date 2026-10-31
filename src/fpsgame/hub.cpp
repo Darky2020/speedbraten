@@ -62,6 +62,11 @@ namespace game
     static int hubretry = 0, hublaststate = WITNESS_IDLE, hubsentstate = -1, hubsentmode = 0;
     static string hubsentmap = "", hubsentkind = "";
     static bool hubasking = false, hubchecking = false, hubkeychanged = false, hubwelcomed = false, hubreported = false;
+    // The players the hub lists right after its welcome were already online: joins and leaves are told from
+    // HUBLISTED ms after it on. How many are online is told once a game.
+    enum { HUBLISTED = 1000 };
+    static int hubwelcomedat = 0;
+    static bool hublisted = false, hubcounttold = false;
     static uchar hubnewkey[32];
 
     static bool autolobbydue = true;
@@ -273,7 +278,7 @@ namespace game
         hubmyid = 0;
         hubmyname[0] = hubaskedname[0] = hubsentmap[0] = hubrefusal[0] = '\0';
         hubsentstate = -1;
-        hubwelcomed = false;
+        hubwelcomed = hublisted = false;
         autolobbydue = true;
         playalonglobby = 0;
         followpending = false;
@@ -593,6 +598,7 @@ namespace game
                     copystring(hubmyname, name);
                     if(why[0]) conoutf(CON_ERROR, "hub: %s", why);
                     else if(!name[0]) conoutf(CON_ERROR, "hub: pick a name to chat and join lobbies");
+                    if(!hubwelcomed) hubwelcomedat = totalmillis;
                     hubwelcomed = true;
                     break;
                 }
@@ -626,13 +632,22 @@ namespace game
                         q.running = old->running; q.ms = old->ms; q.best = old->best; q.pb = old->pb; q.statat = old->statat;
                         *old = q;
                     }
-                    else hubplayers.add(q);
+                    else
+                    {
+                        hubplayers.add(q);
+                        if(hublisted && q.id != hubmyid && q.name[0]) conoutf("\f1[hub] \f0%s\f2 joined the hub", q.name);
+                    }
                     break;
                 }
                 case HM_GONE:
                 {
                     uint id = uint(r.var());
-                    loopv(hubplayers) if(hubplayers[i].id == id) { hubplayers.remove(i); break; }
+                    loopv(hubplayers) if(hubplayers[i].id == id)
+                    {
+                        if(hublisted && hubplayers[i].name[0]) conoutf("\f1[hub] \f0%s\f2 left the hub", hubplayers[i].name);
+                        hubplayers.remove(i);
+                        break;
+                    }
                     break;
                 }
                 case HM_LOBBY:
@@ -896,6 +911,31 @@ namespace game
         setsvar("hubkeyfor", addr);
     }
 
+    // once a game, how many players the hub has and who, a few by name
+    enum { HUBNAMESTOLD = 8 };
+    static void tellonline()
+    {
+        hublisted = true;
+        if(hubcounttold) return;
+        hubcounttold = true;
+        int n = 0;
+        vector<char> names;
+        loopv(hubplayers) if(hubplayers[i].name[0])
+        {
+            if(n < HUBNAMESTOLD)
+            {
+                if(names.length()) names.put(", ", 2);
+                const char *name = hubplayers[i].id == hubmyid ? "you" : hubplayers[i].name;
+                names.put(name, strlen(name));
+            }
+            n++;
+        }
+        names.add('\0');
+        if(n > HUBNAMESTOLD) conoutf("\f1[hub] \f2%d players online: %s and %d more", n, names.getbuf(), n - HUBNAMESTOLD);
+        else if(n > 1) conoutf("\f1[hub] \f2%d players online: %s", n, names.getbuf());
+        else conoutf("\f1[hub] \f2nobody else is online");
+    }
+
     // keeps the channel open while hubhost is set; mirrors witnessupdate's key handling
     void hubupdate()
     {
@@ -957,6 +997,7 @@ namespace game
         hubmessages();
         if(hubstate() == WITNESS_OPEN && hubwelcomed)
         {
+            if(!hublisted && totalmillis - hubwelcomedat >= HUBLISTED) tellonline();
             if(strcmp(player1->name, hubaskedname))
             {
                 copystring(hubaskedname, player1->name);
