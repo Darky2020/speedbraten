@@ -69,6 +69,23 @@ func TestPostsAndStatus(t *testing.T) {
 	}
 }
 
+func TestAllWebhooks(t *testing.T) {
+	srv1, calls1 := fakeDiscord(t, 0)
+	srv2, calls2 := fakeDiscord(t, 0)
+	w1, w2 := New(srv1.URL+"/hook", t.Logf), New(srv2.URL+"/hook", t.Logf)
+	all := All{w1, w2}
+	all.Post("alice joined the hub")
+	all.Status("1 player in 1 lobby")
+	all.Status("2 players in 1 lobby")
+	w1.Close()
+	w2.Close()
+	for i, calls := range [][]call{calls1(), calls2()} {
+		if len(calls) != 3 || calls[0].content != "alice joined the hub" || calls[2].method != "PATCH" {
+			t.Errorf("webhook %d: %+v", i+1, calls)
+		}
+	}
+}
+
 func TestRateLimitRetries(t *testing.T) {
 	srv, calls := fakeDiscord(t, 2)
 	w := New(srv.URL+"/hook", t.Logf)

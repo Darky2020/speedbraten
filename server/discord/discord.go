@@ -39,6 +39,21 @@ func New(url string, logf func(string, ...any)) *Webhook {
 	return w
 }
 
+// All sends the same feed to several webhooks, each with its own status message.
+type All []*Webhook
+
+func (a All) Post(text string) {
+	for _, w := range a {
+		w.Post(text)
+	}
+}
+
+func (a All) Status(text string) {
+	for _, w := range a {
+		w.Status(text)
+	}
+}
+
 // Post queues a message.
 func (w *Webhook) Post(text string) { w.enqueue(job{text: text}) }
 
