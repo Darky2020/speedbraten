@@ -124,7 +124,24 @@ type site struct {
 	mux      *http.ServeMux
 	shots    string // dir of chosen map pictures, <map>.png or .jpg
 	previews string // the game's packages/base, for <map>.jpg previews
+	racemaps string // package dir of the race maps: <dir>/packages/base/<map>.ogz, screenshots/<map>.webp
 	hubAddr  string
+}
+
+// raceMaps lists the maps of the race map dir, read on each call so that synced maps show at once.
+func (s *site) raceMaps() []string {
+	if s.racemaps == "" {
+		return nil
+	}
+	files, _ := os.ReadDir(filepath.Join(s.racemaps, "packages", "base"))
+	var maps []string
+	for _, f := range files {
+		name, ok := strings.CutSuffix(f.Name(), ".ogz")
+		if ok && !f.IsDir() && name != "" && len(name) <= 64 && safeName(name) == name {
+			maps = append(maps, name)
+		}
+	}
+	return maps
 }
 
 func newSite(store *board.Store) *site {
@@ -269,6 +286,21 @@ func (s *site) withLegacy(boards []*board.Board, kind string) []*board.Board {
 	return out
 }
 
+// withRaceMaps adds an empty board for each map of the race map dir that has none.
+func (s *site) withRaceMaps(boards []*board.Board) []*board.Board {
+	have := map[string]bool{}
+	for _, b := range boards {
+		have[b.Key.Map] = true
+	}
+	out := boards
+	for _, m := range s.raceMaps() {
+		if !have[m] {
+			out = append(out, &board.Board{Key: board.Key{Map: m, Kind: "race"}})
+		}
+	}
+	return out
+}
+
 func (s *site) races(w http.ResponseWriter, r *http.Request) {
 	boards, err := s.boardsOf("race")
 	if err != nil {
@@ -276,7 +308,7 @@ func (s *site) races(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := newFilter(r, boardSorts, nil)
-	data := map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(s.withLegacy(boards, "race"), f), "F": f, "Path": "/races"}
+	data := map[string]any{"Title": "Races", "Tab": "races", "Boards": filterBoards(s.withRaceMaps(s.withLegacy(boards, "race")), f), "F": f, "Path": "/races"}
 	s.addCategory(data, boards, "race")
 	render(w, racesPage, "races.html", data)
 }
@@ -456,7 +488,7 @@ func (s *site) mapBoard(w http.ResponseWriter, r *http.Request) {
 		legacyFaster = d < 0
 		legacyDiff = signedGap(d)
 	}
-	if b == nil && legacy != nil {
+	if b == nil && (legacy != nil || k.Kind == "race" && k.Mode == 0 && slices.Contains(s.raceMaps(), k.Map)) {
 		b = &board.Board{Key: k}
 	}
 	if b == nil {
@@ -513,11 +545,16 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 	// flagruns and campaigns have fixed lists; races count the race boards there are
 	all, _ := s.store.Boards()
 	totals := map[string]int{"ctf": len(board.FlagrunMaps), "ictf": len(board.FlagrunMaps), "ectf": len(board.FlagrunMaps), "sp": board.CampaignCount()}
+	raceBoards := map[board.Key]bool{}
 	for _, b := range all {
 		if b.Key.Kind == "race" {
-			totals["race"]++
+			raceBoards[b.Key] = true
 		}
 	}
+	for _, m := range s.raceMaps() {
+		raceBoards[board.Key{Map: m, Kind: "race"}] = true
+	}
+	totals["race"] = len(raceBoards)
 	var completion []completionRow
 	for _, g := range completionGroups {
 		if totals[g.Key] == 0 {
@@ -645,8 +682,8 @@ func safeName(s string) string {
 
 const placeholderSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect width="320" height="180" fill="#d1d5db"/><path d="M0 180 L110 90 L170 140 L230 70 L320 150 L320 180 Z" fill="#9ca3af"/></svg>`
 
-// mapImage serves a map's picture: a chosen view if there is one, else the game's preview, else a
-// placeholder.
+// mapImage serves a map's picture: a chosen view if there is one, else the race map's screenshot,
+// else the game's preview, else a placeholder.
 func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/mapimg/")
 	if name == "" || safeName(name) != name {
@@ -657,6 +694,9 @@ func (s *site) mapImage(w http.ResponseWriter, r *http.Request) {
 	var candidates []string
 	if s.shots != "" {
 		candidates = append(candidates, filepath.Join(s.shots, name+".jpg"), filepath.Join(s.shots, name+".png"))
+	}
+	if s.racemaps != "" {
+		candidates = append(candidates, filepath.Join(s.racemaps, "packages", "base", "screenshots", name+".webp"))
 	}
 	if s.previews != "" {
 		candidates = append(candidates, filepath.Join(s.previews, name+".jpg"))

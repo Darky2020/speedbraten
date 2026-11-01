@@ -243,3 +243,30 @@ func TestReplayDownload(t *testing.T) {
 		t.Fatalf("removed run download: %d", code)
 	}
 }
+
+func TestRaceMapsDir(t *testing.T) {
+	store, _ := fixture(t)
+	s := newSite(store)
+	s.racemaps = t.TempDir()
+	base := filepath.Join(s.racemaps, "packages", "base")
+	os.MkdirAll(filepath.Join(base, "screenshots"), 0755)
+	for _, f := range []string{"Air_Speed_I.ogz", "nadefly.ogz", "bad name.ogz", "README.md", "screenshots/Air_Speed_I.webp"} {
+		os.WriteFile(filepath.Join(base, f), []byte("x "+f), 0644)
+	}
+	_, body := get(t, s, "/races")
+	if !strings.Contains(body, "Air_Speed_I") || !strings.Contains(body, "nadefly") || strings.Contains(body, "bad name") || strings.Contains(body, "No races yet") {
+		t.Fatalf("races page without runs: %s", body)
+	}
+	if code, _ := get(t, s, "/map?map=nadefly&kind=race&mode=0"); code != 200 {
+		t.Fatalf("race map page without runs: %d", code)
+	}
+	if code, _ := get(t, s, "/map?map=elsewhere&kind=race&mode=0"); code != 404 {
+		t.Fatalf("map outside the race dir: %d", code)
+	}
+	if _, img := get(t, s, "/mapimg/Air_Speed_I"); img != "x screenshots/Air_Speed_I.webp" {
+		t.Fatalf("race map picture: %q", img)
+	}
+	if _, player := get(t, s, "/player?id=kb"); !strings.Contains(player, "Races</div>") || !strings.Contains(player, `<div class="meter-num">0 / 2</div>`) {
+		t.Fatal("race completion should count the race dir's maps")
+	}
+}

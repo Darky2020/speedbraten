@@ -53,6 +53,7 @@ func main() {
 	rejudgeDir := flag.String("rejudgedir", "", "the witness's <data dir>/rejudge, for re-judging runs from the dashboard")
 	shots := flag.String("mapshots", "", "pictures of maps chosen by hand: <map>.jpg or <map>.png")
 	previews := flag.String("mappreviews", "", "the game's packages/base, whose <map>.jpg previews stand in for maps without a picture")
+	racemaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), the hub's -racemaps: every race map gets a board")
 	hubAddr := flag.String("hubaddr", "141.95.67.191", "the hub's address as the info page gives it")
 	disk := flag.String("disk", "", "more folders for the dashboard's disk page, name=path,name=path (the witness's and hub's data folders are always there)")
 	flag.Parse()
@@ -65,7 +66,7 @@ func main() {
 	}
 	defer store.Close()
 	s := newSite(store)
-	s.shots, s.previews, s.hubAddr = *shots, *previews, *hubAddr
+	s.shots, s.previews, s.racemaps, s.hubAddr = *shots, *previews, *racemaps, *hubAddr
 	if *passfile != "" {
 		hash, err := os.ReadFile(*passfile)
 		if err != nil {
