@@ -1138,7 +1138,7 @@ namespace game
 
         g.pushlist();
         g.text("name", COL_GRAY);
-        loopv(rows) g.textf("%s%s", rowcolor(rows[i]), NULL, rows[i]->name, rows[i]->id == l->host ? " \f4(host)" : "");
+        loopv(rows) g.text(rows[i]->name, rows[i]->id == l->host ? COL_MASTER : rowcolor(rows[i]));
         g.poplist();
 
         g.space(2);

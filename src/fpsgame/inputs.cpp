@@ -10,6 +10,11 @@ extern int identflags;
 extern int unescapestring(char *dst, const char *src, const char *end);
 extern int zoom;
 
+extern void rebasesleeps(int delta);
+extern string picname;
+extern Texture *textureload(const char *name, int clamp, bool mipit, bool msg);
+extern void renderbackground(const char *caption, Texture *mapshot, const char *mapname, const char *mapinfo, bool restore, bool force);
+
 namespace game
 {
     static vector<inputevent> pending;
@@ -41,6 +46,16 @@ namespace game
     static bool replayviewhold();
 
     static void checkpendingreset();
+
+    // A campaign map's state at the start of its first tick, taken on every fresh live start: a reset
+    // on that map restores it with a new seed instead of loading the map again. The state at a map's
+    // start doesn't depend on the seed and a campaign map's load draws nothing from the RNG, so this is
+    // the state a fresh load with that seed would give. Dropped at every map load.
+    static vector<uchar> mapstartstate;
+    static string mapstartmap = "";
+    static int mapstartmode = 0;
+
+    static void takemapstartstate();
 
     // movement, jump or attack input from the player (aim alone does not count)
     static void noteactivity()
@@ -1148,6 +1163,7 @@ namespace game
             }
         }
         replaystartstate = false;
+        if(!curtick) takemapstartstate();
         if(lifepending) { seedlife(); takelifestate(); }
         else if(chainpending) takechainstate();
         runstateops();
@@ -1358,6 +1374,7 @@ namespace game
     void inputmapstart(const char *name, int mode)
     {
         respawnonkey = false;
+        mapstartstate.setsize(0);
         bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
         if(!chained || replaypending) { saveunfinishedrun(); hubviewstop(); }
         lifestart = NULL;
@@ -1654,6 +1671,85 @@ namespace game
     }
 
     MOD(VARP, speedrunresetidle, 0, 1000, 10000);
+    // 0: a reset always loads the map again
+    MOD(VARP, speedruninstantreset, 0, 1, 1);
+    // ms an instant reset shows the loading screen for, as a load would: keys pressed meanwhile reach the
+    // first tick, the same way every time
+    MOD(VARP, speedrunresetload, 0, 200, 10000);
+
+    static void takemapstartstate()
+    {
+        if(replaying || recordingoff || recording.attempts.length() != 1 || multiplayer(false) || havebots() ||
+           !m_check(gamemode, M_DMSP | M_CLASSICSP) || worldedited())
+            return;
+        // The frames between the load and the first tick already apply the player's live keys and mouse;
+        // the kept state is the spawn's, standing at its playerstart's angle, as a load leaves it.
+        fpsent &d = *player1;
+        float yaw = d.yaw, pitch = d.pitch;
+        bool keys[6] = { d.k_left, d.k_right, d.k_forward, d.k_backward, d.k_up, d.k_down };
+        int move = d.move, strafe = d.strafe;
+        bool jumping = d.jumping, attacking = d.attacking;
+        d.k_left = d.k_right = d.k_forward = d.k_backward = d.k_up = d.k_down = false;
+        d.move = d.strafe = 0;
+        d.jumping = d.attacking = false;
+        const vector<extentity *> &ents = entities::getents();
+        const extentity *start = NULL;
+        float closest = 32;
+        loopv(ents) if(ents[i]->type == PLAYERSTART && ents[i]->o.dist(d.o) < closest) { start = ents[i]; closest = ents[i]->o.dist(d.o); }
+        if(start) { d.yaw = start->attr1; d.pitch = 0; }
+        bool taken = takesnapshot(mapstartstate);
+        d.yaw = yaw; d.pitch = pitch;
+        d.k_left = keys[0]; d.k_right = keys[1]; d.k_forward = keys[2]; d.k_backward = keys[3]; d.k_up = keys[4]; d.k_down = keys[5];
+        d.move = move; d.strafe = strafe;
+        d.jumping = jumping; d.attacking = attacking;
+        if(!taken) { mapstartstate.setsize(0); return; }
+        copystring(mapstartmap, recording.attempts[0]->map);
+        mapstartmode = recording.attempts[0]->mode;
+    }
+
+    static bool instantresetok(const char *map, int mode)
+    {
+        return mapstartstate.length() && !replaying && !strcmp(map, mapstartmap) && mode == mapstartmode && !strcmp(getclientmap(), map) &&
+               mode == gamemode && !worldedited() && !multiplayer(false);
+    }
+
+    // a new attempt on the map being played, from its start state: what a load of it would do, without
+    // the load
+    static void instantreset()
+    {
+        vector<uchar> start;
+        start.put(mapstartstate.getbuf(), mapstartstate.length());
+        string map;
+        copystring(map, mapstartmap);
+        int mode = mapstartmode;
+        runtimermapstart(mode, true);
+        inputmapstart(map, mode);
+        if(!restorereplaystart(start)) { conoutf(CON_ERROR, "the run's start could not be restored: loading the map"); changemap(map, mode); return; }
+        seedMT(gameseed);
+        readsettings(cursettings);
+        readsettings(framesettings);
+        // the state was taken as tick 1 began, its clock already a tick on from the load's; the sleeps it
+        // restored keep their times
+        resetsimclock(lastmillis - SIMTICK);
+        rebasesleeps(SIMTICK);
+        // what a game start resets outside the simulation: the hit crosshair and respawn flash would otherwise
+        // wait for the clock to pass their old times
+        extern int lastspawnattempt;
+        lasthit = lastspawnattempt = 0;
+        maprealtime = 0;
+        showscores(false);
+        execident("mapstart");
+        mapstartstate.setsize(0);
+        mapstartstate.put(start.getbuf(), start.length());
+        if(speedrunresetload > 0)
+        {
+            renderbackground("loading...", textureload(picname, 3, true, false), map, getmapinfo(), false, true);
+            for(Uint32 until = SDL_GetTicks() + speedrunresetload; int(until - SDL_GetTicks()) > 0;) SDL_Delay(1);
+        }
+        copystring(mapstartmap, map);
+        mapstartmode = mode;
+        conoutf("\f2run reset");
+    }
 
     // Pressing speedrunreset arms a restart of the current run from its first map; it fires
     // once the player has given no movement or attack input for speedrunresetidle ms after
@@ -1671,8 +1767,16 @@ namespace game
         if((curtick - resetarmtick)*SIMTICK < speedrunresetidle) return;
         resetarmtick = -1;
         const inputrun &run = replaying ? replaydata : recording;
-        if(run.attempts.length()) changemap(run.attempts[0]->map, run.attempts[0]->mode);
-        else changemap(getclientmap(), gamemode);
+        const char *map = run.attempts.length() ? run.attempts[0]->map : getclientmap();
+        int mode = run.attempts.length() ? run.attempts[0]->mode : gamemode;
+        if(speedruninstantreset && instantresetok(map, mode)) { instantreset(); return; }
+        // flagruns and races judge each life on its own, from a fresh map start: a respawn is a reset
+        if(speedruninstantreset && !replaying && !multiplayer(false) && !strcmp(map, getclientmap()) && (server::flagrunactive() || server::racerulesactive()))
+        {
+            queueinput(INPUT_COMMAND, 0, "respawnnow");
+            return;
+        }
+        changemap(map, mode);
     }
 
     ICOMMAND(speedrunreset, "", (),
