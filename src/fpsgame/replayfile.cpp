@@ -1543,7 +1543,7 @@ namespace game
     static const char *replaybasename(const char *file) { const char *b = strrchr(file, '/'); return b ? b+1 : file; }
 
     // every .sbr in dir and its folders, as paths; replays/kept/ and replays/downloaded/ are left out of replays/
-    static void listreplaytree(const char *dir, vector<char *> &out, int depth = 0)
+    static void listreplaytree(const char *dir, vector<char *> &out, hashset<const char *> &seen, int depth = 0)
     {
         vector<char *> names;
         listfiles(dir, NULL, names);
@@ -1555,11 +1555,9 @@ namespace game
             int len = strlen(n);
             if(len > 4 && !strcmp(n + len - 4, ".sbr"))
             {
-                bool dup = false;
-                loopvj(out) if(!strcmp(out[j], full)) { dup = true; break; }
-                if(!dup) out.add(newstring(full));
+                if(!seen.access(full)) seen.add(out.add(newstring(full)));
             }
-            else if(depth < 3 && !strchr(n, '.') && (depth || (strcmp(n, "kept") && strcmp(n, "downloaded")))) listreplaytree(full, out, depth + 1);
+            else if(depth < 3 && !strchr(n, '.') && (depth || (strcmp(n, "kept") && strcmp(n, "downloaded")))) listreplaytree(full, out, seen, depth + 1);
         }
         names.deletearrays();
     }
@@ -1601,7 +1599,8 @@ namespace game
     static void listreplays(bool kept, vector<char *> &files)
     {
         sortflatreplays();
-        listreplaytree(kept ? "replays/kept" : "replays", files);
+        hashset<const char *> seen;
+        listreplaytree(kept ? "replays/kept" : "replays", files, seen);
     }
 
     static bool bybasename(const char *a, const char *b) { return strcmp(replaybasename(a), replaybasename(b)) < 0; }

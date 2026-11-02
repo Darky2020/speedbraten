@@ -150,6 +150,9 @@ func main() {
 		log.Fatal(err)
 	}
 	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps}
+	if *raceMaps != "" {
+		cfg.Thumbs = filepath.Join(*dir, "thumbs")
+	}
 	if *discordHook != "" {
 		urls, err := readList(*discordHook)
 		if err != nil {
@@ -173,6 +176,18 @@ func main() {
 				time.Sleep(5 * time.Second)
 			}
 		}()
+	}
+	if *raceMaps != "" {
+		go func() {
+			for {
+				start := time.Now()
+				if n := h.RefreshMapCRCs(); n > 0 {
+					log.Printf("race maps: checksums of %d maps in %v", n, time.Since(start).Round(time.Millisecond))
+				}
+				time.Sleep(time.Minute)
+			}
+		}()
+		go h.ThumbLoop(log.Printf)
 	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {

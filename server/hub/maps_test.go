@@ -3,6 +3,8 @@ package hub
 import (
 	"bytes"
 	"crypto/rand"
+	"hash/crc32"
+	"image"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,12 +28,18 @@ func TestGetMap(t *testing.T) {
 	os.WriteFile(filepath.Join(race, "Bad Name.ogz"), ogz[:10], 0o644)
 	os.WriteFile(filepath.Join(race, "notes.txt"), []byte("x"), 0o644)
 	f.h.cfg.RaceMaps = filepath.Dir(filepath.Dir(race))
+	if n := f.h.RefreshMapCRCs(); n != 1 {
+		t.Fatalf("checksums of %d maps, want 1", n)
+	}
 
 	a := f.connect(newKey(), "1.1.1.1", "alice")
-	// the race map list: the race dir's maps with valid names
+	// the race map list: the race dir's maps with valid names, then the CRCs of their files
 	m := a.expect(MsgRaceMaps)
 	if n := m.r.u(); n != 1 || m.r.str(64) != "speed1" {
 		t.Fatalf("race maps: %d", n)
+	}
+	if ogzCRC, cfgCRC := m.r.u(), m.r.u(); ogzCRC != uint64(crc32.ChecksumIEEE(ogz[:200])) || cfgCRC != 0 {
+		t.Fatalf("race map checksums %x %x", ogzCRC, cfgCRC)
 	}
 	ask := func(name string) {
 		var q writer
@@ -74,6 +82,122 @@ func TestGetMap(t *testing.T) {
 		a.expectNotice(why)
 		if m := a.expect(MsgMapData); m.r.str(64) != name || m.r.u() != MapOgz || m.r.u() != 0 {
 			t.Fatalf("%q: a refusal is not an empty ogz piece", name)
+		}
+	}
+}
+
+func TestMapCRCRefresh(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	base := filepath.Join(dir, "packages", "base")
+	os.MkdirAll(base, 0o755)
+	write := func(name, data string) { os.WriteFile(filepath.Join(base, name), []byte(data), 0o644) }
+	write("speed1.ogz", "first version")
+	write("speed2.ogz", "other map")
+	write("speed2.cfg", "mapmodel carrot")
+	f.h.cfg.RaceMaps = dir
+	crcs := func() []uint64 {
+		var r reader
+		r.b = f.h.raceMapsMsg()
+		n := r.u()
+		for i := uint64(0); i < n; i++ {
+			r.str(64)
+		}
+		var out []uint64
+		for i := uint64(0); i < 2*n; i++ {
+			out = append(out, r.u())
+		}
+		return out
+	}
+	if got := crcs(); got[0] != 0 || got[2] != 0 {
+		t.Fatalf("checksums before the first refresh: %v", got)
+	}
+	if n := f.h.RefreshMapCRCs(); n != 2 {
+		t.Fatalf("first refresh read %d maps", n)
+	}
+	if n := f.h.RefreshMapCRCs(); n != 0 {
+		t.Fatalf("unchanged maps were read again: %d", n)
+	}
+	before := crcs()
+	if before[3] != uint64(crc32.ChecksumIEEE([]byte("mapmodel carrot"))) {
+		t.Fatalf("cfg checksum %x", before[3])
+	}
+	write("speed1.ogz", "second version, longer")
+	os.Remove(filepath.Join(base, "speed2.cfg"))
+	if n := f.h.RefreshMapCRCs(); n != 2 {
+		t.Fatalf("changed maps read: %d, want 2", n)
+	}
+	after := crcs()
+	if after[0] != uint64(crc32.ChecksumIEEE([]byte("second version, longer"))) || after[0] == before[0] || after[3] != 0 {
+		t.Fatalf("after the change: %v, before %v", after, before)
+	}
+}
+
+func TestRaceThumbs(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	base := filepath.Join(dir, "packages", "base")
+	os.MkdirAll(filepath.Join(base, "screenshots"), 0o755)
+	shot, err := os.ReadFile("testdata/race.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(base, "speed1.ogz"), []byte("map"), 0o644)
+	os.WriteFile(filepath.Join(base, "speed2.ogz"), []byte("map"), 0o644)
+	os.WriteFile(filepath.Join(base, "screenshots", "speed1.webp"), shot, 0o644)
+	os.WriteFile(filepath.Join(base, "screenshots", "speed2.webp"), []byte("not a picture"), 0o644)
+	f.h.cfg.RaceMaps = dir
+	f.h.cfg.Thumbs = filepath.Join(t.TempDir(), "thumbs")
+	if n := f.h.RefreshThumbs(nil); n != 1 {
+		t.Fatalf("made %d pictures, want 1", n)
+	}
+	if n := f.h.RefreshThumbs(nil); n != 0 {
+		t.Fatalf("an unchanged picture was made again: %d", n)
+	}
+	// a picture of another size, made by an older hub, is made again
+	os.WriteFile(f.h.thumbFile("speed1"), []byte("old"), 0o644)
+	if n := f.h.RefreshThumbs(nil); n != 1 {
+		t.Fatalf("a picture of the wrong size was kept: %d made", n)
+	}
+	jpg, err := os.Open(f.h.thumbFile("speed1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, format, err := image.DecodeConfig(jpg)
+	jpg.Close()
+	if err != nil || format != "jpeg" || cfg.Width != ThumbW || cfg.Height != ThumbH {
+		t.Fatalf("picture %s %dx%d: %v", format, cfg.Width, cfg.Height, err)
+	}
+	st, _ := os.Stat(f.h.thumbFile("speed1"))
+
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	m := a.expect(MsgRaceMaps)
+	n := m.r.u()
+	for i := uint64(0); i < n; i++ {
+		m.r.str(64)
+	}
+	for i := uint64(0); i < 2*n; i++ {
+		m.r.u()
+	}
+	if s1, s2 := m.r.u(), m.r.u(); s1 != uint64(st.Size()) || s2 != 0 {
+		t.Fatalf("picture sizes %d %d, want %d 0", s1, s2, st.Size())
+	}
+	ask := func(name string) []byte {
+		var q writer
+		q.str(name)
+		a.send(MsgGetThumb, q.b)
+		d := a.expect(MsgThumbData)
+		if got := d.r.str(64); got != name {
+			t.Fatalf("picture of %q for %q", got, name)
+		}
+		return d.r.b
+	}
+	if got := ask("speed1"); int64(len(got)) != st.Size() {
+		t.Fatalf("picture of %d bytes, want %d", len(got), st.Size())
+	}
+	for _, name := range []string{"speed2", "missing", "../hub"} {
+		if got := ask(name); len(got) != 0 {
+			t.Fatalf("%q: %d bytes, want none", name, len(got))
 		}
 	}
 }

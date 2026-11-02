@@ -46,6 +46,9 @@ type Config struct {
 	Maps string
 	// RaceMaps: a package dir like Maps whose maps are the race maps, listed to players
 	RaceMaps string
+	// Thumbs: where the race maps' pictures are kept as small JPEGs made from
+	// <RaceMaps>/packages/base/screenshots/<map>.webp; none without it
+	Thumbs string
 	// Feed, if set, hears of joins, leaves, records and the lobbies (feed.go)
 	Feed Feed
 	Now  func() time.Time
@@ -56,6 +59,8 @@ type Hub struct {
 	cfg      Config
 	st       *store
 	keyReply []byte
+	crcs     mapCRCs
+	thumbs   thumbSizes
 
 	mu        sync.Mutex
 	nextID    uint64
@@ -594,6 +599,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.replayRequest(p, &r)
 	case MsgGetMap:
 		return h.mapRequest(p, &r)
+	case MsgGetThumb:
+		return h.thumbRequest(p, &r)
 	case MsgFinish:
 		mapname, mode, kind, ms := r.str(64), r.s(), r.str(16), r.u()
 		if err := r.done(); err != nil {

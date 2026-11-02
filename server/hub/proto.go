@@ -27,6 +27,7 @@ const (
 	MsgBoard       = 16
 	MsgReplay      = 17
 	MsgGetMap      = 18
+	MsgGetThumb    = 19
 
 	MsgWelcome     = 101
 	MsgWitness     = 102
@@ -48,6 +49,7 @@ const (
 	MsgReplayData  = 118
 	MsgMapData     = 119
 	MsgRaceMaps    = 120
+	MsgThumbData   = 121
 
 	StateMenu    = 0
 	StatePlaying = 1

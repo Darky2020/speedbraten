@@ -1,6 +1,56 @@
 --- a/engine/3dgui.cpp
 +++ b/engine/3dgui.cpp
-@@ -1280,6 +1280,12 @@
+@@ -650,6 +650,40 @@
+         }
+         rect_(curx, cury, w, h);
+         hudshader->set();
++    }
++
++    // a line of a picture's title, its bottom at y, smaller when it is wider than the picture
++    float icontitleline_(const char *text, int x, float y, int width, float minscale, bool hit)
++    {
++        int tw = text_width(text);
++        float ts = tw > width ? max(float(width)/tw, minscale) : 1.0f;
++        pushhudmatrix();
++        hudmatrix.translate(x, y - FONTH*ts, 0);
++        hudmatrix.scale(ts, ts, 1);
++        flushhudmatrix();
++        text_(text, 0, 0, hit ? 0xFF0000 : 0xFFFFFF, hit && actionon, hit);
++        pophudmatrix();
++        return FONTH*ts;
++    }
++
++    // a picture's title along its bottom edge; one that would get too small goes on two lines,
++    // split at the '_', '-' or space that makes the lines the most even
++    void icontitle_(const char *title, int x, int bottom, int width, bool hit)
++    {
++        int len = strlen(title), tw = text_width(title);
++        if(tw*0.6f <= width || len >= MAXSTRLEN) { icontitleline_(title, x, bottom, width, 0.45f, hit); return; }
++        string first;
++        int split = -1, best = 0;
++        for(int i = 1; i < len-1; i++) if(strchr("_- ", title[i]))
++        {
++            copystring(first, title, i + 2);
++            int w = max(text_width(first), text_width(title + i + 1));
++            if(split < 0 || w < best) { split = i; best = w; }
++        }
++        if(split < 0) { icontitleline_(title, x, bottom, width, 0.45f, hit); return; }
++        copystring(first, title, split + 2);
++        float h = icontitleline_(title + split + 1, x, bottom, width, 0.38f, hit);
++        icontitleline_(first, x, bottom - h, width, 0.38f, hit);
+     }
+ 
+     void icon_(Texture *t, bool overlaid, int x, int y, int size, bool hit, const char *title = NULL)
+@@ -674,7 +708,7 @@
+             glBindTexture(GL_TEXTURE_2D, overlaytex->id);
+             gle::color(light);
+             rect_(x, y, xs, ys, 0);
+-            if(title) text_(title, x + xs/12, y + ys - ys/12 - FONTH, hit ? 0xFF0000 : 0xFFFFFF, hit && actionon, hit);
++            if(title) icontitle_(title, x + xs/12, y + ys - ys/12, xs - xs/4, hit);
+         }
+     }        
+ 
+@@ -1280,6 +1314,12 @@
  void g3d_resetcursor()
  {
      cursorx = cursory = 0.5f;
@@ -13,7 +63,7 @@
  }
  
  FVARP(guisens, 1e-3f, 1, 1e3f);
-@@ -1287,6 +1293,8 @@
+@@ -1287,6 +1327,8 @@
  bool g3d_movecursor(int dx, int dy)
  {
      if(!guis2d.length() || !hascursor) return false;
@@ -1787,6 +1837,29 @@
      t->alphamask = new uchar[s.h * ((s.w+7)/8)];
      uchar *srcrow = s.data, *dst = t->alphamask-1;
      loop(y, s.h)
+@@ -2915,6 +2977,22 @@
+ }
+ 
+ COMMAND(reloadtex, "s");
++
++// loads an image texture again from its file if it is loaded, so a file replaced on disk shows
++void reloadtexturefile(const char *name)
++{
++    Texture *t = textures.access(path(name, true));
++    if(!t || t->type&Texture::TRANSIENT) return;
++    DELETEA(t->alphamask);
++    Texture oldtex = *t;
++    t->id = 0;
++    if(!reloadtexture(*t))
++    {
++        if(t->id) glDeleteTextures(1, &t->id);
++        *t = oldtex;
++    }
++    else if(oldtex.id) glDeleteTextures(1, &oldtex.id);
++}
+ 
+ void reloadtextures()
+ {
 --- a/engine/world.cpp
 +++ b/engine/world.cpp
 @@ -273,6 +273,8 @@
@@ -3844,16 +3917,17 @@
      extern void writegamedata(vector<char> &extras);
 --- a/shared/stream.cpp
 +++ b/shared/stream.cpp
-@@ -286,7 +286,7 @@
+@@ -286,7 +286,8 @@
  #include <dirent.h>
  #endif
  
 -string homedir = "";
 +string homedir = "", overridedir = "", hubmapsdir = "";
++bool findhubmapsfirst = true;
  struct packagedir
  {
      char *dir, *filter;
-@@ -388,7 +388,8 @@
+@@ -388,7 +389,8 @@
      bool exists = true;
      if(mode[0]=='w' || mode[0]=='a') path = parentdir(path);
  #ifdef WIN32
@@ -3863,14 +3937,14 @@
  #else
      if(access(path[0] ? path : ".", mode[0]=='w' || mode[0]=='a' ? W_OK : (mode[0]=='d' ? X_OK : R_OK)) == -1) exists = false;
  #endif
-@@ -449,7 +450,46 @@
+@@ -449,9 +451,48 @@
      copystring(pdir, dir);
      if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
      copystring(homedir, pdir);
 +    formatstring(hubmapsdir, "%shubmaps%c", homedir, PATHDIV);
      return homedir;
-+}
-+
+ }
+ 
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
 +{
@@ -3907,10 +3981,24 @@
 +    defformatstring(home, "%s%s", homedir, filename);
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
++}
++
+ const char *addpackagedir(const char *dir)
+ {
+     string pdir;
+@@ -474,9 +515,33 @@
+     return pf.dir;
  }
  
- const char *addpackagedir(const char *dir)
-@@ -477,6 +517,15 @@
++static bool inbasepackages(const char *filename)
++{
++    for(const char *p = "packages/base/"; *p; p++, filename++)
++    {
++        if(*p == '/' ? *filename != '/' && *filename != '\\' : *filename != *p) return false;
++    }
++    return true;
++}
++
  const char *findfile(const char *filename, const char *mode)
  {
      static string s;
@@ -3923,14 +4011,19 @@
 +            return s;
 +        }
 +    }
++    // a map downloaded from the hub is the witness's copy: it wins over any other copy of that map
++    if(findhubmapsfirst && hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
++    {
++        formatstring(s, "%s%s", hubmapsdir, filename);
++        if(fileexists(s, mode)) return s;
++    }
      if(homedir[0])
      {
          formatstring(s, "%s%s", homedir, filename);
-@@ -504,6 +553,12 @@
+@@ -504,6 +569,11 @@
          formatstring(s, "%s%s", pf.dir, filename);
          if(fileexists(s, mode)) return s;
      }
-+    // maps downloaded from the hub, used only when no other copy exists
 +    if(hubmapsdir[0] && !fileexists(filename, mode))
 +    {
 +        formatstring(s, "%s%s", hubmapsdir, filename);
@@ -3939,7 +4032,7 @@
      if(mode[0]=='e') return NULL;
      return filename;
  }
-@@ -575,6 +630,11 @@
+@@ -575,6 +645,11 @@
          formatstring(s, "%s%s", homedir, dirname);
          if(listdir(s, false, ext, files)) dirs++;
      }

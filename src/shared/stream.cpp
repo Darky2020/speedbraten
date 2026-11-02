@@ -287,6 +287,7 @@ char *cubecasefind(const char *haystack, const char *needle)
 #endif
 
 string homedir = "", overridedir = "", hubmapsdir = "";
+bool findhubmapsfirst = true;
 struct packagedir
 {
     char *dir, *filter;
@@ -514,6 +515,15 @@ const char *addpackagedir(const char *dir)
     return pf.dir;
 }
 
+static bool inbasepackages(const char *filename)
+{
+    for(const char *p = "packages/base/"; *p; p++, filename++)
+    {
+        if(*p == '/' ? *filename != '/' && *filename != '\\' : *filename != *p) return false;
+    }
+    return true;
+}
+
 const char *findfile(const char *filename, const char *mode)
 {
     static string s;
@@ -525,6 +535,12 @@ const char *findfile(const char *filename, const char *mode)
             if(mode[0]!='d') warnshadowedhome(filename, s);
             return s;
         }
+    }
+    // a map downloaded from the hub is the witness's copy: it wins over any other copy of that map
+    if(findhubmapsfirst && hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
+    {
+        formatstring(s, "%s%s", hubmapsdir, filename);
+        if(fileexists(s, mode)) return s;
     }
     if(homedir[0])
     {
@@ -553,7 +569,6 @@ const char *findfile(const char *filename, const char *mode)
         formatstring(s, "%s%s", pf.dir, filename);
         if(fileexists(s, mode)) return s;
     }
-    // maps downloaded from the hub, used only when no other copy exists
     if(hubmapsdir[0] && !fileexists(filename, mode))
     {
         formatstring(s, "%s%s", hubmapsdir, filename);

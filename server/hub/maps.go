@@ -1,10 +1,12 @@
 package hub
 
 import (
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -69,14 +71,9 @@ func (h *Hub) mapRequest(p *player, r *reader) error {
 	go func() {
 		var ogz, cfg []byte
 		ok := false
-		for _, root := range []string{h.cfg.Maps, h.cfg.RaceMaps} {
-			if root == "" {
-				continue
-			}
-			dir := filepath.Join(root, "packages", "base")
+		if dir := h.mapDir(name); dir != "" {
 			if ogz, ok = readMapFile(filepath.Join(dir, name+".ogz")); ok {
 				cfg, _ = readMapFile(filepath.Join(dir, name+".cfg"))
-				break
 			}
 		}
 		h.mu.Lock()
@@ -98,6 +95,20 @@ func (h *Hub) mapRequest(p *player, r *reader) error {
 		h.mu.Unlock()
 	}()
 	return nil
+}
+
+// mapDir is the packages/base folder a map is served from: the game data's before the race maps'.
+func (h *Hub) mapDir(name string) string {
+	for _, root := range []string{h.cfg.Maps, h.cfg.RaceMaps} {
+		if root == "" {
+			continue
+		}
+		dir := filepath.Join(root, "packages", "base")
+		if st, err := os.Stat(filepath.Join(dir, name+".ogz")); err == nil && st.Mode().IsRegular() {
+			return dir
+		}
+	}
+	return ""
 }
 
 func readMapFile(path string) ([]byte, bool) {
@@ -151,6 +162,78 @@ func (h *Hub) raceMaps() []string {
 	return maps
 }
 
+// mapCRCs are the CRC-32s of the race maps' files as served, which clients compare with the copies
+// they downloaded before; kept up to date by RefreshMapCRCs.
+type mapCRCs struct {
+	mu   sync.Mutex
+	maps map[string]mapCRC
+}
+
+type mapCRC struct {
+	ogz, cfg fileStamp
+	ogzCRC   uint32
+	cfgCRC   uint32 // 0: no .cfg
+}
+
+type fileStamp struct {
+	size int64
+	mod  time.Time
+}
+
+func stampOf(path string) fileStamp {
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return fileStamp{}
+	}
+	return fileStamp{st.Size(), st.ModTime()}
+}
+
+func fileCRC(path string) uint32 {
+	data, ok := readMapFile(path)
+	if !ok {
+		return 0
+	}
+	return crc32.ChecksumIEEE(data)
+}
+
+// RefreshMapCRCs computes the CRCs of the race maps whose files are new or changed since the last
+// call and forgets maps that are gone; it returns how many maps it read.
+func (h *Hub) RefreshMapCRCs() int {
+	maps := h.raceMaps()
+	h.crcs.mu.Lock()
+	known := make(map[string]mapCRC, len(h.crcs.maps))
+	for k, v := range h.crcs.maps {
+		known[k] = v
+	}
+	h.crcs.mu.Unlock()
+	next := make(map[string]mapCRC, len(maps))
+	read := 0
+	for _, m := range maps {
+		dir := h.mapDir(m)
+		if dir == "" {
+			continue
+		}
+		ogz, cfg := filepath.Join(dir, m+".ogz"), filepath.Join(dir, m+".cfg")
+		c := mapCRC{ogz: stampOf(ogz), cfg: stampOf(cfg)}
+		if old, ok := known[m]; ok && old.ogz == c.ogz && old.cfg == c.cfg {
+			next[m] = old
+			continue
+		}
+		c.ogzCRC = fileCRC(ogz)
+		if c.cfg.size > 0 {
+			c.cfgCRC = fileCRC(cfg)
+		}
+		next[m] = c
+		read++
+	}
+	h.crcs.mu.Lock()
+	h.crcs.maps = next
+	h.crcs.mu.Unlock()
+	return read
+}
+
+// raceMapsMsg lists the race maps, then for each the CRC-32s of its .ogz and .cfg (0: not known yet,
+// or no .cfg), then for each the size of its picture (0: none).
 func (h *Hub) raceMapsMsg() []byte {
 	maps := h.raceMaps()
 	var w writer
@@ -158,5 +241,17 @@ func (h *Hub) raceMapsMsg() []byte {
 	for _, m := range maps {
 		w.str(m)
 	}
+	h.crcs.mu.Lock()
+	for _, m := range maps {
+		c := h.crcs.maps[m]
+		w.u(uint64(c.ogzCRC))
+		w.u(uint64(c.cfgCRC))
+	}
+	h.crcs.mu.Unlock()
+	h.thumbs.mu.Lock()
+	for _, m := range maps {
+		w.u(uint64(h.thumbs.size[m]))
+	}
+	h.thumbs.mu.Unlock()
 	return w.b
 }
