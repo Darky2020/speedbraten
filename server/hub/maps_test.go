@@ -154,6 +154,11 @@ func TestRaceThumbs(t *testing.T) {
 	if n := f.h.RefreshThumbs(nil); n != 0 {
 		t.Fatalf("an unchanged picture was made again: %d", n)
 	}
+	// a picture of another size, made by an older hub, is made again
+	os.WriteFile(f.h.thumbFile("speed1"), []byte("old"), 0o644)
+	if n := f.h.RefreshThumbs(nil); n != 1 {
+		t.Fatalf("a picture of the wrong size was kept: %d made", n)
+	}
 	jpg, err := os.Open(f.h.thumbFile("speed1"))
 	if err != nil {
 		t.Fatal(err)

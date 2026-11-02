@@ -9,7 +9,7 @@
 #include "hubproto.h"
 
 extern bool findhubmapsfirst;
-extern bool reloadtexture(const char *name);
+extern void reloadtexturefile(const char *name);
 
 namespace game
 {
@@ -350,7 +350,7 @@ namespace game
             delete f;
             if(ok) { remove(dst); ok = rename(part, dst) == 0; }
             if(!ok) remove(part);
-            if(ok) reloadtexture(file);
+            if(ok) reloadtexturefile(file);
         }
         if(thumbsgot == thumbstotal) conoutf("map pictures: %d downloaded", thumbstotal);
         else if(thumbsgot % 100 == 0) conoutf("map pictures: %d/%d", thumbsgot, thumbstotal);

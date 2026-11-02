@@ -652,6 +652,20 @@ struct gui : g3d_gui
         hudshader->set();
     }
 
+    // a picture's title along its bottom edge, smaller when it is wider than the picture
+    void icontitle_(const char *title, int x, int bottom, int width, bool hit)
+    {
+        int tw = text_width(title);
+        float ts = tw > width ? max(float(width)/tw, 0.45f) : 1.0f;
+        if(ts >= 1) { text_(title, x, bottom - FONTH, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit); return; }
+        pushhudmatrix();
+        hudmatrix.translate(x, bottom - FONTH*ts, 0);
+        hudmatrix.scale(ts, ts, 1);
+        flushhudmatrix();
+        text_(title, 0, 0, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit);
+        pophudmatrix();
+    }
+
     void icon_(Texture *t, bool overlaid, int x, int y, int size, bool hit, const char *title = NULL)
     {
         float scale = float(size)/max(t->xs, t->ys); //scale and preserve aspect ratio
@@ -674,7 +688,7 @@ struct gui : g3d_gui
             glBindTexture(GL_TEXTURE_2D, overlaytex->id);
             gle::color(light);
             rect_(x, y, xs, ys, 0);
-            if(title) text_(title, x + xs/12, y + ys - ys/12 - FONTH, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit);
+            if(title) icontitle_(title, x + xs/12, y + ys - ys/12, xs - xs/6, hit);
         }
     }        
 

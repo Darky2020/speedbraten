@@ -2977,6 +2977,22 @@ void reloadtex(char *name)
 
 COMMAND(reloadtex, "s");
 
+// loads an image texture again from its file if it is loaded, so a file replaced on disk shows
+void reloadtexturefile(const char *name)
+{
+    Texture *t = textures.access(path(name, true));
+    if(!t || t->type&Texture::TRANSIENT) return;
+    DELETEA(t->alphamask);
+    Texture oldtex = *t;
+    t->id = 0;
+    if(!reloadtexture(*t))
+    {
+        if(t->id) glDeleteTextures(1, &t->id);
+        *t = oldtex;
+    }
+    else if(oldtex.id) glDeleteTextures(1, &oldtex.id);
+}
+
 void reloadtextures()
 {
     int reloaded = 0;

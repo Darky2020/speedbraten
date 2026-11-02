@@ -1,19 +1,47 @@
 --- a/engine/3dgui.cpp
 +++ b/engine/3dgui.cpp
-@@ -1285,6 +1285,12 @@
- void g3d_resetcursor()
- {
-     cursorx = cursory = 0.5f;
-+}
+@@ -655,6 +655,20 @@
+         }
+         rect_(curx, cury, w, h);
+         hudshader->set();
++    }
 +
++    // a picture's title along its bottom edge, smaller when it is wider than the picture
++    void icontitle_(const char *title, int x, int bottom, int width, bool hit)
++    {
++        int tw = text_width(title);
++        float ts = tw > width ? max(float(width)/tw, 0.45f) : 1.0f;
++        if(ts >= 1) { text_(title, x, bottom - FONTH, hit ? 0xFF0000 : 0xFFFFFF, hit && actionon, hit); return; }
++        pushhudmatrix();
++        hudmatrix.translate(x, bottom - FONTH*ts, 0);
++        hudmatrix.scale(ts, ts, 1);
++        flushhudmatrix();
++        text_(title, 0, 0, hit ? 0xFF0000 : 0xFFFFFF, hit && actionon, hit);
++        pophudmatrix();
+     }
+ 
+     void icon_(Texture *t, bool overlaid, int x, int y, int size, bool hit, const char *title = NULL)
+@@ -679,7 +693,7 @@
+             glBindTexture(GL_TEXTURE_2D, overlaytex->id);
+             gle::color(light);
+             rect_(x, y, xs, ys, 0);
+-            if(title) text_(title, x + xs/12, y + ys - ys/12 - FONTH, hit ? 0xFF0000 : 0xFFFFFF, hit && actionon, hit);
++            if(title) icontitle_(title, x + xs/12, y + ys - ys/12, xs - xs/6, hit);
+         }
+     }        
+ 
+@@ -1287,11 +1301,19 @@
+     cursorx = cursory = 0.5f;
+ }
+ 
 +void g3d_setcursor(float x, float y)
 +{
 +    cursorx = clamp(x, 0.0f, 1.0f);
 +    cursory = clamp(y, 0.0f, 1.0f);
- }
- 
++}
++
  FVARP(guisens, 1e-3f, 1, 1e3f);
-@@ -1292,6 +1298,8 @@
+ 
  bool g3d_movecursor(int dx, int dy)
  {
      if(!guis2d.length() || !hascursor) return false;
@@ -1465,6 +1493,29 @@
      t->alphamask = new uchar[s.h * ((s.w+7)/8)];
      uchar *srcrow = s.data, *dst = t->alphamask-1;
      loop(y, s.h)
+@@ -2915,6 +2977,22 @@
+ }
+ 
+ COMMAND(reloadtex, "s");
++
++// loads an image texture again from its file if it is loaded, so a file replaced on disk shows
++void reloadtexturefile(const char *name)
++{
++    Texture *t = textures.access(path(name, true));
++    if(!t || t->type&Texture::TRANSIENT) return;
++    DELETEA(t->alphamask);
++    Texture oldtex = *t;
++    t->id = 0;
++    if(!reloadtexture(*t))
++    {
++        if(t->id) glDeleteTextures(1, &t->id);
++        *t = oldtex;
++    }
++    else if(oldtex.id) glDeleteTextures(1, &oldtex.id);
++}
+ 
+ void reloadtextures()
+ {
 --- a/engine/world.cpp
 +++ b/engine/world.cpp
 @@ -273,6 +273,8 @@

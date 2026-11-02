@@ -12,10 +12,10 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// Thumbnail size and quality: about 18 KB a picture.
+// Thumbnail size and quality: square like the game's map previews, about 12 KB a picture.
 const (
-	ThumbW       = 320
-	ThumbH       = 180
+	ThumbW       = 256
+	ThumbH       = 256
 	thumbQuality = 80
 	// MaxThumb is the largest picture sent; MsgThumbData carries it whole.
 	MaxThumb = 60 << 10
@@ -47,7 +47,7 @@ func (h *Hub) RefreshThumbs(progress func(done, total int)) int {
 		if err != nil || !ss.Mode().IsRegular() {
 			continue
 		}
-		if ts, err := os.Stat(h.thumbFile(m)); err == nil && !ts.ModTime().Before(ss.ModTime()) && ts.Size() > 0 && ts.Size() <= MaxThumb {
+		if ts, err := os.Stat(h.thumbFile(m)); err == nil && !ts.ModTime().Before(ss.ModTime()) && ts.Size() > 0 && ts.Size() <= MaxThumb && thumbShaped(h.thumbFile(m)) {
 			sizes[m] = int(ts.Size())
 			continue
 		}
@@ -69,6 +69,17 @@ func (h *Hub) RefreshThumbs(progress func(done, total int)) int {
 	}
 	h.setThumbs(sizes)
 	return made
+}
+
+// thumbShaped: whether a picture made before has the current size
+func thumbShaped(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	c, _, err := image.DecodeConfig(f)
+	return err == nil && c.Width == ThumbW && c.Height == ThumbH
 }
 
 func (h *Hub) setThumbs(sizes map[string]int) {
