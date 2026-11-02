@@ -3863,7 +3863,7 @@
  #else
      if(access(path[0] ? path : ".", mode[0]=='w' || mode[0]=='a' ? W_OK : (mode[0]=='d' ? X_OK : R_OK)) == -1) exists = false;
  #endif
-@@ -449,7 +450,46 @@
+@@ -449,9 +450,48 @@
      copystring(pdir, dir);
      if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
      copystring(homedir, pdir);
@@ -3895,8 +3895,8 @@
 +    if(fa) fclose(fa);
 +    if(fb) fclose(fb);
 +    return same;
-+}
-+
+ }
+ 
 +static vector<char *> checkedoverrides;
 +
 +static void warnshadowedhome(const char *filename, const char *override)
@@ -3907,10 +3907,24 @@
 +    defformatstring(home, "%s%s", homedir, filename);
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
++}
++
+ const char *addpackagedir(const char *dir)
+ {
+     string pdir;
+@@ -474,9 +514,33 @@
+     return pf.dir;
  }
  
- const char *addpackagedir(const char *dir)
-@@ -477,6 +517,15 @@
++static bool inbasepackages(const char *filename)
++{
++    for(const char *p = "packages/base/"; *p; p++, filename++)
++    {
++        if(*p == '/' ? *filename != '/' && *filename != '\\' : *filename != *p) return false;
++    }
++    return true;
++}
++
  const char *findfile(const char *filename, const char *mode)
  {
      static string s;
@@ -3923,34 +3937,27 @@
 +            return s;
 +        }
 +    }
-     if(homedir[0])
-     {
-         formatstring(s, "%s%s", homedir, filename);
-@@ -504,6 +553,12 @@
-         formatstring(s, "%s%s", pf.dir, filename);
-         if(fileexists(s, mode)) return s;
-     }
-+    // maps downloaded from the hub, used only when no other copy exists
-+    if(hubmapsdir[0] && !fileexists(filename, mode))
++    // a map downloaded from the hub is the witness's copy: it wins over any other copy of that map
++    if(hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
 +    {
 +        formatstring(s, "%s%s", hubmapsdir, filename);
 +        if(fileexists(s, mode)) return s;
 +    }
-     if(mode[0]=='e') return NULL;
-     return filename;
- }
-@@ -575,6 +630,11 @@
+     if(homedir[0])
+     {
+         formatstring(s, "%s%s", homedir, filename);
+@@ -573,6 +637,11 @@
+     if(homedir[0])
+     {
          formatstring(s, "%s%s", homedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
-     }
++        if(listdir(s, false, ext, files)) dirs++;
++    }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
-+        if(listdir(s, false, ext, files)) dirs++;
-+    }
+         if(listdir(s, false, ext, files)) dirs++;
+     }
      loopv(packagedirs)
-     {
-         packagedir &pf = packagedirs[i];
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -66,8 +66,34 @@

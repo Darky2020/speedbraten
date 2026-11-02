@@ -145,7 +145,7 @@ namespace game
     }
 
     // Maps a player lacks come from the hub, which serves the witness's copies. They are kept in
-    // hubmaps/ in the home dir, which the engine searches last, so a player's own copy always wins.
+    // hubmaps/ in the home dir, which the engine searches before the player's own copies.
     static string mapdownload = "";
     static int mapdownloadmode = INT_MAX; // the mode to load the map in once it is here, INT_MAX: none
     static vector<uchar> mapdownloadcfg, mapdownloadogz;

@@ -3678,11 +3678,10 @@
      return homedir;
  }
  
-@@ -494,7 +496,45 @@
-     return (const char*)mod::allocatethreadstorage(0, sizeof(homedir), true, homedir, true); //NEW
+@@ -495,7 +497,45 @@
  }
  //NEW END
-+
+ 
 +
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
@@ -3693,7 +3692,7 @@
 +    copystring(overridedir, pdir);
 +    return overridedir;
 +}
-+
+ 
 +static bool samecontents(const char *a, const char *b)
 +{
 +    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
@@ -3711,7 +3710,7 @@
 +}
 +
 +static vector<char *> checkedoverrides;
- 
++
 +static void warnshadowedhome(const char *filename, const char *override)
 +{
 +    if(!homedir[0]) return;
@@ -3721,10 +3720,25 @@
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
 +}
- 
++
  const char *addpackagedir(const char *dir)
  {
-@@ -529,6 +569,17 @@
+ //NEW
+@@ -524,11 +564,37 @@
+     return pf.dir;
+ }
+ 
++static bool inbasepackages(const char *filename)
++{
++    for(const char *p = "packages/base/"; *p; p++, filename++)
++    {
++        if(*p == '/' ? *filename != '/' && *filename != '\\' : *filename != *p) return false;
++    }
++    return true;
++}
++
+ const char *findfile(const char *filename, const char *mode)
+ {
      static string locals; //NEW s -> locals
      char *s = (char*)mod::allocatethreadstorage(0, sizeof(locals), true, locals); //NEW
      streamlocker sl; //NEW
@@ -3739,34 +3753,27 @@
 +            return s;
 +        }
 +    }
-     if(homedir[0])
-     {
-         nformatstring(s, sizeof(locals), "%s%s", homedir, filename); // formatstring -> nformatstring
-@@ -556,6 +607,12 @@
-         nformatstring(s, sizeof(locals), "%s%s", pf.dir, filename); // formatstring -> nformatstring
-         if(fileexists(s, mode)) return s;
-     }
-+    // maps downloaded from the hub, used only when no other copy exists
-+    if(hubmapsdir[0] && !fileexists(filename, mode))
++    // a map downloaded from the hub is the witness's copy: it wins over any other copy of that map
++    if(hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
 +    {
 +        nformatstring(s, sizeof(locals), "%s%s", hubmapsdir, filename);
 +        if(fileexists(s, mode)) return s;
 +    }
-     if(mode[0]=='e') return NULL;
-     return filename;
- }
-@@ -628,6 +685,11 @@
+     if(homedir[0])
+     {
+         nformatstring(s, sizeof(locals), "%s%s", homedir, filename); // formatstring -> nformatstring
+@@ -626,6 +692,11 @@
+     if(homedir[0])
+     {
          formatstring(s, "%s%s", homedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
-     }
++        if(listdir(s, false, ext, files)) dirs++;
++    }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
-+        if(listdir(s, false, ext, files)) dirs++;
-+    }
+         if(listdir(s, false, ext, files)) dirs++;
+     }
      loopv(packagedirs)
-     {
-         packagedir &pf = packagedirs[i];
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -78,6 +78,32 @@
