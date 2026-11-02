@@ -652,18 +652,38 @@ struct gui : g3d_gui
         hudshader->set();
     }
 
-    // a picture's title along its bottom edge, smaller when it is wider than the picture
-    void icontitle_(const char *title, int x, int bottom, int width, bool hit)
+    // a line of a picture's title, its bottom at y, smaller when it is wider than the picture
+    float icontitleline_(const char *text, int x, float y, int width, float minscale, bool hit)
     {
-        int tw = text_width(title);
-        float ts = tw > width ? max(float(width)/tw, 0.45f) : 1.0f;
-        if(ts >= 1) { text_(title, x, bottom - FONTH, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit); return; }
+        int tw = text_width(text);
+        float ts = tw > width ? max(float(width)/tw, minscale) : 1.0f;
         pushhudmatrix();
-        hudmatrix.translate(x, bottom - FONTH*ts, 0);
+        hudmatrix.translate(x, y - FONTH*ts, 0);
         hudmatrix.scale(ts, ts, 1);
         flushhudmatrix();
-        text_(title, 0, 0, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit);
+        text_(text, 0, 0, hit ? 0xFF0000 : COL_WHITE, hit && actionon, hit);
         pophudmatrix();
+        return FONTH*ts;
+    }
+
+    // a picture's title along its bottom edge; one that would get too small goes on two lines,
+    // split at the '_', '-' or space that makes the lines the most even
+    void icontitle_(const char *title, int x, int bottom, int width, bool hit)
+    {
+        int len = strlen(title), tw = text_width(title);
+        if(tw*0.6f <= width || len >= MAXSTRLEN) { icontitleline_(title, x, bottom, width, 0.45f, hit); return; }
+        string first;
+        int split = -1, best = 0;
+        for(int i = 1; i < len-1; i++) if(strchr("_- ", title[i]))
+        {
+            copystring(first, title, i + 2);
+            int w = max(text_width(first), text_width(title + i + 1));
+            if(split < 0 || w < best) { split = i; best = w; }
+        }
+        if(split < 0) { icontitleline_(title, x, bottom, width, 0.45f, hit); return; }
+        copystring(first, title, split + 2);
+        float h = icontitleline_(title + split + 1, x, bottom, width, 0.38f, hit);
+        icontitleline_(first, x, bottom - h, width, 0.38f, hit);
     }
 
     void icon_(Texture *t, bool overlaid, int x, int y, int size, bool hit, const char *title = NULL)
@@ -688,7 +708,7 @@ struct gui : g3d_gui
             glBindTexture(GL_TEXTURE_2D, overlaytex->id);
             gle::color(light);
             rect_(x, y, xs, ys, 0);
-            if(title) icontitle_(title, x + xs/12, y + ys - ys/12, xs - xs/6, hit);
+            if(title) icontitle_(title, x + xs/12, y + ys - ys/12, xs - xs/4, hit);
         }
     }        
 
