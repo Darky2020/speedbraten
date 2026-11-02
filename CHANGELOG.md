@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.10
+
+- Restarting a campaign run no longer reloads the map; flagruns and races respawn instead.
+- Keys tab: instant reset can be turned off, and its loading screen time set (200 ms by default).
+- Race maps can be browsed as pictures; the pictures download on request.
+- Long map names fit on their pictures in the flagrun and race grids.
+- Race maps downloaded from the hub are used over your own copies (races tab setting).
+- A race map that changed on the hub is downloaded again.
+- No more freeze on respawn when you have many replays.
+- Local flagruns and races have the campaign button in the main menu.
+- The lobby host's name is green on the scoreboard.
+
 ## v0.3.9
 
 - The console says how many players are on the hub when you connect.

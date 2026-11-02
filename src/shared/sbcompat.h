@@ -15,6 +15,9 @@
 #ifndef COL_YELLOW
 #define COL_YELLOW 0xFFC040
 #endif
+#ifndef COL_MASTER
+#define COL_MASTER 0x40FF80
+#endif
 
 // the client's name towards the witness and the hub, and in replay files
 #ifndef SPEEDBRATEN_CLIENT
