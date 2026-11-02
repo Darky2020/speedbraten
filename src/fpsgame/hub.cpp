@@ -373,6 +373,10 @@ namespace game
     // pictures still to come in the current download, 0 when none is running
     ICOMMAND(racethumbsleft, "", (), intret(thumbqueue.length() + thumbsasked));
 
+    // whether the map browser opens the flagrun / race maps as pictures (1) or as a list (0)
+    MOD(VARP, flagrunmapgrid, 0, 1, 1);
+    MOD(VARP, racemapgrid, 0, 0, 1);
+
     // the map browser: the hub's flagrun or race maps whose names contain a search text, any case
     static vector<char *> browsedmaps;
 
