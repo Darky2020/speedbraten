@@ -285,7 +285,8 @@ namespace game
     });
     ICOMMAND(havemap, "s", (char *name), intret(havemap(name) ? 1 : 0));
 
-    // Race map pictures: small JPEGs the hub makes from the maps' screenshots, kept in hubmaps/thumbs/.
+    // Race map pictures: small JPEGs the hub makes from the maps' screenshots, kept beside the hub's
+    // maps as their previews (packages/base/<map>.jpg, as the loading screen and map menus look them up).
     // A picture is missing when there is none or its size differs from the hub's (a newer picture).
     static vector<char *> thumbqueue;
     static int thumbsasked = 0, thumbsgot = 0, thumbstotal = 0, thumbaskat = 0;
@@ -294,7 +295,7 @@ namespace game
 
     static int localthumbsize(const char *name)
     {
-        defformatstring(file, "hubmaps/thumbs/%s.jpg", name);
+        defformatstring(file, "hubmaps/packages/base/%s.jpg", name);
         stream *f = openrawfile(path(file, true), "rb");
         if(!f) return 0;
         int size = int(f->size());
@@ -342,7 +343,7 @@ namespace game
         loopv(racemaps) if(!strcmp(racemaps[i], name)) { valid = valid && racethumbsizes.inrange(i); break; }
         if(valid)
         {
-            defformatstring(file, "hubmaps/thumbs/%s.jpg", name);
+            defformatstring(file, "hubmaps/packages/base/%s.jpg", name);
             defformatstring(partfile, "%s.part", file);
             string dst, part;
             copystring(dst, findfile(path(file, true), "w"));
@@ -352,7 +353,8 @@ namespace game
             delete f;
             if(ok) { remove(dst); ok = rename(part, dst) == 0; }
             if(!ok) remove(part);
-            if(ok) reloadtexturefile(file);
+            defformatstring(preview, "packages/base/%s.jpg", name);
+            if(ok) reloadtexturefile(preview);
         }
         if(thumbsgot == thumbstotal) conoutf("map pictures: %d downloaded", thumbstotal);
         else if(thumbsgot % 100 == 0) conoutf("map pictures: %d/%d", thumbsgot, thumbstotal);
@@ -376,6 +378,12 @@ namespace game
     // whether the map browser opens the flagrun / race maps as pictures (1) or as a list (0)
     MOD(VARP, flagrunmapgrid, 0, 1, 1);
     MOD(VARP, racemapgrid, 0, 0, 1);
+
+    // the hub's race maps for completing map names, downloaded or not (loading one downloads it)
+    void hubmapcompletions(vector<char *> &files)
+    {
+        loopv(racemaps) files.add(newstring(racemaps[i]));
+    }
 
     // the map browser: the hub's flagrun or race maps whose names contain a search text, any case
     static vector<char *> browsedmaps;

@@ -658,6 +658,11 @@ int listfiles(const char *dir, const char *ext, vector<char *> &files)
         formatstring(s, "%s%s", pf.dir, dirname);
         if(listdir(s, false, ext, files)) dirs++;
     }
+    if(hubmapsdir[0])
+    {
+        formatstring(s, "%s%s", hubmapsdir, dirname);
+        if(listdir(s, false, ext, files)) dirs++;
+    }
 #ifndef STANDALONE
     dirs += listzipfiles(dirname, ext, files);
 #endif

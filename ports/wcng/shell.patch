@@ -273,6 +273,28 @@
              if(haskey) execbind(*haskey, isdown);
          }
      }
+@@ -750,6 +770,8 @@
+         dir[--dirlen] = '\0';
+ }
+ 
++namespace game { extern void hubmapcompletions(vector<char *> &files); }
++
+ struct filesval
+ {
+     int type;
+@@ -777,7 +799,11 @@
+             cleanfilesdir(buf);
+             listfiles(buf, ext, files);
+         }
+-        else listfiles(dir, ext, files);
++        else
++        {
++            listfiles(dir, ext, files);
++            if(!strcmp(dir, "packages/base") && ext && !strcmp(ext, "ogz")) game::hubmapcompletions(files);
++        }
+         files.sort();
+         loopv(files) if(i && !strcmp(files[i], files[i-1])) delete[] files.remove(i--);
+         millis = totalmillis;
 --- a/engine/decal.cpp
 +++ b/engine/decal.cpp
 @@ -327,7 +327,7 @@
@@ -3752,11 +3774,10 @@
      return homedir;
  }
  
-@@ -494,8 +497,46 @@
-     return (const char*)mod::allocatethreadstorage(0, sizeof(homedir), true, homedir, true); //NEW
+@@ -495,6 +498,44 @@
  }
  //NEW END
-+
+ 
 +
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
@@ -3783,9 +3804,9 @@
 +    if(fb) fclose(fb);
 +    return same;
 +}
- 
++
 +static vector<char *> checkedoverrides;
- 
++
 +static void warnshadowedhome(const char *filename, const char *override)
 +{
 +    if(!homedir[0]) return;
@@ -3795,10 +3816,9 @@
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
 +}
-+
+ 
  const char *addpackagedir(const char *dir)
  {
- //NEW
 @@ -524,11 +565,37 @@
      return pf.dir;
  }
@@ -3837,30 +3857,42 @@
      if(homedir[0])
      {
          nformatstring(s, sizeof(locals), "%s%s", homedir, filename); // formatstring -> nformatstring
-@@ -556,6 +623,11 @@
+@@ -554,6 +621,11 @@
+         packagedir &pf = packagedirs[i];
+         if(pf.filter && strncmp(filename, pf.filter, pf.filterlen)) continue;
          nformatstring(s, sizeof(locals), "%s%s", pf.dir, filename); // formatstring -> nformatstring
-         if(fileexists(s, mode)) return s;
-     }
++        if(fileexists(s, mode)) return s;
++    }
 +    if(hubmapsdir[0] && !fileexists(filename, mode))
 +    {
 +        nformatstring(s, sizeof(locals), "%s%s", hubmapsdir, filename);
-+        if(fileexists(s, mode)) return s;
-+    }
-     if(mode[0]=='e') return NULL;
-     return filename;
- }
-@@ -628,6 +700,11 @@
-         formatstring(s, "%s%s", homedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
+         if(fileexists(s, mode)) return s;
      }
+     if(mode[0]=='e') return NULL;
+@@ -626,6 +698,11 @@
+     if(homedir[0])
+     {
+         formatstring(s, "%s%s", homedir, dirname);
++        if(listdir(s, false, ext, files)) dirs++;
++    }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
+     loopv(packagedirs)
+@@ -636,6 +713,11 @@
+         formatstring(s, "%s%s", pf.dir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
++    if(hubmapsdir[0])
++    {
++        formatstring(s, "%s%s", hubmapsdir, dirname);
 +        if(listdir(s, false, ext, files)) dirs++;
 +    }
-     loopv(packagedirs)
-     {
-         packagedir &pf = packagedirs[i];
+ #ifndef STANDALONE
+     dirs += listzipfiles(dirname, ext, files);
+ #endif
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -78,6 +78,32 @@

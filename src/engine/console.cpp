@@ -691,6 +691,8 @@ static void cleanfilesdir(char *dir)
         dir[--dirlen] = '\0';
 }
 
+namespace game { extern void hubmapcompletions(vector<char *> &files); }
+
 struct filesval
 {
     int type;
@@ -718,7 +720,11 @@ struct filesval
             cleanfilesdir(buf);
             listfiles(buf, ext, files);
         }
-        else listfiles(dir, ext, files);
+        else
+        {
+            listfiles(dir, ext, files);
+            if(!strcmp(dir, "packages/base") && ext && !strcmp(ext, "ogz")) game::hubmapcompletions(files);
+        }
         files.sort();
         loopv(files) if(i && !strcmp(files[i], files[i-1])) delete[] files.remove(i--);
         millis = totalmillis;

@@ -272,6 +272,28 @@
              if(haskey) execbind(*haskey, isdown);
          }
      }
+@@ -655,6 +675,8 @@
+         dir[--dirlen] = '\0';
+ }
+ 
++namespace game { extern void hubmapcompletions(vector<char *> &files); }
++
+ struct filesval
+ {
+     int type;
+@@ -682,7 +704,11 @@
+             cleanfilesdir(buf);
+             listfiles(buf, ext, files);
+         }
+-        else listfiles(dir, ext, files);
++        else
++        {
++            listfiles(dir, ext, files);
++            if(!strcmp(dir, "packages/base") && ext && !strcmp(ext, "ogz")) game::hubmapcompletions(files);
++        }
+         files.sort();
+         loopv(files) if(i && !strcmp(files[i], files[i-1])) delete[] files.remove(i--);
+         millis = totalmillis;
 --- a/engine/decal.cpp
 +++ b/engine/decal.cpp
 @@ -327,7 +327,7 @@
@@ -3937,14 +3959,14 @@
  #else
      if(access(path[0] ? path : ".", mode[0]=='w' || mode[0]=='a' ? W_OK : (mode[0]=='d' ? X_OK : R_OK)) == -1) exists = false;
  #endif
-@@ -449,9 +451,48 @@
+@@ -449,7 +451,46 @@
      copystring(pdir, dir);
      if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
      copystring(homedir, pdir);
 +    formatstring(hubmapsdir, "%shubmaps%c", homedir, PATHDIV);
      return homedir;
- }
- 
++}
++
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
 +{
@@ -3981,11 +4003,9 @@
 +    defformatstring(home, "%s%s", homedir, filename);
 +    if(fileexists(home, "r") && !samecontents(home, override))
 +        conoutf(CON_WARN, "using the speedbraten patch of %s; your own copy in %s is ignored", filename, homedir);
-+}
-+
+ }
+ 
  const char *addpackagedir(const char *dir)
- {
-     string pdir;
 @@ -474,9 +515,33 @@
      return pf.dir;
  }
@@ -4020,30 +4040,42 @@
      if(homedir[0])
      {
          formatstring(s, "%s%s", homedir, filename);
-@@ -504,6 +569,11 @@
+@@ -502,6 +567,11 @@
+         packagedir &pf = packagedirs[i];
+         if(pf.filter && strncmp(filename, pf.filter, pf.filterlen)) continue;
          formatstring(s, "%s%s", pf.dir, filename);
-         if(fileexists(s, mode)) return s;
-     }
++        if(fileexists(s, mode)) return s;
++    }
 +    if(hubmapsdir[0] && !fileexists(filename, mode))
 +    {
 +        formatstring(s, "%s%s", hubmapsdir, filename);
-+        if(fileexists(s, mode)) return s;
-+    }
-     if(mode[0]=='e') return NULL;
-     return filename;
- }
-@@ -575,6 +645,11 @@
-         formatstring(s, "%s%s", homedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
+         if(fileexists(s, mode)) return s;
      }
+     if(mode[0]=='e') return NULL;
+@@ -573,6 +643,11 @@
+     if(homedir[0])
+     {
+         formatstring(s, "%s%s", homedir, dirname);
++        if(listdir(s, false, ext, files)) dirs++;
++    }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
+     loopv(packagedirs)
+@@ -583,6 +658,11 @@
+         formatstring(s, "%s%s", pf.dir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
++    if(hubmapsdir[0])
++    {
++        formatstring(s, "%s%s", hubmapsdir, dirname);
 +        if(listdir(s, false, ext, files)) dirs++;
 +    }
-     loopv(packagedirs)
-     {
-         packagedir &pf = packagedirs[i];
+ #ifndef STANDALONE
+     dirs += listzipfiles(dirname, ext, files);
+ #endif
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -66,8 +66,34 @@
