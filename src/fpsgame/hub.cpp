@@ -43,6 +43,7 @@ namespace game
     };
     // the maps flagrun boards are kept for, as the hub last sent them
     static vector<char *> flagrunmaps, racemaps;
+    static vector<uint> racemapcrcs; // per race map: its .ogz's and .cfg's CRC-32 on the hub, 0: not known / no .cfg
     // the board of the run being played (HUD, flag boards) and the one menus show (board page)
     static hubboard curboard, viewboard;
     static string viewmap = "", viewkind = "";
@@ -232,10 +233,41 @@ namespace game
         return fileexists(findfile(path(file, true), "r"), "r");
     }
 
-    // a map change to a map this player lacks: fetch it from the hub and change map once it is here
+    // the CRC-32 of a downloaded map file, 0 when there is none
+    static uint hubmapfilecrc(const char *name, const char *ext)
+    {
+        defformatstring(file, "hubmaps/packages/base/%s.%s", name, ext);
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) return 0;
+        uint crc = crc32(0, NULL, 0);
+        uchar buf[64<<10];
+        for(size_t n; (n = f->read(buf, sizeof(buf))) > 0;) crc = crc32(crc, buf, uInt(n));
+        delete f;
+        return crc;
+    }
+
+    // whether the hub's copy of a race map differs from the one downloaded from it before
+    static bool hubmapstale(const char *name)
+    {
+        loopv(racemaps) if(!strcmp(racemaps[i], name))
+        {
+            if(!racemapcrcs.inrange(2*i+1) || !racemapcrcs[2*i]) return false;
+            uint ogz = hubmapfilecrc(name, "ogz");
+            return ogz && (ogz != racemapcrcs[2*i] || hubmapfilecrc(name, "cfg") != racemapcrcs[2*i+1]);
+        }
+        return false;
+    }
+
+    // a map change to a map this player lacks, or whose hub copy changed since it was downloaded:
+    // fetch it from the hub and change map once it is here
     bool hubfetchmap(const char *name, int mode)
     {
-        return hubmapname(name) && !havemap(name) && hubgetmap(name, mode);
+        if(!hubmapname(name) || !hubready()) return false;
+        bool stale = havemap(name) && hubmapstale(name);
+        if(havemap(name) && !stale) return false;
+        if(!hubgetmap(name, mode)) return false;
+        if(stale) conoutf("the hub has a new version of %s", name);
+        return true;
     }
 
     ICOMMAND(hubgetmap, "s", (char *name),
@@ -875,6 +907,9 @@ namespace game
                     if(!r.ok) { maps.deletearrays(); break; }
                     racemaps.deletearrays();
                     loopv(maps) racemaps.add(maps[i]);
+                    racemapcrcs.setsize(0);
+                    loopv(racemaps) loopj(2) racemapcrcs.add(r.left() ? uint(r.var()) : 0);
+                    if(!r.ok) racemapcrcs.setsize(0);
                     break;
                 }
                 case HM_REPLAYDATA:

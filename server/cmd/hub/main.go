@@ -174,6 +174,17 @@ func main() {
 			}
 		}()
 	}
+	if *raceMaps != "" {
+		go func() {
+			for {
+				start := time.Now()
+				if n := h.RefreshMapCRCs(); n > 0 {
+					log.Printf("race maps: checksums of %d maps in %v", n, time.Since(start).Round(time.Millisecond))
+				}
+				time.Sleep(time.Minute)
+			}
+		}()
+	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)

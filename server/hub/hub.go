@@ -56,6 +56,7 @@ type Hub struct {
 	cfg      Config
 	st       *store
 	keyReply []byte
+	crcs     mapCRCs
 
 	mu        sync.Mutex
 	nextID    uint64
