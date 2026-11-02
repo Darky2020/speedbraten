@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"hash/crc32"
+	"image"
 	"os"
 	"path/filepath"
 	"testing"
@@ -129,5 +130,69 @@ func TestMapCRCRefresh(t *testing.T) {
 	after := crcs()
 	if after[0] != uint64(crc32.ChecksumIEEE([]byte("second version, longer"))) || after[0] == before[0] || after[3] != 0 {
 		t.Fatalf("after the change: %v, before %v", after, before)
+	}
+}
+
+func TestRaceThumbs(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	base := filepath.Join(dir, "packages", "base")
+	os.MkdirAll(filepath.Join(base, "screenshots"), 0o755)
+	shot, err := os.ReadFile("testdata/race.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(base, "speed1.ogz"), []byte("map"), 0o644)
+	os.WriteFile(filepath.Join(base, "speed2.ogz"), []byte("map"), 0o644)
+	os.WriteFile(filepath.Join(base, "screenshots", "speed1.webp"), shot, 0o644)
+	os.WriteFile(filepath.Join(base, "screenshots", "speed2.webp"), []byte("not a picture"), 0o644)
+	f.h.cfg.RaceMaps = dir
+	f.h.cfg.Thumbs = filepath.Join(t.TempDir(), "thumbs")
+	if n := f.h.RefreshThumbs(nil); n != 1 {
+		t.Fatalf("made %d pictures, want 1", n)
+	}
+	if n := f.h.RefreshThumbs(nil); n != 0 {
+		t.Fatalf("an unchanged picture was made again: %d", n)
+	}
+	jpg, err := os.Open(f.h.thumbFile("speed1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, format, err := image.DecodeConfig(jpg)
+	jpg.Close()
+	if err != nil || format != "jpeg" || cfg.Width != ThumbW || cfg.Height != ThumbH {
+		t.Fatalf("picture %s %dx%d: %v", format, cfg.Width, cfg.Height, err)
+	}
+	st, _ := os.Stat(f.h.thumbFile("speed1"))
+
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	m := a.expect(MsgRaceMaps)
+	n := m.r.u()
+	for i := uint64(0); i < n; i++ {
+		m.r.str(64)
+	}
+	for i := uint64(0); i < 2*n; i++ {
+		m.r.u()
+	}
+	if s1, s2 := m.r.u(), m.r.u(); s1 != uint64(st.Size()) || s2 != 0 {
+		t.Fatalf("picture sizes %d %d, want %d 0", s1, s2, st.Size())
+	}
+	ask := func(name string) []byte {
+		var q writer
+		q.str(name)
+		a.send(MsgGetThumb, q.b)
+		d := a.expect(MsgThumbData)
+		if got := d.r.str(64); got != name {
+			t.Fatalf("picture of %q for %q", got, name)
+		}
+		return d.r.b
+	}
+	if got := ask("speed1"); int64(len(got)) != st.Size() {
+		t.Fatalf("picture of %d bytes, want %d", len(got), st.Size())
+	}
+	for _, name := range []string{"speed2", "missing", "../hub"} {
+		if got := ask(name); len(got) != 0 {
+			t.Fatalf("%q: %d bytes, want none", name, len(got))
+		}
 	}
 }

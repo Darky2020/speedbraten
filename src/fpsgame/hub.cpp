@@ -9,6 +9,7 @@
 #include "hubproto.h"
 
 extern bool findhubmapsfirst;
+extern bool reloadtexture(const char *name);
 
 namespace game
 {
@@ -46,6 +47,7 @@ namespace game
     // the maps flagrun boards are kept for, as the hub last sent them
     static vector<char *> flagrunmaps, racemaps;
     static vector<uint> racemapcrcs; // per race map: its .ogz's and .cfg's CRC-32 on the hub, 0: not known / no .cfg
+    static vector<int> racethumbsizes; // per race map: the size of its picture on the hub, 0: none
     // the board of the run being played (HUD, flag boards) and the one menus show (board page)
     static hubboard curboard, viewboard;
     static string viewmap = "", viewkind = "";
@@ -283,6 +285,92 @@ namespace game
     });
     ICOMMAND(havemap, "s", (char *name), intret(havemap(name) ? 1 : 0));
 
+    // Race map pictures: small JPEGs the hub makes from the maps' screenshots, kept in hubmaps/thumbs/.
+    // A picture is missing when there is none or its size differs from the hub's (a newer picture).
+    static vector<char *> thumbqueue;
+    static int thumbsasked = 0, thumbsgot = 0, thumbstotal = 0;
+    enum { THUMBSINFLIGHT = 4 };
+
+    static int localthumbsize(const char *name)
+    {
+        defformatstring(file, "hubmaps/thumbs/%s.jpg", name);
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) return 0;
+        int size = int(f->size());
+        delete f;
+        return size;
+    }
+
+    static void missingthumbs(vector<int> &out)
+    {
+        loopv(racemaps) if(racethumbsizes.inrange(i) && racethumbsizes[i] > 0 && localthumbsize(racemaps[i]) != racethumbsizes[i]) out.add(i);
+    }
+
+    // "count bytes" of the race map pictures this player lacks
+    ICOMMAND(racethumbsmissing, "", (),
+    {
+        vector<int> missing;
+        missingthumbs(missing);
+        long long bytes = 0;
+        loopv(missing) bytes += racethumbsizes[missing[i]];
+        defformatstring(s, "%d %lld", missing.length(), bytes);
+        result(s);
+    });
+
+    static void askthumbs()
+    {
+        while(thumbsasked < THUMBSINFLIGHT && thumbqueue.length())
+        {
+            char *name = thumbqueue.remove(0);
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            puttext(w, name);
+            delete[] name;
+            if(!hubsend(HM_GETTHUMB, p.getbuf(), p.length())) { thumbqueue.deletearrays(); thumbsasked = 0; return; }
+            thumbsasked++;
+        }
+    }
+
+    static void thumbdata(const char *name, const uchar *data, int len)
+    {
+        if(thumbsasked <= 0) return;
+        thumbsasked--;
+        thumbsgot++;
+        bool valid = len > 0 && hubmapname(name);
+        loopv(racemaps) if(!strcmp(racemaps[i], name)) { valid = valid && racethumbsizes.inrange(i); break; }
+        if(valid)
+        {
+            defformatstring(file, "hubmaps/thumbs/%s.jpg", name);
+            defformatstring(partfile, "%s.part", file);
+            string dst, part;
+            copystring(dst, findfile(path(file, true), "w"));
+            copystring(part, findfile(path(partfile, true), "w"));
+            stream *f = openrawfile(path(partfile, true), "wb");
+            bool ok = f && f->write(data, len) == size_t(len);
+            delete f;
+            if(ok) { remove(dst); ok = rename(part, dst) == 0; }
+            if(!ok) remove(part);
+            if(ok) reloadtexture(file);
+        }
+        if(thumbsgot == thumbstotal) conoutf("map pictures: %d downloaded", thumbstotal);
+        else if(thumbsgot % 100 == 0) conoutf("map pictures: %d/%d", thumbsgot, thumbstotal);
+        askthumbs();
+    }
+
+    ICOMMAND(racethumbsget, "", (),
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download map pictures"); return; }
+        if(thumbqueue.length() || thumbsasked) return;
+        vector<int> missing;
+        missingthumbs(missing);
+        loopv(missing) thumbqueue.add(newstring(racemaps[missing[i]]));
+        thumbsgot = 0;
+        thumbstotal = missing.length();
+        askthumbs();
+    });
+    // pictures still to come in the current download, 0 when none is running
+    ICOMMAND(racethumbsleft, "", (), intret(thumbqueue.length() + thumbsasked));
+
     // the map browser: the hub's flagrun or race maps whose names contain a search text, any case
     static vector<char *> browsedmaps;
 
@@ -323,6 +411,8 @@ namespace game
         curboard = viewboard = hubboard();
         replaydownloadend();
         mapdownloadend();
+        thumbqueue.deletearrays();
+        thumbsasked = 0;
         boardaskedmap[0] = '\0';
         boardreaskat = 0;
     }
@@ -913,7 +1003,16 @@ namespace game
                     loopv(maps) racemaps.add(maps[i]);
                     racemapcrcs.setsize(0);
                     loopv(racemaps) loopj(2) racemapcrcs.add(r.left() ? uint(r.var()) : 0);
-                    if(!r.ok) racemapcrcs.setsize(0);
+                    racethumbsizes.setsize(0);
+                    loopv(racemaps) racethumbsizes.add(r.left() ? int(r.var()) : 0);
+                    if(!r.ok) { racemapcrcs.setsize(0); racethumbsizes.setsize(0); }
+                    break;
+                }
+                case HM_THUMBDATA:
+                {
+                    string name;
+                    gettext(r, name, sizeof(name));
+                    if(r.ok) thumbdata(name, r.p, r.left());
                     break;
                 }
                 case HM_REPLAYDATA:

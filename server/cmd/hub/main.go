@@ -150,6 +150,9 @@ func main() {
 		log.Fatal(err)
 	}
 	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps}
+	if *raceMaps != "" {
+		cfg.Thumbs = filepath.Join(*dir, "thumbs")
+	}
 	if *discordHook != "" {
 		urls, err := readList(*discordHook)
 		if err != nil {
@@ -184,6 +187,7 @@ func main() {
 				time.Sleep(time.Minute)
 			}
 		}()
+		go h.ThumbLoop(log.Printf)
 	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {

@@ -233,7 +233,7 @@ func (h *Hub) RefreshMapCRCs() int {
 }
 
 // raceMapsMsg lists the race maps, then for each the CRC-32s of its .ogz and .cfg (0: not known yet,
-// or no .cfg).
+// or no .cfg), then for each the size of its picture (0: none).
 func (h *Hub) raceMapsMsg() []byte {
 	maps := h.raceMaps()
 	var w writer
@@ -242,11 +242,16 @@ func (h *Hub) raceMapsMsg() []byte {
 		w.str(m)
 	}
 	h.crcs.mu.Lock()
-	defer h.crcs.mu.Unlock()
 	for _, m := range maps {
 		c := h.crcs.maps[m]
 		w.u(uint64(c.ogzCRC))
 		w.u(uint64(c.cfgCRC))
 	}
+	h.crcs.mu.Unlock()
+	h.thumbs.mu.Lock()
+	for _, m := range maps {
+		w.u(uint64(h.thumbs.size[m]))
+	}
+	h.thumbs.mu.Unlock()
 	return w.b
 }
