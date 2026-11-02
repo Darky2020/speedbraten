@@ -3844,16 +3844,17 @@
      extern void writegamedata(vector<char> &extras);
 --- a/shared/stream.cpp
 +++ b/shared/stream.cpp
-@@ -286,7 +286,7 @@
+@@ -286,7 +286,8 @@
  #include <dirent.h>
  #endif
  
 -string homedir = "";
 +string homedir = "", overridedir = "", hubmapsdir = "";
++bool findhubmapsfirst = true;
  struct packagedir
  {
      char *dir, *filter;
-@@ -388,7 +388,8 @@
+@@ -388,7 +389,8 @@
      bool exists = true;
      if(mode[0]=='w' || mode[0]=='a') path = parentdir(path);
  #ifdef WIN32
@@ -3863,14 +3864,14 @@
  #else
      if(access(path[0] ? path : ".", mode[0]=='w' || mode[0]=='a' ? W_OK : (mode[0]=='d' ? X_OK : R_OK)) == -1) exists = false;
  #endif
-@@ -449,9 +450,48 @@
+@@ -449,9 +451,48 @@
      copystring(pdir, dir);
      if(!subhomedir(pdir, sizeof(pdir), dir) || !fixpackagedir(pdir)) return NULL;
      copystring(homedir, pdir);
 +    formatstring(hubmapsdir, "%shubmaps%c", homedir, PATHDIV);
      return homedir;
-+}
-+
+ }
+ 
 +// Files in the override dir replace the same files in the home dir and the game folders.
 +const char *setoverridedir(const char *dir)
 +{
@@ -3895,8 +3896,8 @@
 +    if(fa) fclose(fa);
 +    if(fb) fclose(fb);
 +    return same;
- }
- 
++}
++
 +static vector<char *> checkedoverrides;
 +
 +static void warnshadowedhome(const char *filename, const char *override)
@@ -3912,7 +3913,7 @@
  const char *addpackagedir(const char *dir)
  {
      string pdir;
-@@ -474,9 +514,33 @@
+@@ -474,9 +515,33 @@
      return pf.dir;
  }
  
@@ -3938,7 +3939,7 @@
 +        }
 +    }
 +    // a map downloaded from the hub is the witness's copy: it wins over any other copy of that map
-+    if(hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
++    if(findhubmapsfirst && hubmapsdir[0] && mode[0]!='w' && mode[0]!='a' && mode[0]!='d' && inbasepackages(filename))
 +    {
 +        formatstring(s, "%s%s", hubmapsdir, filename);
 +        if(fileexists(s, mode)) return s;
@@ -3946,18 +3947,30 @@
      if(homedir[0])
      {
          formatstring(s, "%s%s", homedir, filename);
-@@ -573,6 +637,11 @@
-     if(homedir[0])
-     {
-         formatstring(s, "%s%s", homedir, dirname);
-+        if(listdir(s, false, ext, files)) dirs++;
+@@ -504,6 +569,11 @@
+         formatstring(s, "%s%s", pf.dir, filename);
+         if(fileexists(s, mode)) return s;
+     }
++    if(hubmapsdir[0] && !fileexists(filename, mode))
++    {
++        formatstring(s, "%s%s", hubmapsdir, filename);
++        if(fileexists(s, mode)) return s;
 +    }
+     if(mode[0]=='e') return NULL;
+     return filename;
+ }
+@@ -575,6 +645,11 @@
+         formatstring(s, "%s%s", homedir, dirname);
+         if(listdir(s, false, ext, files)) dirs++;
+     }
 +    if(overridedir[0])
 +    {
 +        formatstring(s, "%s%s", overridedir, dirname);
-         if(listdir(s, false, ext, files)) dirs++;
-     }
++        if(listdir(s, false, ext, files)) dirs++;
++    }
      loopv(packagedirs)
+     {
+         packagedir &pf = packagedirs[i];
 --- a/shared/tools.cpp
 +++ b/shared/tools.cpp
 @@ -66,8 +66,34 @@

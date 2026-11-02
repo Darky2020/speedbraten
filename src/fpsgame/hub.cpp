@@ -8,6 +8,8 @@
 #include "replayio.h"
 #include "hubproto.h"
 
+extern bool findhubmapsfirst;
+
 namespace game
 {
     SVARP(hubhost, "141.95.67.191");
@@ -146,7 +148,9 @@ namespace game
     }
 
     // Maps a player lacks come from the hub, which serves the witness's copies. They are kept in
-    // hubmaps/ in the home dir, which the engine searches before the player's own copies.
+    // hubmaps/ in the home dir, which the engine searches before the player's own copies (with
+    // hubmapsfirst 0, only when there is no other copy).
+    MOD(VARFP, hubmapsfirst, 0, 1, 1, findhubmapsfirst = hubmapsfirst != 0);
     static string mapdownload = "";
     static int mapdownloadmode = INT_MAX; // the mode to load the map in once it is here, INT_MAX: none
     static vector<uchar> mapdownloadcfg, mapdownloadogz;
