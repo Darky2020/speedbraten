@@ -288,8 +288,9 @@ namespace game
     // Race map pictures: small JPEGs the hub makes from the maps' screenshots, kept in hubmaps/thumbs/.
     // A picture is missing when there is none or its size differs from the hub's (a newer picture).
     static vector<char *> thumbqueue;
-    static int thumbsasked = 0, thumbsgot = 0, thumbstotal = 0;
-    enum { THUMBSINFLIGHT = 4 };
+    static int thumbsasked = 0, thumbsgot = 0, thumbstotal = 0, thumbaskat = 0;
+    // the hub drops a player who sends more than MsgRate (30) messages a second
+    enum { THUMBSINFLIGHT = 4, THUMBASKINTERVAL = 1000/15 };
 
     static int localthumbsize(const char *name)
     {
@@ -319,8 +320,9 @@ namespace game
 
     static void askthumbs()
     {
-        while(thumbsasked < THUMBSINFLIGHT && thumbqueue.length())
+        while(thumbsasked < THUMBSINFLIGHT && thumbqueue.length() && totalmillis - thumbaskat >= 0)
         {
+            thumbaskat = totalmillis + THUMBASKINTERVAL;
             char *name = thumbqueue.remove(0);
             vector<uchar> p;
             sbr2::byteswriter w(p);
@@ -1142,6 +1144,7 @@ namespace game
                 hubsendtext(HM_SETNAME, player1->name);
             }
             sendstatus();
+            askthumbs();
             autolobby();
             followupdate();
             sendpos();
