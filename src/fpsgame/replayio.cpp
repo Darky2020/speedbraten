@@ -58,7 +58,20 @@ namespace sbr2
         blake3_hasher_init(&run);
     }
 
-    writer::writer() : segments(0), level(6), zstream(NULL), finished(false)
+    // zstd contexts take MBs; the writers made one after another during play reuse them (writers
+    // are only used on the main thread)
+    static vector<void *> zcontexts;
+
+    static void *takezcontext() { return zcontexts.length() ? zcontexts.pop() : ZSTD_createCCtx(); }
+
+    static void givezcontext(void *c)
+    {
+        if(zcontexts.length() >= 4) { ZSTD_freeCCtx((ZSTD_CCtx *)c); return; }
+        ZSTD_CCtx_reset((ZSTD_CCtx *)c, ZSTD_reset_session_and_parameters);
+        zcontexts.add(c);
+    }
+
+    writer::writer() : segments(0), level(6), hashonly(false), zstream(NULL), finished(false)
     {
         running = new blake3_hasher;
         blake3_hasher_init((blake3_hasher *)running);
@@ -72,7 +85,7 @@ namespace sbr2
     writer::~writer()
     {
         delete (blake3_hasher *)running;
-        if(zstream) ZSTD_freeCCtx((ZSTD_CCtx *)zstream);
+        if(zstream) givezcontext(zstream);
     }
 
     void writer::add(const char *type, const vector<uchar> &payload, bool compress) { add(type, payload.getbuf(), payload.length(), compress); }
@@ -81,13 +94,14 @@ namespace sbr2
     {
         if(finished && !istype(type, "sIGN")) return;
         if(!istype(type, "sIGN") && !istype(type, "END ")) hashchunk(*(blake3_hasher *)running, type, payload, len);
+        if(hashonly) return;
         vector<uchar> packed;
         int flags = 0;
         if(compress)
         {
             if(!zstream)
             {
-                zstream = ZSTD_createCCtx();
+                zstream = takezcontext();
                 ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_compressionLevel, level);
                 ZSTD_CCtx_setParameter((ZSTD_CCtx *)zstream, ZSTD_c_windowLog, 21);
             }

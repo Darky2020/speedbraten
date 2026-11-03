@@ -120,10 +120,12 @@ namespace sbr2
         // writes END; returns the content hash
         const uchar *finish();
         uchar content[HASHSIZE];
-        // zstd level. The witness stream is compressed during play, a segment at a time, and must
-        // match the saved file byte for byte, so both use this fast level; high levels such as 19
-        // stall the game for up to hundreds of ms a segment.
+        // zstd level. The witness stream, which becomes the saved file, is compressed during play a
+        // segment at a time, so this is a fast level; high levels such as 19 stall the game for up
+        // to hundreds of ms a segment.
         int level;
+        // only the content hash: no bytes are written and nothing is compressed
+        bool hashonly;
     private:
         void *running, *zstream;
         bool finished;

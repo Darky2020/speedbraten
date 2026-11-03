@@ -2262,8 +2262,9 @@ namespace game
         sendstop(reason);
     }
 
-    // The saved replay of the streamed run: finishes the stream with the run's end and trailer
-    // and returns its bytes if they are the file's bytes; otherwise the stream ends unsigned.
+    // The saved replay of the streamed run: finishes the stream with the run's end and trailer and
+    // returns whether it holds the run's replay (the same content hash as a fresh build, which is
+    // made without compressing); otherwise the stream ends unsigned. The file is the stream's bytes.
     static bool witnessfinish(const inputrun &run, const replayinfo &info, sbr2stream &whole)
     {
         if(!live) return false;
@@ -2274,10 +2275,10 @@ namespace game
         if(info.live) tellsencode(run, info, tells);
         else loopv(run.tells) { runchunk *c = tells.add(new runchunk); memcpy(c->type, run.tells[i]->type, sizeof(c->type)); c->late = run.tells[i]->late; c->data = run.tells[i]->data; }
         live->s.trailer(run, info, &tells);
+        whole.out.hashonly = true;
         buildsbr2(whole, run, info, -1, &tells);
         tells.deletecontents();
-        const vector<uchar> &mine = live->s.out.out, &want = whole.out.out;
-        if(mine.length() != want.length() || memcmp(mine.getbuf(), want.getbuf(), want.length()))
+        if(live->s.out.segments != whole.out.segments || memcmp(live->s.out.content, whole.out.content, sizeof(whole.out.content)))
         {
             conoutf(CON_ERROR, "witness: the streamed replay differs from the saved one");
             witnessstop("the stream differs from the saved replay");

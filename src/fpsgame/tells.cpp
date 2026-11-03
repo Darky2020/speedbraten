@@ -161,6 +161,20 @@ namespace game
         return true;
     }
 
+    // Listing the input devices takes from a few to hundreds of ms, so it happens at map loads
+    // (behind the loading screen) and saved runs carry the list of the last one.
+    static vector<inputdevice> knowndevices;
+    static bool devicesknown = false;
+
+    void tellsmapload()
+    {
+        knowndevices.setsize(0);
+        listinputdevices(knowndevices);
+        devicesknown = true;
+        uchar hash[32];
+        exehash(hash);
+    }
+
     static void addchunk(vector<runchunk *> &out, const char *type, sbr2::kvwriter &kv)
     {
         runchunk *c = out.add(new runchunk);
@@ -332,8 +346,9 @@ namespace game
         out.last()->late = true;
 
         // input devices: var count, per device u8 kind, var vendor, var product, str transport, str name
+        if(!devicesknown) tellsmapload();
         vector<inputdevice> devices;
-        listinputdevices(devices);
+        loopv(knowndevices) devices.add(knowndevices[i]);
         runchunk *devs = out.add(new runchunk);
         memcpy(devs->type, "dEVS", sizeof(devs->type));
         sbr2::byteswriter dw(devs->data);

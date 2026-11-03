@@ -1371,8 +1371,11 @@ namespace game
         logoutf("game seed: %u (replay of %s, %d events)", gameseed, a.map, a.events.length());
     }
 
+    static bool instantresetting = false;
+
     void inputmapstart(const char *name, int mode)
     {
+        if(!instantresetting) tellsmapload();
         respawnonkey = false;
         mapstartstate.setsize(0);
         bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
@@ -1723,7 +1726,9 @@ namespace game
         copystring(map, mapstartmap);
         int mode = mapstartmode;
         runtimermapstart(mode, true);
+        instantresetting = true;
         inputmapstart(map, mode);
+        instantresetting = false;
         if(!restorereplaystart(start)) { conoutf(CON_ERROR, "the run's start could not be restored: loading the map"); changemap(map, mode); return; }
         seedMT(gameseed);
         readsettings(cursettings);
