@@ -161,6 +161,8 @@ namespace game
         return false;
     }
 
+    extern void inputrunbegan();
+
     void runtimerspawned(fpsent *d)
     {
         if(d != player1 || !runtimerperlife()) return;
@@ -170,6 +172,7 @@ namespace game
         runstate = RUN_RUNNING;
         runbase = runend = 0;
         runstart = inputtick();
+        inputrunbegan();
     }
 
     extern bool inputreplayactive();
@@ -231,6 +234,7 @@ namespace game
         {
             runstate = RUN_RUNNING;
             runstart = inputtick();
+            inputrunbegan();
         }
         else if(runstate == RUN_RUNNING && flagrunrestart && dist < runflagradius)
         {

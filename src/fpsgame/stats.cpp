@@ -29,6 +29,8 @@ namespace game
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
     static int changes = 0;
+    // the number of attempts recorded: counted once (a full scan of the table), then kept up to date
+    static int attemptcount = -1;
     // changes whenever a run is added, so callers can tell when a PB may have changed
     int statsversion() { return changes; }
 
@@ -193,7 +195,7 @@ namespace game
         bool added = sqlite3_step(st) == SQLITE_DONE;
         if(!added) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
-        if(added) { recordsplits(sqlite3_last_insert_rowid(db), info); extendhistory(info, content); }
+        if(added) { recordsplits(sqlite3_last_insert_rowid(db), info); extendhistory(info, content); if(attemptcount >= 0) attemptcount++; }
         changes++;
     }
 
@@ -212,10 +214,14 @@ namespace game
             else if(sqlite3_column_bytes(st, 1) == 32) memcpy(head, sqlite3_column_blob(st, 1), 32);
         }
         sqlite3_finalize(st);
-        st = prepare("SELECT COUNT(*) FROM attempts");
-        if(!st) return false;
-        if(sqlite3_step(st) == SQLITE_ROW) attempts = sqlite3_column_int(st, 0);
-        sqlite3_finalize(st);
+        if(attemptcount < 0)
+        {
+            st = prepare("SELECT COUNT(*) FROM attempts");
+            if(!st) return false;
+            if(sqlite3_step(st) == SQLITE_ROW) attemptcount = sqlite3_column_int(st, 0);
+            sqlite3_finalize(st);
+        }
+        attempts = max(attemptcount, 0);
         return true;
     }
 

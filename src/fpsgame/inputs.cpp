@@ -187,12 +187,18 @@ namespace game
     }
 
     // The attempt from a saved state on: the state, then the events and hashes after its tick.
-    // index of the first entry past tick: what comes before it was played before tick
+    // index of the first entry past tick (entries are in tick order): what comes before it was played
+    // before tick. A binary search, so a long attempt's old entries aren't read.
     template<class T> static int firstafter(const vector<T> &v, int tick)
     {
-        int n = 0;
-        while(n < v.length() && v[n].tick <= tick) n++;
-        return n;
+        int lo = 0, hi = v.length();
+        while(lo < hi)
+        {
+            int mid = (lo + hi) / 2;
+            if(v[mid].tick <= tick) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
     }
 
     template<class T> static void copyfrom(vector<T> &dst, const vector<T> &src, int first)
@@ -275,6 +281,17 @@ namespace game
     static bool attemptwitnessed = false;
     bool inputattemptwitnessed() { return attemptwitnessed; }
     static statestart *lifestart;
+
+    // a run began: say when the witness won't see it, and why
+    void inputrunbegan()
+    {
+        if(replaying || recordingoff || inputreplayactive() || witnessstreaming()) return;
+        const char *why = witnessstate() == WITNESS_IDLE ? "no witness is set" :
+                          witnessstate() != WITNESS_OPEN ? "not connected to the witness" :
+                          !attemptwitnessed ? "the map was loaded before the witness connected: load it again" :
+                          "the witness isn't receiving this run";
+        conoutf(CON_GAMEINFO, "\f3this run won't be witnessed: %s", why);
+    }
 
     // streams the current life; the attempt's map files and CRCs are only known from tick 1 on
     static void witnesslife(int continues = -1)
@@ -1277,6 +1294,7 @@ namespace game
                 else witnessnextattempt(rec);
             }
             else witnesslife();
+            if(m_check(gamemode, M_DMSP | M_CLASSICSP) && recording.attempts.length() == 1) inputrunbegan();
             if(recording.attempts.length() == 1 || !hubviewing()) hubviewbegin(rec, rec, -1);
             else hubviewnextattempt(rec);
         }

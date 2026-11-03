@@ -241,6 +241,7 @@ namespace game
     extern int tellsframe(int us);
     extern void tellslifestart();
     extern void tellsmapload();
+    extern void inputrunbegan();
     // the run (or life) being saved was slowed, sped up, paused, played with fixedframe or with
     // single-player slow motion (which also keeps the player alive)
     extern bool tellsassisted(const inputrun &r);
