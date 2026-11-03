@@ -58,7 +58,7 @@ namespace sbr2
         blake3_hasher_init(&run);
     }
 
-    writer::writer() : segments(0), level(19), zstream(NULL), finished(false)
+    writer::writer() : segments(0), level(6), zstream(NULL), finished(false)
     {
         running = new blake3_hasher;
         blake3_hasher_init((blake3_hasher *)running);

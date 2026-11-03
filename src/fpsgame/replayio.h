@@ -120,8 +120,9 @@ namespace sbr2
         // writes END; returns the content hash
         const uchar *finish();
         uchar content[HASHSIZE];
-        // zstd level: 19 packs saved files tightest, but its context takes tens of MB and its
-        // first chunk several ms, too much for a stream started during play
+        // zstd level. The witness stream is compressed during play, a segment at a time, and must
+        // match the saved file byte for byte, so both use this fast level; high levels such as 19
+        // stall the game for up to hundreds of ms a segment.
         int level;
     private:
         void *running, *zstream;
