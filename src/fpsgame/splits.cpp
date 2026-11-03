@@ -263,16 +263,19 @@ namespace game
     static vector<splitsegment> bestsegs;
     static string comparekey = "";
     static int pbms = -1;
+    static int flagpbms = -1; // a flagrun's PB from the flag of this run, -1: none or not a flagrun
 
     static void refreshcomparison(const char *map, const char *kind, int mode)
     {
         bool segmented = inputsplicecount() > 0;
-        defformatstring(key, "%s %s %d %d %d", map, kind, mode, segmented ? 1 : 0, statsversion());
+        int side = !strcmp(kind, "flagrun") ? runtimerflagside() : 0;
+        defformatstring(key, "%s %s %d %d %d %d", map, kind, mode, segmented ? 1 : 0, side, statsversion());
         if(!strcmp(key, comparekey)) return;
         // a finished run stays compared with the PB it was run against, not with itself
         if(runtimerfinished() && comparekey[0]) return;
         copystring(comparekey, key);
         statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs, pbms);
+        flagpbms = side > 0 ? statssidebest(map, kind, mode, segmented, side) : -1;
     }
 
     static bool insidebox(const vec &p, const vec &lo, const vec &hi)
@@ -524,8 +527,11 @@ namespace game
             string ft, l;
             formattime(ft, t);
             formatstring(l, "\f7finish %s%s", pbms >= 0 && t <= pbms/SIMTICK ? "\f2" : "", ft);
-            if(pbms >= 0) { string d; formatdelta(d, t - pbms/SIMTICK); concformatstring(l, "  \f7pb %s", d); }
-            if(gt >= 0) { string g; formatdelta(g, t - gt); concformatstring(l, "  \f7%s %s", ghostname(), g); }
+            // a flagrun is compared with the PB from its own flag as well when the map's PB is from the other
+            bool flagpb = flagpbms >= 0 && flagpbms != pbms;
+            if(flagpb) { string d; formatdelta(d, t - flagpbms/SIMTICK); concformatstring(l, "  \f7flag pb %s", d); }
+            if(pbms >= 0) { string d; formatdelta(d, t - pbms/SIMTICK); concformatstring(l, "  \f7%s %s", flagpb ? "map pb" : "pb", d); }
+            if(gt >= 0 && !(flagpb && gt == flagpbms/SIMTICK)) { string g; formatdelta(g, t - gt); concformatstring(l, "  \f7%s %s", ghostname(), g); }
             lines.insert(0, newstring(l));
             alphas.insert(0, 255);
         }
