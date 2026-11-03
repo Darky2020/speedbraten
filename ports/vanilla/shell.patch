@@ -2277,7 +2277,15 @@
      COMMAND(sayteam, "C");
  
      ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
-@@ -1061,7 +1085,8 @@
+@@ -1036,6 +1060,7 @@
+ 
+     void sendmessages()
+     {
++        if(!sendcrc && !senditemstoserver && messages.empty() && !(remote && totalmillis-lastping>250)) return;
+         packetbuf p(MAXTRANS);
+         if(sendcrc)
+         {
+@@ -1061,7 +1086,8 @@
              messagereliable = false;
              messagecn = -1;
          }
@@ -2287,7 +2295,7 @@
          {
              putint(p, N_PING);
              putint(p, totalmillis);
-@@ -1497,7 +1522,9 @@
+@@ -1497,7 +1523,9 @@
                  {
                      showscores(false);
                      lasthit = 0;
@@ -2297,7 +2305,7 @@
                  if(cmode) cmode->respawned(s);
  				ai::spawned(s);
                  addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
-@@ -1572,6 +1599,8 @@
+@@ -1572,6 +1600,8 @@
                      particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                  }
                  if(!victim) break;

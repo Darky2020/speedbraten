@@ -1606,27 +1606,37 @@ namespace game
     static bool bybasename(const char *a, const char *b) { return strcmp(replaybasename(a), replaybasename(b)) < 0; }
 
     // Keeps the newest replaymaxunfinished autosaved unfinished replays in replays/; finished, renamed
-    // and kept (replays/kept/) ones are never deleted.
-    static void rotatereplays()
+    // and kept (replays/kept/) ones are never deleted. The replay folders are listed once a session;
+    // after that each unfinished replay saved joins the list, oldest first.
+    static vector<char *> unfinishedreplays;
+    static bool unfinishedlisted = false;
+
+    static void rotatereplays(const char *saved)
     {
-        vector<char *> files;
-        listreplays(false, files);
-        vector<char *> dnf;
-        loopv(files)
+        if(!unfinishedlisted)
         {
-            string name;
-            copystring(name, replaybasename(files[i]));
-            int len = strlen(name);
-            if(len > 4) name[len-4] = '\0';
-            if(autounfinished(name)) dnf.add(files[i]);
+            unfinishedlisted = true;
+            vector<char *> files;
+            listreplays(false, files);
+            loopv(files)
+            {
+                string name;
+                copystring(name, replaybasename(files[i]));
+                int len = strlen(name);
+                if(len > 4) name[len-4] = '\0';
+                if(autounfinished(name)) unfinishedreplays.add(files[i]);
+                else delete[] files[i];
+            }
+            unfinishedreplays.sort(bybasename);
         }
-        dnf.sort(bybasename);
-        for(int i = 0; i < dnf.length() - replaymaxunfinished; i++)
+        else unfinishedreplays.add(newstring(saved));
+        while(unfinishedreplays.length() > replaymaxunfinished)
         {
-            remove(realpath(dnf[i]));
-            statsreplaymoved(dnf[i], NULL);
+            char *f = unfinishedreplays.remove(0);
+            remove(realpath(f));
+            statsreplaymoved(f, NULL);
+            delete[] f;
         }
-        files.deletearrays();
     }
 
     // the longest stretch of ticks without an input event
@@ -2345,7 +2355,7 @@ namespace game
         if(started) statsrecord(run, info, written ? file : NULL, written ? content : NULL);
         if(!written) { conoutf(CON_ERROR, "could not write %s", file); return; }
         if(finished) conoutf("\f2saved replay %s", file);
-        else rotatereplays();
+        else rotatereplays(file);
     }
 
     // Replay browser: replayscan caches the headers of all replay files, newest first.

@@ -187,33 +187,60 @@ namespace game
     }
 
     // The attempt from a saved state on: the state, then the events and hashes after its tick.
+    // index of the first entry past tick: what comes before it was played before tick
+    template<class T> static int firstafter(const vector<T> &v, int tick)
+    {
+        int n = 0;
+        while(n < v.length() && v[n].tick <= tick) n++;
+        return n;
+    }
+
+    template<class T> static void copyfrom(vector<T> &dst, const vector<T> &src, int first)
+    {
+        dst.setsize(0);
+        for(int i = first; i < src.length(); i++) dst.add(src[i]);
+    }
+
+    // The part of an attempt from a saved state on. Only that part is copied: in a flagrun or race
+    // every life on a map is in one attempt, which grows for as long as the map is played.
     static void cutattempt(inputattempt &a, const inputattempt &src, const statestart &from)
     {
-        src.copyto(a);
+        a.clear();
+        for(int i = firstafter(src.events, from.tick); i < src.events.length(); i++)
+        {
+            inputevent &e = a.events.add(src.events[i]);
+            if(e.cmd) e.cmd = newstring(e.cmd);
+        }
+        copyfrom(a.hashes, src.hashes, firstafter(src.hashes, from.tick));
+        a.settings = src.settings;
+        loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
         a.snapshot = from.state;
         a.starttick = from.tick;
-        a.chained = from.chained;
-        if(from.date) a.date = from.date;
-        loopv(a.settings) loopj(NUMSIMSETTINGS) if(!strcmp(a.settings[i].name, simsettings[j])) a.settings[i].value = from.settings[j];
-        int n = 0;
-        loopv(a.events) if(a.events[i].tick <= from.tick) { DELETEA(a.events[i].cmd); n++; } else break;
-        a.events.remove(0, n);
-        n = 0;
-        loopv(a.hashes) if(a.hashes[i].tick <= from.tick) n++; else break;
-        a.hashes.remove(0, n);
-        n = 0;
-        loopv(a.splices) if(a.splices[i].tick <= from.tick) n++; else break;
-        a.splices.remove(0, n);
-        n = 0;
-        loopv(a.timing) if(a.timing[i].segment < from.tick / REPLAYSEGMENTTICKS) n++; else break;
-        a.timing.remove(0, n);
-        n = 0;
-        loopv(a.raw) if(a.raw[i].tick <= from.tick) n++; else break;
-        a.raw.remove(0, n);
+        copyfrom(a.splices, src.splices, firstafter(src.splices, from.tick));
+        a.trace = src.trace;
+        a.files = src.files;
+        int timed = 0;
+        while(timed < src.timing.length() && src.timing[timed].segment < from.tick / REPLAYSEGMENTTICKS) timed++;
+        copyfrom(a.timing, src.timing, timed);
+        copyfrom(a.raw, src.raw, firstafter(src.raw, from.tick));
         // the last mark at or before the start still covers it
-        n = 0;
-        loopv(a.aids) if(a.aids[i].tick <= from.tick) n++; else break;
-        if(n > 1) a.aids.remove(0, n-1);
+        int marks = firstafter(src.aids, from.tick);
+        copyfrom(a.aids, src.aids, marks > 1 ? marks - 1 : 0);
+        a.seed = src.seed;
+        a.mapcrc = src.mapcrc;
+        a.date = from.date ? from.date : src.date;
+        copystring(a.player, src.player);
+        a.cfgcrc = src.cfgcrc;
+        a.hascfgcrc = src.hascfgcrc;
+        copystring(a.map, src.map);
+        copystring(a.team, src.team);
+        a.mode = src.mode;
+        a.flagrun = src.flagrun;
+        a.race = src.race;
+        a.hashgroups = src.hashgroups;
+        a.lifeseeds = src.lifeseeds;
+        a.chained = from.chained;
+        a.ticks = src.ticks;
     }
 
     // what cutattempt keeps of an attempt besides its events, hashes and timing
@@ -1280,7 +1307,7 @@ namespace game
             lastcontrols = c;
             havecontrols = true;
         }
-        vector<char> gui;
+        static vector<char> gui;
         float cx, cy;
         getmapguistate(gui, cx, cy);
         if(!haveguistate || strcmp(gui.getbuf(), lastgui.getbuf()) || floatbits(cx) != lastcursorx || floatbits(cy) != lastcursory)

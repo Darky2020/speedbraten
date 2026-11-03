@@ -1130,6 +1130,7 @@ namespace game
 
     void sendmessages()
     {
+        if(!sendcrc && !senditemstoserver && messages.empty() && !(remote && totalmillis-lastping>250)) return;
         packetbuf p(MAXTRANS);
         if(sendcrc)
         {
