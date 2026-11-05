@@ -193,8 +193,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download -R pal1000/mesa-dist-win -p '*release-msvc.7z' -O mesa.7z
+          # pinned: from 26.2.6 the release package has no opengl32.dll
+          gh release download 26.2.5 -R pal1000/mesa-dist-win -p 'mesa3d-26.2.5-release-msvc.7z' -O mesa.7z
           7z x -omesa mesa.7z x64 > /dev/null
+          test -f mesa/x64/opengl32.dll
           mkdir -p resimdata/bin64_speedbraten
           cp client/speedbraten_x86_64_client.exe bin64/*.dll mesa/x64/*.dll resimdata/bin64_speedbraten/
           rm -f resimdata/bin64_speedbraten/EOSSDK-*.dll
