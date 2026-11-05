@@ -50,6 +50,7 @@ const (
 	MsgMapData     = 119
 	MsgRaceMaps    = 120
 	MsgThumbData   = 121
+	MsgRelease     = 122
 
 	StateMenu    = 0
 	StatePlaying = 1

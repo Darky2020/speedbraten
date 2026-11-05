@@ -15,6 +15,8 @@ import (
 	"github.com/flynn/noise"
 
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"speedbraten/server/board"
 	"speedbraten/server/noisechan"
 	"speedbraten/server/sqlite"
@@ -1354,5 +1356,32 @@ func TestResultExtras(t *testing.T) {
 	}
 	if prev, rank, legacy, _, _, _ := result(3, 7900, 8000); prev != "carol" || rank != 1 || legacy {
 		t.Fatalf("improving it: prev %q rank %d legacy %v", prev, rank, legacy)
+	}
+}
+
+// The newest client release reaches players online when it changes, and later ones as they join.
+func TestRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(rw, `{"tag_name": "v0.3.11", "html_url": "https://example.com/v0.3.11", "name": "speedbraten v0.3.11"}`)
+	}))
+	defer srv.Close()
+	tag, page, err := LatestRelease(srv.Client(), srv.URL)
+	if err != nil || tag != "v0.3.11" || page != "https://example.com/v0.3.11" {
+		t.Fatalf("latest release %q %q %v", tag, page, err)
+	}
+
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	f.h.SetRelease(tag, page)
+	if m := a.expect(MsgRelease); m.r.str(64) != "v0.3.11" || m.r.str(256) != page || m.r.done() != nil {
+		t.Fatal("alice didn't hear of the release")
+	}
+	f.h.SetRelease(tag, page)
+	if _, ok := a.next(MsgRelease, 100*time.Millisecond); ok {
+		t.Fatal("the same release was sent again")
+	}
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	if m := b.expect(MsgRelease); m.r.str(64) != "v0.3.11" {
+		t.Fatal("bob didn't hear of the release on joining")
 	}
 }

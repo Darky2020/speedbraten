@@ -9,6 +9,7 @@
 #include "hubproto.h"
 
 extern bool findhubmapsfirst;
+extern int naturalsort(const char *a, const char *b);
 extern void reloadtexturefile(const char *name);
 
 namespace game
@@ -332,6 +333,18 @@ namespace game
             if(!hubsend(HM_GETTHUMB, p.getbuf(), p.length())) { thumbqueue.deletearrays(); thumbsasked = 0; return; }
             thumbsasked++;
         }
+    }
+
+    // says once per launch when the hub knows of a newer release than this client; not in
+    // development builds, whose version is a placeholder
+    static void releasenotice(const char *tag, const char *page)
+    {
+        static bool told = false;
+        ident *id = getident(SPEEDBRATEN_VERSIONVAR);
+        const char *mine = id && id->type == ID_SVAR ? *id->storage.s : "";
+        if(told || !mine[0] || mine[0] == '<' || !tag[0] || naturalsort(mine, tag) >= 0) return;
+        told = true;
+        conoutf(CON_GAMEINFO, "\f2speedbraten %s is out (you have %s): \f1%s", tag, mine, page);
     }
 
     static void thumbdata(const char *name, const uchar *data, int len)
@@ -1042,6 +1055,15 @@ namespace game
                     gettext(r, name, sizeof(name));
                     int role = int(r.var()), size = int(r.var()), offset = int(r.var());
                     if(r.ok) mapdata(name, role, size, offset, r.p, r.left());
+                    break;
+                }
+                case HM_RELEASE:
+                {
+                    string tag = "";
+                    char page[MAXSTRLEN] = "";
+                    gettext(r, tag, sizeof(tag));
+                    gettext(r, page, sizeof(page));
+                    if(r.ok) releasenotice(tag, page);
                     break;
                 }
                 case HM_NOTICE:

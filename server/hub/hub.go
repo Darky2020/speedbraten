@@ -71,6 +71,7 @@ type Hub struct {
 	byAddr      map[string]int
 	lobbies     map[uint64]*lobby
 	witness     []byte
+	release     []byte     // MsgRelease's payload, nil until the newest release is known
 	wdb         *sqlite.DB // the witness's database, for results
 	boards      *board.Store
 	maxView     int
@@ -376,6 +377,9 @@ func (h *Hub) join(p *player, want string) {
 	h.send(p, MsgRaceMaps, h.raceMapsMsg())
 	if h.witness != nil {
 		h.send(p, MsgWitness, h.witness)
+	}
+	if h.release != nil {
+		h.send(p, MsgRelease, h.release)
 	}
 	for _, q := range h.players {
 		if q.name != "" && q != p {

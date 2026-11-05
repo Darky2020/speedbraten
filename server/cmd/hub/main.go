@@ -2,6 +2,7 @@
 //
 //	hub -d <data dir> [-listen :28791] [-witness <host:port players use>] [-witnessask <host:port>]
 //	    [-witnessdb <witness.db>] [-admins <file>] [-discordbot <bot token file> -discord <channel ids | @file>]
+//	    [-releases <GitHub latest-release API URL>]
 //
 // The data dir holds hub.key (the channel's static private key, made on first start) and
 // hub.db. With -witness, the hub asks that witness (or -witnessask, when it is reached by
@@ -11,7 +12,8 @@
 // With -discordbot and -discord, the bot posts joins, leaves, chat and records to each of those
 // Discord channels and keeps a message there with the lobbies up to date, and what people post
 // there is shown to every player. The bot needs the Message Content intent, and View Channel,
-// Send Messages and Read Message History in the channels.
+// Send Messages and Read Message History in the channels. Every 30 minutes the hub asks GitHub
+// for the newest client release and tells players, whose clients say when theirs is older.
 package main
 
 import (
@@ -140,6 +142,7 @@ func main() {
 	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
 	maps := flag.String("maps", "", "game data dir whose packages/base maps players may download (the witness's)")
 	raceMaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), listed and downloadable")
+	releases := flag.String("releases", "https://api.github.com/repos/Darky2020/speedbraten/releases/latest", "GitHub API URL of the newest client release, \"\" for none")
 	discordBot := flag.String("discordbot", "", "file holding the Discord bot's token")
 	discordChannels := flag.String("discord", "", "Discord channel ids (comma-separated, or @file: one per line) for joins, leaves, chat, records and the lobbies, and whose messages players see")
 	flag.Parse()
@@ -177,6 +180,9 @@ func main() {
 	h, err := hub.New(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *releases != "" {
+		go h.ReleaseLoop(*releases, 30*time.Minute, log.Printf)
 	}
 	for _, ch := range channels {
 		r := discord.NewReader(discordToken, ch, 2*time.Second, log.Printf)
