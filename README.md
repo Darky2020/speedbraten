@@ -1,21 +1,46 @@
 # Speedbraten
 
-A client for speedrunning and flagrunning in Cube 2: Sauerbraten, built on top of
-[p1xbraten](https://github.com/sauerbraten/p1xbraten) (see
-[its docs](https://github.com/sauerbraten/p1xbraten/blob/main/README.md) for the features it
-adds).
+A client for speedrunning and flagrunning in Cube 2: Sauerbraten.
 
 Offline games in speedbraten are deterministic: the same map and the same inputs give exactly
 the same run, at any frame rate and on every supported system. Runs are timed by the game
 simulation, not the wall clock, and every run is recorded as a replay that plays back
 identically on any other computer.
 
+## What it does
+
+- **Witnessed runs and leaderboards:** a witness server watches your runs as you play them and
+  re-simulates each one, so a time on the leaderboards is a time that was really played. See the
+  boards in game with `/board` or on the leaderboard website.
+- **Play together online:** the hub shows who is online, with lobbies, chat, lobby players drawn
+  as ghosts, and live spectating of other players' runs.
+- **PB ghost and splits:** race your best run as a translucent ghost with a live time difference,
+  and see every split against your PB and your best segments.
+- **Replays of every run:** saved automatically and played back exactly, with a browser to find,
+  filter and keep them, and statistics of every run you've played.
+- **Practice tools:** save states, step back, instant resets and custom flagrun spawns.
+- **Flagruns, races and campaigns:** flagrun and race rules for offline play, browsable map lists
+  with pictures, and maps you don't have downloaded from the hub.
+- **Your choice of client:** built on p1xbraten, on plain Sauerbraten or on wc-ng.
+
+| | |
+|---|---|
+| ![A flagrun against the PB ghost, with the live difference under the timer](screenshots/ghost.jpg) | ![A split zone and the split on the HUD](screenshots/splits.jpg) |
+| Racing the PB ghost, with the live difference under the timer | A split zone, and the split against your PB and best segment |
+| ![A map's leaderboard with /board](screenshots/board.jpg) | ![The board above a flag](screenshots/flagboard.jpg) |
+| `/board`: the world record, top runs and your place | Above each flag: your best from it, the map PB and the top runs |
+| ![The race map browser](screenshots/racemaps.jpg) | ![Playing a replay](screenshots/replay.jpg) |
+| The race map browser | Playing back a replay |
+| ![A hub lobby's scoreboard](screenshots/lobby.jpg) | ![The replay browser](screenshots/replays.jpg) |
+| A hub lobby: live run times, session bests and PBs | The replay browser: filters, PBs and witness verdicts |
+
 ## Installation
 
 Speedbraten is added to an existing Sauerbraten 2020 installation on Windows (x64), Linux
-(x86_64 and ARM64) and macOS 11+ (Apple Silicon and Intel). Download it from the
+(x86_64 and ARM64) and macOS 11+ (Apple Silicon and Intel), in three builds: on p1xbraten, on plain
+Sauerbraten and on wc-ng. Download it from the
 [releases](https://github.com/Darky2020/speedbraten/releases) and follow
-[INSTALL.md](INSTALL.md).
+[INSTALL.md](INSTALL.md); the game says on launch when a newer release is out.
 
 ## Features
 
@@ -48,12 +73,14 @@ Open **speedrun..** in the main menu for the settings. Changes per release are i
   on. It's saved per map and mode.
 - **Fixed race start:** pick one of the map's playerstarts so every race starts in the same
   place. Switching respawns you there at once.
+- **Instant reset:** restarting a flagrun or race respawns you without reloading the map.
 - **Restart run** and **suicide + respawn** keys, and a speedometer (horizontal or 3D speed,
   optional smoothing).
 
 ### Splits and ghosts
 - **PB ghost:** a translucent copy of your best run plays alongside you, with a live time
-  difference to it. Your segmented PB, or any replay you pick, can be the ghost too.
+  difference to it. In flagruns it is the best run from the flag you took, and a local flagrun
+  starts on your PB's flag. Your segmented PB, or any replay you pick, can be the ghost too.
 - **Splits** per map and run kind, in any order, triggered by:
   - entering a zone marked in edit mode;
   - picking up a given item, or using a given teleport;
@@ -77,6 +104,18 @@ Open **speedrun..** in the main menu for the settings. Changes per release are i
   replays made with an older build, old replays, or all but the fastest N per map. They only
   run when you ask, with a preview before anything is deleted. Kept replays are never touched.
 
+### Online
+- **Witness:** runs on the speedbraten witness are streamed to it while you play and checked by
+  re-simulating them; witnessed runs go on the leaderboards. The console warns when a run you
+  start won't be witnessed, and why.
+- **Leaderboards:** `/board <map>` shows a map's world record, top runs and your place per flagrun
+  mode or race; the top runs can be watched or raced as ghosts. Equal times share a place.
+- **Hub:** who is online, lobbies with a shared scoreboard and finishes, global and lobby chat,
+  lobby players as ghosts, spectating, and announcements of new PBs and records. Hub chat and the
+  community's Discord channel see each other's messages.
+- **Map downloads:** race maps and maps you don't have come from the hub, and maps that changed
+  on the hub are downloaded again.
+
 ### Map fixes
 - **File patches:** speedbraten ships fixed versions of map files (for example missile path's
   script, `crnsp1.cfg`) in `speedbraten_overrides/`. They take priority over your own copies,
@@ -88,11 +127,3 @@ Open **speedrun..** in the main menu for the settings. Changes per release are i
 
 Found a replay that plays back differently? See
 [reporting a problem](INSTALL.md#reporting-a-problem-with-a-replay).
-
-## Roadmap
-
-- [x] Save states for practice
-- [x] Run statistics
-- [ ] Custom backgrounds
-- [ ] Server for watching other players' runs live, with chat
-- [ ] Run submission site that re-simulates submitted runs
