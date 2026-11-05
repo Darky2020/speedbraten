@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.11
+
+- The ghost diff near the flag now ends close to your finish time.
+- Flagrun finish line: your PB from that flag next to the map's PB.
+- A console warning when a run starts that won't be witnessed, with the reason.
+- Fewer stutters during runs and when a life ends.
+- Hub chat shows in the Discord channel; Discord messages show in game as [discord].
+- Equal times share a place on the leaderboards.
+- The console says when a newer release is out.
+
 ## v0.3.10
 
 - Restarting a campaign run no longer reloads the map; flagruns and races respawn instead.
