@@ -282,8 +282,8 @@ namespace game
     bool inputattemptwitnessed() { return attemptwitnessed; }
     static statestart *lifestart;
 
-    // a run began: say when the witness won't see it, and why
-    void inputrunbegan()
+    // says when the witness won't see the run that began, and why
+    static void warnunwitnessed()
     {
         if(replaying || recordingoff || inputreplayactive() || witnessstreaming()) return;
         const char *why = witnessstate() == WITNESS_IDLE ? "no witness is set" :
@@ -312,6 +312,15 @@ namespace game
     static vector<statestart *> lives;
     static const statestart nolife;
     static bool lifepending = false, lifesaved = false, chainpending = false;
+    // a run began at a spawn whose life (and its stream) starts at the next tick boundary, or at
+    // tick 1 for a map's first life
+    static bool runbeganpending = false;
+
+    void inputrunbegan()
+    {
+        if(lifepending) runbeganpending = true;
+        else warnunwitnessed();
+    }
     static int chainfrom = -1; // the witnessed run the pending chained start goes on from
     static int lifesavedbranch = -1, lifesavedtick = 0; // where the saved replay of this life ends
 
@@ -1208,7 +1217,12 @@ namespace game
         }
         replaystartstate = false;
         if(!curtick) takemapstartstate();
-        if(lifepending) { seedlife(); takelifestate(); }
+        if(lifepending)
+        {
+            seedlife();
+            takelifestate();
+            if(runbeganpending && curtick >= 1) { runbeganpending = false; warnunwitnessed(); }
+        }
         else if(chainpending) takechainstate();
         runstateops();
         runviewops();
@@ -1294,6 +1308,7 @@ namespace game
                 else witnessnextattempt(rec);
             }
             else witnesslife();
+            if(runbeganpending) { runbeganpending = false; warnunwitnessed(); }
             if(m_check(gamemode, M_DMSP | M_CLASSICSP) && recording.attempts.length() == 1) inputrunbegan();
             if(recording.attempts.length() == 1 || !hubviewing()) hubviewbegin(rec, rec, -1);
             else hubviewnextattempt(rec);
