@@ -669,6 +669,20 @@ namespace server
 
     // the next map change puts every client on this team instead of balancing teams
     void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
+    // the local player's team on this (local) server, NULL when there is none
+    const char *localteam()
+    {
+        loopv(clients) if(clients[i]->local) return clients[i]->team;
+        return NULL;
+    }
+
+    // puts the local player on a team at once, without the death of a team switch; the client sets
+    // its own team, as a message to it would be handled at once, inside the caller's message handling
+    void setlocalteam(const char *team)
+    {
+        if(!m_teammode || !addteaminfo(team)) return;
+        loopv(clients) if(clients[i]->local) copystring(clients[i]->team, team, MAXTEAMLEN+1);
+    }
 
     void autoteam()
     {

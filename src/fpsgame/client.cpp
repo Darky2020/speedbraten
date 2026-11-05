@@ -2023,6 +2023,13 @@ namespace game
                 fpsent *w = getclient(wn);
                 if(!w) return;
                 filtertext(w->team, text, false, false, MAXTEAMLEN);
+                // the welcome to a local game names the team from before its map load, which can have
+                // changed it (spawns.cpp): the local server's own record is current
+                if(w == player1 && !remote && !demoplayback)
+                {
+                    const char *team = server::localteam();
+                    if(team && team[0]) copystring(w->team, team, MAXTEAMLEN+1);
+                }
                 static const char * const fmt[2] = { "%s switched to team %s", "%s forced to team %s"};
                 if(reason >= 0 && size_t(reason) < sizeof(fmt)/sizeof(fmt[0]))
                     conoutf(fmt[reason], colorname(w), w->team);

@@ -1269,6 +1269,7 @@ namespace server
     extern void forcemap(const char *map, int mode);
     extern void forcepaused(bool paused);
     extern void forcenextteam(const char *team);
+    extern const char *localteam();
     extern bool flagrunactive();
     extern void forcenextflagrun(int on);
     extern bool racerulesactive();

@@ -7,6 +7,8 @@
 #include "sbcompat.h"
 #include "inputs.h"
 
+namespace server { extern void setlocalteam(const char *team); }
+
 namespace game
 {
     // the map's Nth playerstart (of the default spawn group) for race respawns, -1 random;
@@ -251,11 +253,34 @@ namespace game
     // Each team's saved spawn of this map and mode is applied on the first tick, and player1 placed
     // at their own team's (the team is not known yet here). A team without a file of its own takes
     // the spawn saved before spawns were per team.
+    // A flagrun's flag is the enemy's, so the player's team picks it: put the player on the team
+    // that takes the flag the map's PB was taken from. Flags are numbered in entity order, as
+    // ctf.h numbers them.
+    static void pbteam(const char *map)
+    {
+        int side = 0;
+        string file;
+        if(!statspbreplay(map, "flagrun", gamemode, false, side, file) || side <= 0) return;
+        const vector<extentity *> &ents = entities::getents();
+        int n = 0;
+        loopv(ents) if(ents[i]->type == FLAG && ents[i]->attr2 >= 1 && ents[i]->attr2 <= 2 && n++ == side-1)
+        {
+            const char *team = ents[i]->attr2 == 1 ? "evil" : "good";
+            if(strcmp(player1->team, team))
+            {
+                copystring(player1->team, team, MAXTEAMLEN+1);
+                server::setlocalteam(team);
+            }
+            return;
+        }
+    }
+
     void spawnmapstart(const char *map)
     {
         spawns[0].valid = spawns[1].valid = false;
         armedat = -1;
         if(multiplayer(false) || !m_ctf || !server::flagrunactive() || inputreplayactive()) return;
+        pbteam(map);
         for(int team = 1; team <= 2; team++)
         {
             string file;

@@ -2015,6 +2015,20 @@
                  killed(victim, actor);
                  if(actor!=victim && isteam(actor->team, victim->team)) actor->teamkills++; //NEW
                  break;
+@@ -2233,6 +2269,13 @@
+                 if(!w) return;
+                 static string teamold; copystring(teamold, w->team); //NEW
+                 filtertext(w->team, text, false, false, MAXTEAMLEN);
++                // the welcome to a local game names the team from before its map load, which can have
++                // changed it (spawns.cpp): the local server's own record is current
++                if(w == player1 && !remote && !demoplayback)
++                {
++                    const char *team = server::localteam();
++                    if(team && team[0]) copystring(w->team, team, MAXTEAMLEN+1);
++                }
+                 static const char * const fmt[2] = { "%s switched to team %s", "%s forced to team %s"};
+                 if(reason >= 0 && size_t(reason) < sizeof(fmt)/sizeof(fmt[0]))
+                     conoutf(fmt[reason], colorname(w), w->team);
 --- a/fpsgame/ctf.h
 +++ b/fpsgame/ctf.h
 @@ -330,6 +330,11 @@
@@ -2645,11 +2659,12 @@
      extern int chooserandomplayermodel(int seed);
      extern void swayhudgun(int curtime);
      extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);
-@@ -910,6 +933,13 @@
+@@ -910,6 +933,14 @@
      extern const char *getdemofile(const char *file, bool init);
      extern void forcemap(const char *map, int mode);
      extern void forcepaused(bool paused);
 +    extern void forcenextteam(const char *team);
++    extern const char *localteam();
 +    extern bool flagrunactive();
 +    extern void forcenextflagrun(int on);
 +    extern bool racerulesactive();
@@ -2659,7 +2674,7 @@
      extern void forcegamespeed(int speed);
      extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
      extern int msgsizelookup(int msg);
-@@ -917,5 +947,7 @@
+@@ -917,5 +948,7 @@
      extern bool delayspawn(int type);
  }
  
@@ -2826,10 +2841,11 @@
          }
  
          void cleanclipboard(bool fullclean = true)
-@@ -857,6 +884,15 @@
+@@ -856,6 +883,15 @@
+     servmode *smode = NULL;
  
      bool canspawnitem(int type) { return !m_noitems && (type>=I_SHELLS && type<=I_QUAD && (!m_noammo || type<I_SHELLS || type>I_CARTRIDGES)); }
- 
++
 +    // Race rules for ffa and coop edit: picked-up items are back at once, your own shots do
 +    // no damage to you (they still push you) and there is no time limit. Latched at each map
 +    // change.
@@ -2838,10 +2854,9 @@
 +    static int nextracerules = -1;
 +    bool racerulesactive() { return raceruleson; }
 +    void forcenextracerules(int on) { nextracerules = on; }
-+
+ 
      int spawntime(int type)
      {
-         if(m_classicsp) return INT_MAX;
 @@ -880,8 +916,10 @@
          return sec*1000;
      }
@@ -2862,7 +2877,7 @@
          sendf(-1, 1, "ri3", N_ITEMACC, i, sender);
          ci->state.pickup(sents[i].type);
          return true;
-@@ -959,6 +997,22 @@
+@@ -959,6 +997,36 @@
  
      VAR(persistteams, 0, 0, 1);
  
@@ -2881,11 +2896,25 @@
 +
 +    // the next map change puts every client on this team instead of balancing teams
 +    void forcenextteam(const char *team) { copystring(nextteam, team ? team : ""); }
++    // the local player's team on this (local) server, NULL when there is none
++    const char *localteam()
++    {
++        loopv(clients) if(clients[i]->local) return clients[i]->team;
++        return NULL;
++    }
++
++    // puts the local player on a team at once, without the death of a team switch; the client sets
++    // its own team, as a message to it would be handled at once, inside the caller's message handling
++    void setlocalteam(const char *team)
++    {
++        if(!m_teammode || !addteaminfo(team)) return;
++        loopv(clients) if(clients[i]->local) copystring(clients[i]->team, team, MAXTEAMLEN+1);
++    }
 +
      void autoteam()
      {
          static const char * const teamnames[2] = {"good", "evil"};
-@@ -1900,7 +1954,7 @@
+@@ -1900,7 +1968,7 @@
          sendstring(smapname, p);
          putint(p, gamemode);
          putint(p, notgotitems ? 1 : 0);
@@ -2894,7 +2923,7 @@
          {
              putint(p, N_TIMEUP);
              putint(p, gamemillis < gamelimit && !interm ? max((gamelimit - gamemillis)/1000, 1) : 0);
-@@ -2065,8 +2119,13 @@
+@@ -2065,8 +2133,13 @@
          aiman::clearai();
  
          gamemode = mode;
@@ -2909,7 +2938,7 @@
          interm = 0;
          nextexceeded = 0;
          copystring(smapname, s);
-@@ -2082,22 +2141,36 @@
+@@ -2082,22 +2155,36 @@
  
          if(!m_mp(gamemode)) kicknonlocalclients(DISC_LOCAL);
  
@@ -2950,7 +2979,7 @@
              if(m_mp(gamemode) && ci->state.state!=CS_SPECTATOR) sendspawn(ci);
          }
  
-@@ -2116,6 +2189,21 @@
+@@ -2116,6 +2203,21 @@
          if(smode) smode->setup();
      }
  
@@ -2972,7 +3001,7 @@
      void rotatemap(bool next)
      {
          if(!maprotations.inrange(curmaprotation))
-@@ -2285,6 +2373,7 @@
+@@ -2285,6 +2387,7 @@
      void dodamage(clientinfo *target, clientinfo *actor, int damage, int gun, const vec &hitpush = vec(0, 0, 0))
      {
          gamestate &ts = target->state;
@@ -2980,7 +3009,7 @@
          ts.dodamage(damage);
          if(target!=actor && !isteam(target->team, actor->team)) actor->state.damage += damage;
          sendf(-1, 1, "ri6", N_DAMAGE, target->clientnum, actor->clientnum, damage, ts.armour, ts.health);
-@@ -2386,7 +2475,7 @@
+@@ -2386,7 +2489,7 @@
      {
          gamestate &gs = ci->state;
          int wait = millis - gs.lastshot;
@@ -2989,7 +3018,7 @@
             wait<gs.gunwait ||
             gun<GUN_FIST || gun>GUN_PISTOL ||
             gs.ammo[gun]<=0 || (guns[gun].range && from.dist(to) > guns[gun].range + 1))
-@@ -2515,7 +2604,7 @@
+@@ -2515,7 +2618,7 @@
                              sents[i].spawned = true;
                              sendf(-1, 1, "ri2", N_ITEMSPAWN, i);
                          }
@@ -2998,7 +3027,7 @@
                          {
                              sendf(-1, 1, "ri2", N_ANNOUNCE, sents[i].type);
                          }
-@@ -2550,7 +2639,7 @@
+@@ -2550,7 +2653,7 @@
              {
                  if(demorecord) enddemorecord();
                  interm = -1;
@@ -3007,7 +3036,7 @@
              }
          }
  
-@@ -2582,6 +2671,11 @@
+@@ -2582,6 +2685,11 @@
      void checkmaps(int req = -1)
      {
          if(m_edit || !smapname[0]) return;
@@ -3019,7 +3048,7 @@
          vector<crcinfo> crcs;
          int total = 0, unsent = 0, invalid = 0;
          if(mcrc) crcs.add(crcinfo(mcrc, clients.length() + 1));
-@@ -2961,8 +3055,9 @@
+@@ -2961,8 +3069,9 @@
          if(mastermode>=MM_LOCKED) ci->state.state = CS_SPECTATOR;
          ci->state.lasttimeplayed = lastmillis;
  
@@ -3030,7 +3059,7 @@
  
          sendwelcome(ci);
          if(restorescore(ci)) sendresume(ci);
-@@ -3837,5 +3932,7 @@
+@@ -3837,5 +3946,7 @@
      }
  
      #include "aiman.h"
