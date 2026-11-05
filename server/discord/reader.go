@@ -199,6 +199,7 @@ func readable(m apiMessage) string {
 	text = roleMention.ReplaceAllString(text, "@role")
 	text = customEmoji.ReplaceAllString(text, "$1")
 	text = timestamp.ReplaceAllString(text, "(a time)")
+	text = emojiText(text)
 	text = strings.Join(strings.Fields(text), " ")
 	for _, a := range m.Attachments {
 		if text != "" {
@@ -208,3 +209,44 @@ func readable(m apiMessage) string {
 	}
 	return text
 }
+
+// the longest emoji sequence in the table, in runes
+const maxEmojiRunes = 10
+
+// emojiText writes emoji as their :short_name:, as Discord shows them typed: the game's font
+// has no emoji. Variation selectors and skin tones are dropped, and two regional indicator
+// letters are a flag (:flag_ua:).
+func emojiText(s string) string {
+	var rs []rune
+	for _, r := range s {
+		if r != 0xFE0F && (r < 0x1F3FB || r > 0x1F3FF) {
+			rs = append(rs, r)
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < len(rs); {
+		if regional(rs[i]) && i+1 < len(rs) && regional(rs[i+1]) {
+			fmt.Fprintf(&b, ":flag_%c%c:", 'a'+rs[i]-0x1F1E6, 'a'+rs[i+1]-0x1F1E6)
+			i += 2
+			continue
+		}
+		n := 0
+		if rs[i] >= 0x2000 {
+			for l := min(maxEmojiRunes, len(rs)-i); l > 0; l-- {
+				if name, ok := emojiNames[string(rs[i:i+l])]; ok {
+					b.WriteString(":" + name + ":")
+					n = l
+					break
+				}
+			}
+		}
+		if n == 0 {
+			b.WriteRune(rs[i])
+			n = 1
+		}
+		i += n
+	}
+	return b.String()
+}
+
+func regional(r rune) bool { return r >= 0x1F1E6 && r <= 0x1F1FF }

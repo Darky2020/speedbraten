@@ -77,7 +77,7 @@ func TestReader(t *testing.T) {
 	hook["webhook_id"] = "9"
 	join := msg("103", "sys", "")
 	join["type"] = 7
-	mention := msg("1000", "meep", "hi <@555> <:pog:123> <#88>")
+	mention := msg("1000", "meep", "hi <@555> <:pog:123> <#88> 😂")
 	mention["author"].(map[string]any)["global_name"] = "Meep"
 	mention["mentions"] = []map[string]any{{"id": "555", "username": "moop"}}
 	pic := msg("999", "moop", "")
@@ -85,7 +85,7 @@ func TestReader(t *testing.T) {
 	for _, m := range []map[string]any{bot, hook, join, pic, mention} {
 		add(m)
 	}
-	want := []Message{{"999", "umoop", "moop", "[run.png]"}, {"1000", "umeep", "Meep", "hi @moop :pog: #channel"}}
+	want := []Message{{"999", "umoop", "moop", "[run.png]"}, {"1000", "umeep", "Meep", "hi @moop :pog: #channel :joy:"}}
 	for _, w := range want {
 		select {
 		case m := <-got:
@@ -104,6 +104,23 @@ func TestReader(t *testing.T) {
 	for _, a := range auths() {
 		if a != "Bot tok" {
 			t.Fatalf("authorization %q", a)
+		}
+	}
+}
+
+// Emoji are written as the short names Discord shows; text the game's font can show is kept.
+func TestEmojiText(t *testing.T) {
+	for in, want := range map[string]string{
+		"gg 😂":           "gg :joy:",
+		"👍🏽 nice":        ":thumbsup: nice",
+		"❤️ ❤":           ":heart: :heart:",
+		"🇺🇦 🇬🇧":          ":flag_ua: :flag_gb:",
+		"👨‍👩‍👧 ok":       ":family_man_woman_girl: ok",
+		"Ňєkø © 1.5":     "Ňєkø © 1.5",
+		"run 🏁 at 4.900": "run :checkered_flag: at 4.900",
+	} {
+		if got := emojiText(in); got != want {
+			t.Errorf("emojiText(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
