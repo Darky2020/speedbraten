@@ -117,8 +117,16 @@ namespace game
             seg = !seg;
         }
         loadghost(file);
-        // a run picked for the flag of this run is that flag's best, not necessarily the map's
-        bool flagbest = side && found == side;
+        // a run picked for the flag of this run is that flag's best, which is called the flag's
+        // PB only when the map's PB is faster (from the other flag)
+        bool flagbest = false;
+        if(side && found == side)
+        {
+            runsummary summary;
+            statsrunsummary(first->map, kind, first->mode, seg, summary);
+            int best = statssidebest(first->map, kind, first->mode, seg, side);
+            flagbest = best >= 0 && summary.pb >= 0 && best > summary.pb;
+        }
         copystring(ghostlabel, label[0] ? label : seg ? (flagbest ? "flag seg PB" : "seg PB") : (flagbest ? "flag PB" : "PB"));
     }
 
