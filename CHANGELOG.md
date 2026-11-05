@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.12
+
+- No false "won't be witnessed" warning when a race starts.
+
 ## v0.3.11
 
 - The ghost diff near the flag now ends close to your finish time.
