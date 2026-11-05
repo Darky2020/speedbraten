@@ -9,6 +9,9 @@
 - Hub chat shows in the Discord channel; Discord messages show in game as [discord].
 - Equal times share a place on the leaderboards.
 - The console says when a newer release is out.
+- Flagruns start on the flag your map PB was run from.
+- The ghost is called PB when it is your map PB, flag PB only when the other flag's is faster.
+- Discord emoji and server nicknames show in game.
 
 ## v0.3.10
 
