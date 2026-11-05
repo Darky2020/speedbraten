@@ -205,6 +205,8 @@ namespace game
     bool runtimerfinished() { return runstate == RUN_FINISHED; }
     // which flag the flagrun was taken from, as the flag's index + 1; 0 before one is taken
     int runtimerflagside() { return runkind == RUNTIMER_FLAG && runflag >= 0 ? runflag + 1 : 0; }
+    // where the flagrun's flag was taken; false before one is taken
+    bool runtimertakenflag(vec &loc) { if(!runtimerflagside()) return false; loc = runflagloc; return true; }
 
     // the run kind as the statistics name it, NULL when nothing is timed
     const char *runtimerkindname()

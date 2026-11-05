@@ -184,6 +184,86 @@ namespace game
     }
 
     static const float DELTARANGE = 64; // farther from the ghost's path than this: no delta
+    // Within GOALFAR of touching the flag a flagrun is scored at, the difference moves toward the
+    // time at which the ghost was as far from touching it, fully at GOALNEAR: near the flag the
+    // nearest point on the ghost's path says little when the run approaches it on another line.
+    // The zone shrinks to the distances the ghost passed only once (a route can pass under the
+    // flag and come back to it), and the run has to be on the ghost's final approach.
+    static const float GOALFAR = 160, GOALNEAR = 64, GOALMIN = 24, GOALRADIUS = 16;
+
+    extern bool runtimertakenflag(vec &loc);
+
+    // the flag the ghost finished at and how far each of its samples was from touching it
+    struct ghostgoal
+    {
+        string file;
+        int map;
+        bool valid;
+        vec loc;
+        vector<float> left;
+        float far;
+        int enter; // the ghost's tick when it entered the zone for the last time
+        ghostgoal() : map(-1), valid(false), far(0), enter(0) { file[0] = '\0'; }
+    };
+    static ghostgoal goal;
+
+    static void setupgoal(int map)
+    {
+        if(goal.map == map && !strcmp(goal.file, ghostfile)) return;
+        copystring(goal.file, ghostfile);
+        goal.map = map;
+        goal.valid = false;
+        goal.left.setsize(0);
+        vec taken;
+        if(ghostruntime < 0 || strcmp(runtimerkindname(), "flagrun") || !runtimertakenflag(taken)) return;
+        int last = -1;
+        loopv(samples) if(samplemaps[i] == map) last = i;
+        if(last < 0) return;
+        vec end = vec(samples[last].o).subz(player1->eyeheight);
+        const vector<extentity *> &ents = entities::getents();
+        float best = GOALRADIUS + 8;
+        loopv(ents)
+        {
+            const extentity &e = *ents[i];
+            if(e.type != FLAG || e.attr2 < 1 || e.attr2 > 2 || e.o.dist(taken) < GOALRADIUS) continue;
+            float d = e.o.dist(end);
+            if(d < best) { best = d; goal.loc = e.o; goal.valid = true; }
+        }
+        if(!goal.valid) return;
+        loopv(samples) goal.left.add(samplemaps[i] == map ? vec(samples[i].o).subz(player1->eyeheight).dist(goal.loc) - GOALRADIUS : -1);
+        int finish = ghostruntime/SIMTICK;
+        float farthest = min(goal.left[last], 0.0f);
+        goal.far = GOALFAR;
+        for(int i = last; i >= 0; i--) if(samplemaps[i] == map && samples[i].tick <= finish)
+        {
+            if(farthest > goal.left[i] + 2) goal.far = min(goal.far, goal.left[i]);
+            farthest = max(farthest, goal.left[i]);
+        }
+        goal.enter = 0;
+        for(int i = last; i >= 0; i--) if(samplemaps[i] == map && goal.left[i] >= goal.far) { goal.enter = samples[i].tick; break; }
+        if(goal.far < GOALMIN) goal.valid = false;
+    }
+
+    // the latest ghost tick at which it was at least left from touching the flag; -1 if none
+    static float goaltick(int map, float left)
+    {
+        int finish = ghostruntime/SIMTICK, nexttick = finish;
+        float nextleft = 0;
+        for(int i = samples.length()-1; i >= 0; i--)
+        {
+            if(samplemaps[i] != map || samples[i].tick > finish) continue;
+            if(goal.left[i] >= left)
+            {
+                float f = goal.left[i] > nextleft ? clamp((goal.left[i] - left) / (goal.left[i] - nextleft), 0.0f, 1.0f) : 0;
+                return samples[i].tick + f*(nexttick - samples[i].tick);
+            }
+            nextleft = goal.left[i];
+            nexttick = samples[i].tick;
+        }
+        return -1;
+    }
+
+    static float goalweight = 0;
 
     // How far behind the ghost the player is, in ticks (negative: ahead): the run time minus
     // the time at which the ghost passed the point of its path closest to the player. Taken at
@@ -213,6 +293,22 @@ namespace game
             }
             else if(a.o.dist(p) < bestdist) { bestdist = a.o.dist(p); bestt = a.tick; }
         }
+        goalweight = 0;
+        setupgoal(map);
+        if(goal.valid && bestt >= goal.enter - 2*SAMPLETICKS)
+        {
+            float left = vec(p).subz(player1->eyeheight).dist(goal.loc) - GOALRADIUS,
+                  nearzone = min(GOALNEAR, goal.far*0.4f),
+                  w = clamp((goal.far - left) / (goal.far - nearzone), 0.0f, 1.0f),
+                  gt = w > 0 ? goaltick(map, left) : -1;
+            if(gt >= 0)
+            {
+                goalweight = w;
+                float near = t - bestt;
+                delta = int(floorf(near + (t - gt - near)*w + 0.5f));
+                return true;
+            }
+        }
         if(bestt < 0) return false;
         delta = t - bestt;
         return true;
@@ -223,6 +319,7 @@ namespace game
 
     // The difference can swing by a few ticks from one tick to the next; it is shown as an
     // exponential average over ghostdiffsmooth ms that snaps to big changes such as a state load.
+    // The average shortens toward the flag so that the last difference shown is the raw one.
     bool ghostdelta(int &delta)
     {
         static float shown = 0;
@@ -232,7 +329,8 @@ namespace game
         int dt = totalmillis - lastmillis;
         lastmillis = totalmillis;
         if(!valid || ghostdiffsmooth <= 0 || dt < 0 || dt > 1000 || fabs(lastdelta - shown) > 50) shown = lastdelta;
-        else shown += (lastdelta - shown) * (1 - expf(-dt / float(ghostdiffsmooth)));
+        else if(goalweight >= 1) shown = lastdelta;
+        else shown += (lastdelta - shown) * (1 - expf(-dt / (ghostdiffsmooth*(1 - goalweight))));
         valid = true;
         delta = int(floorf(shown + 0.5f));
         return true;
