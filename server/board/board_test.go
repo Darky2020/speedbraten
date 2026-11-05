@@ -94,15 +94,16 @@ func TestBoards(t *testing.T) {
 
 	got := entries(t, s, forge)
 	want := []struct {
+		rank int
 		run  int64
 		name string
 		ms   int64
-	}{{3, "alice", 9000}, {2, "bob4", 9500}, {5, "carol", 9500}}
+	}{{1, 3, "alice", 9000}, {2, 2, "bob4", 9500}, {2, 5, "carol", 9500}}
 	if len(got) != len(want) {
 		t.Fatalf("board %+v", got)
 	}
 	for i, w := range want {
-		if got[i].Rank != i+1 || got[i].Run != w.run || got[i].Name != w.name || got[i].MS != w.ms {
+		if got[i].Rank != w.rank || got[i].Run != w.run || got[i].Name != w.name || got[i].MS != w.ms {
 			t.Fatalf("entry %d: %+v, want %+v", i, got[i], w)
 		}
 	}
@@ -159,6 +160,30 @@ func TestBoards(t *testing.T) {
 	}
 	if len(forgeRecs) != 3 || forgeRecs[0].Run != 3 || forgeRecs[0].Prev != 9500 || forgeRecs[2].Run != 1 || forgeRecs[2].Prev != -1 {
 		t.Fatalf("records %+v", forgeRecs)
+	}
+}
+
+// Equal times share a rank and are listed earliest run first; the next time's rank counts
+// every entry above it.
+func TestTiedRanks(t *testing.T) {
+	f := newFixture(t)
+	f.run(1, "ka", "meep", "forge", "flagrun", 17, 4900, "valid")
+	f.run(3, "kc", "bob", "forge", "flagrun", 17, 5100, "valid")
+	f.run(2, "kb", "moop", "forge", "flagrun", 17, 5100, "valid")
+	f.run(4, "kd", "dan", "forge", "flagrun", 17, 5200, "valid")
+	s := f.open()
+	got := entries(t, s, Key{"forge", "flagrun", 17})
+	want := []struct {
+		rank int
+		run  int64
+	}{{1, 1}, {2, 2}, {2, 3}, {4, 4}}
+	if len(got) != len(want) {
+		t.Fatalf("board %+v", got)
+	}
+	for i, w := range want {
+		if got[i].Rank != w.rank || got[i].Run != w.run {
+			t.Fatalf("entry %d: run %d (%d ms) #%d, want run %d #%d", i, got[i].Run, got[i].MS, got[i].Rank, w.run, w.rank)
+		}
 	}
 }
 

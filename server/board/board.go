@@ -187,7 +187,8 @@ func (s *Store) load() error {
 		names[r[0]], named[r[0]] = r[1], true
 	}
 
-	// fastest first, so an install's first run on a board is its best; ties go to the earlier run
+	// fastest first, so an install's first run on a board is its best; equal times share a rank
+	// (1, 1, 3), listed in run order
 	if rows, err = s.witness.Query(`SELECT id, installkey, map, runkind, mode, runtimems, IFNULL(judged, 0)
 		FROM runs WHERE verdict = 'valid' AND runtimems > 0 AND IFNULL(map, '') != '' AND IFNULL(runkind, '') != ''
 		ORDER BY runtimems, id`); err != nil {
@@ -213,7 +214,11 @@ func (s *Store) load() error {
 		}
 		onboard[v.key][v.install] = true
 		b := boards[v.key]
-		b.Entries = append(b.Entries, Entry{Rank: len(b.Entries) + 1, Run: v.run, Install: v.install, Name: names[v.install], Registered: named[v.install], MS: v.ms, When: time.UnixMilli(v.when)})
+		rank := len(b.Entries) + 1
+		if n := len(b.Entries); n > 0 && b.Entries[n-1].MS == v.ms {
+			rank = b.Entries[n-1].Rank
+		}
+		b.Entries = append(b.Entries, Entry{Rank: rank, Run: v.run, Install: v.install, Name: names[v.install], Registered: named[v.install], MS: v.ms, When: time.UnixMilli(v.when)})
 		listed[v.run] = listing{kind: v.key.Kind, install: v.install, when: time.UnixMilli(v.when)}
 	}
 
