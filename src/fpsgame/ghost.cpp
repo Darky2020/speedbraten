@@ -201,9 +201,9 @@ namespace game
         bool valid;
         vec loc;
         vector<float> left;
-        float far;
+        float zone; // the farthest from the flag the goal is used at
         int enter; // the ghost's tick when it entered the zone for the last time
-        ghostgoal() : map(-1), valid(false), far(0), enter(0) { file[0] = '\0'; }
+        ghostgoal() : map(-1), valid(false), zone(0), enter(0) { file[0] = '\0'; }
     };
     static ghostgoal goal;
 
@@ -233,15 +233,15 @@ namespace game
         loopv(samples) goal.left.add(samplemaps[i] == map ? vec(samples[i].o).subz(player1->eyeheight).dist(goal.loc) - GOALRADIUS : -1);
         int finish = ghostruntime/SIMTICK;
         float farthest = min(goal.left[last], 0.0f);
-        goal.far = GOALFAR;
+        goal.zone = GOALFAR;
         for(int i = last; i >= 0; i--) if(samplemaps[i] == map && samples[i].tick <= finish)
         {
-            if(farthest > goal.left[i] + 2) goal.far = min(goal.far, goal.left[i]);
+            if(farthest > goal.left[i] + 2) goal.zone = min(goal.zone, goal.left[i]);
             farthest = max(farthest, goal.left[i]);
         }
         goal.enter = 0;
-        for(int i = last; i >= 0; i--) if(samplemaps[i] == map && goal.left[i] >= goal.far) { goal.enter = samples[i].tick; break; }
-        if(goal.far < GOALMIN) goal.valid = false;
+        for(int i = last; i >= 0; i--) if(samplemaps[i] == map && goal.left[i] >= goal.zone) { goal.enter = samples[i].tick; break; }
+        if(goal.zone < GOALMIN) goal.valid = false;
     }
 
     // the latest ghost tick at which it was at least left from touching the flag; -1 if none
@@ -298,14 +298,14 @@ namespace game
         if(goal.valid && bestt >= goal.enter - 2*SAMPLETICKS)
         {
             float left = vec(p).subz(player1->eyeheight).dist(goal.loc) - GOALRADIUS,
-                  nearzone = min(GOALNEAR, goal.far*0.4f),
-                  w = clamp((goal.far - left) / (goal.far - nearzone), 0.0f, 1.0f),
+                  nearzone = min(GOALNEAR, goal.zone*0.4f),
+                  w = clamp((goal.zone - left) / (goal.zone - nearzone), 0.0f, 1.0f),
                   gt = w > 0 ? goaltick(map, left) : -1;
             if(gt >= 0)
             {
                 goalweight = w;
-                float near = t - bestt;
-                delta = int(floorf(near + (t - gt - near)*w + 0.5f));
+                float nearest = t - bestt;
+                delta = int(floorf(nearest + (t - gt - nearest)*w + 0.5f));
                 return true;
             }
         }
