@@ -55,8 +55,9 @@ const (
 	StatePlaying = 1
 	StateRun     = 2
 
-	ChatGlobal = 0
-	ChatLobby  = 1
+	ChatGlobal  = 0
+	ChatLobby   = 1
+	ChatDiscord = 2 // MsgChatFrom only: a message from the Discord channel, to everyone
 
 	Prologue = "speedbraten/1 hub"
 )

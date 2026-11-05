@@ -181,3 +181,59 @@ func TestFeedRecords(t *testing.T) {
 		t.Fatalf("record from the witness: %q", posts)
 	}
 }
+
+// Global and lobby chat are posted to the feed, the lobby's lines with its map; text and names
+// can't be read as Discord markdown.
+func TestFeedChat(t *testing.T) {
+	f, feed := newFeedFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	feed.take()
+	a.chat(ChatGlobal, "hi *all* @everyone")
+	a.expectChat()
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	a.expectLobby()
+	a.chat(ChatLobby, "gl")
+	a.expectChat()
+	posts, _ := feed.take()
+	want := []string{`💬 **alice**: hi \*all\* \@everyone`, `💬 [lobby 🚩 forge] **alice**: gl`}
+	if len(posts) != len(want) || posts[0] != want[0] || posts[1] != want[1] {
+		t.Fatalf("posts %q, want %q", posts, want)
+	}
+}
+
+// A message from Discord reaches every named player as discord chat, is logged, and each
+// Discord user is held to the chat rate limit.
+func TestDiscordSay(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	nobody := f.connect(newKey(), "3.3.3.3", "")
+	f.h.DiscordSay("42", "  meep\f3 ", " hello\nthere ")
+	for _, x := range []*client{a, b} {
+		if got := x.expectChat(); got != (chatline{ChatDiscord, 0, "meep3", "hellothere"}) {
+			t.Fatalf("%s got %+v", x.name, got)
+		}
+	}
+	if _, ok := nobody.next(MsgChatFrom, 100*time.Millisecond); ok {
+		t.Fatal("an unnamed player hears discord chat")
+	}
+	for i := 0; i < int(TalkBurst)+2; i++ {
+		f.h.DiscordSay("42", "meep", "spam")
+	}
+	f.h.DiscordSay("43", "moop", "me too")
+	n := 0
+	for {
+		got := a.expectChat()
+		if got.name == "moop" {
+			break
+		}
+		n++
+	}
+	if n != int(TalkBurst)-1 {
+		t.Fatalf("%d more of meep's lines got through, want %d", n, int(TalkBurst)-1)
+	}
+	rows, err := f.h.st.db.Query("SELECT key, name, scope, text FROM chat ORDER BY rowid LIMIT 1")
+	if err != nil || len(rows) != 1 || rows[0][0] != "discord:42" || rows[0][2] != "2" {
+		t.Fatalf("chat log %v %v", rows, err)
+	}
+}

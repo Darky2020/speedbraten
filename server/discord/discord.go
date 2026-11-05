@@ -1,6 +1,7 @@
-// Package discord posts to a Discord channel through a webhook: plain messages, and one status
-// message that is edited in place. Sends are queued and made in order by one goroutine, waiting
-// out Discord's rate limits; mentions in the text never ping anyone.
+// Package discord talks to Discord channels as a bot: it posts plain messages and one status
+// message that is edited in place, and (reader.go) reads what people post. Sends are queued and
+// made in order by one goroutine, waiting out Discord's rate limits; mentions in the text never
+// ping anyone.
 package discord
 
 import (
@@ -11,6 +12,9 @@ import (
 	"strconv"
 	"time"
 )
+
+// API is Discord's REST API; tests point it elsewhere.
+var API = "https://discord.com/api/v10"
 
 const (
 	MaxLen   = 2000 // Discord's limit for a message's content
@@ -23,8 +27,9 @@ type job struct {
 	text   string
 }
 
-type Webhook struct {
-	url    string
+type Channel struct {
+	url    string // the channel's messages
+	token  string
 	client *http.Client
 	logf   func(string, ...any)
 	q      chan job
@@ -32,15 +37,15 @@ type Webhook struct {
 	done   chan struct{}
 }
 
-// New starts a webhook client for url (https://discord.com/api/webhooks/<id>/<token>).
-func New(url string, logf func(string, ...any)) *Webhook {
-	w := &Webhook{url: url, client: &http.Client{Timeout: 15 * time.Second}, logf: logf, q: make(chan job, queueLen), done: make(chan struct{})}
+// New starts posting to a channel, by its id, as the bot whose token it is.
+func New(token, channel string, logf func(string, ...any)) *Channel {
+	w := &Channel{url: API + "/channels/" + channel + "/messages", token: token, client: &http.Client{Timeout: 15 * time.Second}, logf: logf, q: make(chan job, queueLen), done: make(chan struct{})}
 	go w.run()
 	return w
 }
 
-// All sends the same feed to several webhooks, each with its own status message.
-type All []*Webhook
+// All sends the same feed to several channels, each with its own status message.
+type All []*Channel
 
 func (a All) Post(text string) {
 	for _, w := range a {
@@ -55,19 +60,19 @@ func (a All) Status(text string) {
 }
 
 // Post queues a message.
-func (w *Webhook) Post(text string) { w.enqueue(job{text: text}) }
+func (w *Channel) Post(text string) { w.enqueue(job{text: text}) }
 
 // Status sets the status message: the first one after an empty status is a new message, later
 // ones edit it. "" ends it, so the next status starts a new message.
-func (w *Webhook) Status(text string) { w.enqueue(job{status: true, text: text}) }
+func (w *Channel) Status(text string) { w.enqueue(job{status: true, text: text}) }
 
 // Close sends what is queued and stops.
-func (w *Webhook) Close() {
+func (w *Channel) Close() {
 	close(w.q)
 	<-w.done
 }
 
-func (w *Webhook) enqueue(j job) {
+func (w *Channel) enqueue(j job) {
 	select {
 	case w.q <- j:
 	default:
@@ -75,26 +80,26 @@ func (w *Webhook) enqueue(j job) {
 	}
 }
 
-func (w *Webhook) run() {
+func (w *Channel) run() {
 	defer close(w.done)
 	for j := range w.q {
 		switch {
 		case !j.status:
-			w.send("POST", w.url+"?wait=true", j.text)
+			w.send("POST", w.url, j.text)
 		case j.text == "":
 			w.status = ""
 		case w.status == "":
-			w.status = w.send("POST", w.url+"?wait=true", j.text)
+			w.status = w.send("POST", w.url, j.text)
 		default:
-			if w.send("PATCH", w.url+"/messages/"+w.status, j.text) == "" {
-				w.status = w.send("POST", w.url+"?wait=true", j.text)
+			if w.send("PATCH", w.url+"/"+w.status, j.text) == "" {
+				w.status = w.send("POST", w.url, j.text)
 			}
 		}
 	}
 }
 
 // send returns the message's id, "" when it failed
-func (w *Webhook) send(method, url, text string) string {
+func (w *Channel) send(method, url, text string) string {
 	if r := []rune(text); len(r) > MaxLen {
 		text = string(r[:MaxLen-1]) + "…"
 	}
@@ -106,6 +111,7 @@ func (w *Webhook) send(method, url, text string) string {
 			return ""
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bot "+w.token)
 		resp, err := w.client.Do(req)
 		if err != nil {
 			w.logf("discord: %v", err)

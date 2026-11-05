@@ -1,15 +1,17 @@
 // hub is the speedbraten hub server: names, presence, lobbies and chat (package hub).
 //
 //	hub -d <data dir> [-listen :28791] [-witness <host:port players use>] [-witnessask <host:port>]
-//	    [-witnessdb <witness.db>] [-admins <file>] [-discord <webhook urls | @file>]
+//	    [-witnessdb <witness.db>] [-admins <file>] [-discordbot <bot token file> -discord <channel ids | @file>]
 //
 // The data dir holds hub.key (the channel's static private key, made on first start) and
 // hub.db. With -witness, the hub asks that witness (or -witnessask, when it is reached by
 // another address from here) for its keys and hands address and keys to every player.
 // With -witnessdb (on the witness's machine) it announces PBs and records to everyone. The
 // admins file lists install keys (hex, one per line, # comments) allowed to #mute and #kick.
-// With -discord it posts joins, leaves and records to each of those Discord webhooks and keeps a
-// message there with the lobbies up to date.
+// With -discordbot and -discord, the bot posts joins, leaves, chat and records to each of those
+// Discord channels and keeps a message there with the lobbies up to date, and what people post
+// there is shown to every player. The bot needs the Message Content intent, and View Channel,
+// Send Messages and Read Message History in the channels.
 package main
 
 import (
@@ -138,7 +140,8 @@ func main() {
 	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
 	maps := flag.String("maps", "", "game data dir whose packages/base maps players may download (the witness's)")
 	raceMaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), listed and downloadable")
-	discordHook := flag.String("discord", "", "Discord webhook URLs (comma-separated, or @file: one per line) for joins, leaves, records and the lobbies")
+	discordBot := flag.String("discordbot", "", "file holding the Discord bot's token")
+	discordChannels := flag.String("discord", "", "Discord channel ids (comma-separated, or @file: one per line) for joins, leaves, chat, records and the lobbies, and whose messages players see")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -153,21 +156,31 @@ func main() {
 	if *raceMaps != "" {
 		cfg.Thumbs = filepath.Join(*dir, "thumbs")
 	}
-	if *discordHook != "" {
-		urls, err := readList(*discordHook)
+	var discordToken string
+	var channels []string
+	if *discordBot != "" || *discordChannels != "" {
+		token, err := os.ReadFile(*discordBot)
 		if err != nil {
+			log.Fatalf("-discordbot: %v", err)
+		}
+		if channels, err = readList(*discordChannels); err != nil {
 			log.Fatalf("-discord: %v", err)
 		}
-		var hooks discord.All
-		for _, url := range urls {
-			hooks = append(hooks, discord.New(url, log.Printf))
+		discordToken = strings.TrimSpace(string(token))
+		var all discord.All
+		for _, ch := range channels {
+			all = append(all, discord.New(discordToken, ch, log.Printf))
 		}
-		cfg.Feed = hooks
-		log.Printf("discord feed to %d webhooks", len(hooks))
+		cfg.Feed = all
+		log.Printf("discord: feed to and chat from %d channels", len(channels))
 	}
 	h, err := hub.New(cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+	for _, ch := range channels {
+		r := discord.NewReader(discordToken, ch, 2*time.Second, log.Printf)
+		go r.Run(nil, func(m discord.Message) { h.DiscordSay(m.AuthorID, m.Author, m.Text) })
 	}
 	if cfg.Feed != nil {
 		go func() {

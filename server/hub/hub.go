@@ -30,6 +30,7 @@ var (
 	MaxLobbies           = 1000
 	MaxLobbyMembers      = 32
 	MaxChat              = 200
+	MaxDiscordName       = 32
 	OutQueue             = 512
 	HandshakeTimeout     = 10 * time.Second
 	MsgRate, MsgBurst    = 30.0, 60.0
@@ -49,7 +50,7 @@ type Config struct {
 	// Thumbs: where the race maps' pictures are kept as small JPEGs made from
 	// <RaceMaps>/packages/base/screenshots/<map>.webp; none without it
 	Thumbs string
-	// Feed, if set, hears of joins, leaves, records and the lobbies (feed.go)
+	// Feed, if set, hears of joins, leaves, chat, records and the lobbies (feed.go)
 	Feed Feed
 	Now  func() time.Time
 	Logf func(format string, args ...any)
@@ -62,18 +63,19 @@ type Hub struct {
 	crcs     mapCRCs
 	thumbs   thumbSizes
 
-	mu        sync.Mutex
-	nextID    uint64
-	nextLobby uint64
-	players   map[uint64]*player
-	byKey     map[string]*player
-	byAddr    map[string]int
-	lobbies   map[uint64]*lobby
-	witness   []byte
-	wdb       *sqlite.DB // the witness's database, for results
-	boards    *board.Store
-	maxView   int
-	feed      feedState
+	mu          sync.Mutex
+	nextID      uint64
+	nextLobby   uint64
+	players     map[uint64]*player
+	byKey       map[string]*player
+	byAddr      map[string]int
+	lobbies     map[uint64]*lobby
+	witness     []byte
+	wdb         *sqlite.DB // the witness's database, for results
+	boards      *board.Store
+	maxView     int
+	feed        feedState
+	discordTalk map[string]*bucket // Discord user id -> its chat rate limit
 }
 
 type player struct {
@@ -709,6 +711,15 @@ func (h *Hub) relayPos(p *player, msg []byte) {
 	}
 }
 
+// cleanName is a name from outside the game cleaned like chat and cut to MaxDiscordName characters.
+func cleanName(s string) string {
+	s = cleanText(s)
+	if r := []rune(s); len(r) > MaxDiscordName {
+		s = strings.TrimSpace(string(r[:MaxDiscordName]))
+	}
+	return s
+}
+
 // cleanText keeps valid UTF-8 without control characters (colour codes included), trims
 // spaces and caps the length at MaxChat characters.
 func cleanText(s string) string {
@@ -776,6 +787,43 @@ func (h *Hub) chat(p *player, scope int, text string) {
 	w.str(text)
 	for _, q := range to {
 		h.send(q, MsgChatFrom, w.b)
+	}
+	h.feedChat(p, scope, text)
+}
+
+// DiscordSay shows a message from the Discord channel to every named player. user is the
+// Discord user's id, for the rate limit and the chat log.
+func (h *Hub) DiscordSay(user, name, text string) {
+	name, text = cleanName(name), cleanText(text)
+	if name == "" || text == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := h.cfg.Now()
+	if h.discordTalk == nil {
+		h.discordTalk = map[string]*bucket{}
+	}
+	b := h.discordTalk[user]
+	if b == nil {
+		b = &bucket{}
+		h.discordTalk[user] = b
+	}
+	if !b.take(now, TalkRate, TalkBurst) {
+		return
+	}
+	if err := h.st.logChat(now.Unix(), "discord:"+user, name, ChatDiscord, 0, text); err != nil {
+		h.cfg.Logf("chat log: %v", err)
+	}
+	var w writer
+	w.u(ChatDiscord)
+	w.u(0)
+	w.str(name)
+	w.str(text)
+	for _, q := range h.players {
+		if q.name != "" {
+			h.send(q, MsgChatFrom, w.b)
+		}
 	}
 }
 

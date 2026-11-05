@@ -838,7 +838,7 @@ namespace game
                     char text[1024] = "";
                     gettext(r, text, sizeof(text));
                     if(!r.ok) break;
-                    conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : "global", name, text);
+                    conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : scope == HUBCHAT_DISCORD ? "discord" : "global", name, text);
                     break;
                 }
                 case HM_FINISHED:

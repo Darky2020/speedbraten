@@ -9,8 +9,8 @@ import (
 	"speedbraten/server/board"
 )
 
-// Feed takes what the hub tells the outside world, such as a Discord channel: lines about players
-// and records, and a status of the lobbies that is kept up to date. Its methods are called in order,
+// Feed takes what the hub tells the outside world, such as a Discord channel: lines about players,
+// their chat and records, and a status of the lobbies that is kept up to date. Its methods are called in order,
 // sometimes with the hub's lock held, so they must not block.
 type Feed interface {
 	Post(text string)
@@ -97,6 +97,20 @@ func (h *Hub) FeedTick() {
 }
 
 func (h *Hub) feedPost(text string) { h.cfg.Feed.Post(text) }
+
+// feedChat: p said text in a scope. Runs with h.mu held.
+func (h *Hub) feedChat(p *player, scope int, text string) {
+	if h.cfg.Feed == nil {
+		return
+	}
+	where := ""
+	if scope == ChatLobby && p.lobby != nil {
+		l := p.lobby
+		k := board.Key{Map: l.mapname, Kind: l.kind, Mode: int(l.mode)}
+		where = fmt.Sprintf("[lobby %s %s] ", kindEmoji(l.kind), feedName(k.MapLabel()))
+	}
+	h.feedPost("💬 " + where + "**" + feedName(p.name) + "**: " + feedName(text))
+}
 
 // lobbyStatus is one line per lobby: its map and category, its members (the host first, crowned)
 // and who watches. Runs with h.mu held.

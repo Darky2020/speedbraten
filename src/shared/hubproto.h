@@ -43,7 +43,8 @@
 //                str kind, var count, count x (var spectator id, var id of the member it spectates)
 //                (spectators hear the lobby's chat and finishes)
 //   LOBBYGONE    var id
-//   CHATFROM     var scope, var from id, str name, str text
+//   CHATFROM     var scope, var from id, str name, str text - HUBCHAT_DISCORD: from the hub's Discord
+//                channel, from id 0
 //   NOTICE       str text
 //   POSFROM      var player id, then a POS payload (a lobby member on the same map and mode)
 //   SPECRUN      var player id, var run, str map, svar mode, str kind, var chained (1: the run goes on
@@ -78,7 +79,7 @@ enum
     HM_WELCOME = 101, HM_WITNESS, HM_PLAYER, HM_GONE, HM_LOBBY, HM_LOBBYGONE, HM_CHATFROM, HM_NOTICE, HM_FINISHED, HM_RESULT, HM_POSFROM, HM_SPECRUN, HM_SPECDATA, HM_SPECEND, HM_LOBBYSTAT, HM_BOARDROWS, HM_FLAGRUNMAPS, HM_REPLAYDATA, HM_MAPDATA, HM_RACEMAPS, HM_THUMBDATA
 };
 enum { HUBSTATE_MENU = 0, HUBSTATE_PLAYING, HUBSTATE_RUN };
-enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY };
+enum { HUBCHAT_GLOBAL = 0, HUBCHAT_LOBBY, HUBCHAT_DISCORD };
 enum { HUBPORT = 28791 };
 
 #endif
