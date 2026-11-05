@@ -12,7 +12,8 @@ import (
 	"time"
 )
 
-// Message is a message people posted in a channel, its mentions written out as text.
+// Message is a message people posted in a channel, its mentions written out as text. Author is
+// the poster's nickname on the server, else their display name.
 type Message struct {
 	ID       string
 	AuthorID string
@@ -29,7 +30,18 @@ type Reader struct {
 	logf           func(string, ...any)
 	mu             sync.Mutex
 	last           string // id of the newest message seen
+	guild          string // the channel's server, "" until known
+	nicks          map[string]nick
 }
+
+// nick is a member's name on the server, as last looked up
+type nick struct {
+	name    string
+	expires time.Time
+}
+
+// how long a looked-up server name is used before it is looked up again
+var NickTTL = 10 * time.Minute
 
 func NewReader(token, channel string, every time.Duration, logf func(string, ...any)) *Reader {
 	return &Reader{token: token, channel: channel, every: every, client: &http.Client{Timeout: 15 * time.Second}, logf: logf}
@@ -124,7 +136,6 @@ func (r *Reader) poll() ([]Message, time.Duration) {
 	sort.Slice(msgs, func(i, j int) bool { return idLess(msgs[i].ID, msgs[j].ID) })
 	var out []Message
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	for _, m := range msgs {
 		if idLess(r.last, m.ID) {
 			r.last = m.ID
@@ -139,32 +150,84 @@ func (r *Reader) poll() ([]Message, time.Duration) {
 		}
 		out = append(out, Message{ID: m.ID, AuthorID: m.Author.ID, Author: m.Author.name(), Text: text})
 	}
+	r.mu.Unlock()
+	for i := range out {
+		if n := r.nick(out[i].AuthorID); n != "" {
+			out[i].Author = n
+		}
+	}
 	return out, 0
 }
 
-func (r *Reader) get(query string) ([]apiMessage, time.Duration, error) {
-	req, err := http.NewRequest("GET", API+"/channels/"+r.channel+"/messages"+query, nil)
+// nick is the user's nickname on the channel's server, "" when they have none or it can't be
+// looked up
+func (r *Reader) nick(user string) string {
+	now := time.Now()
+	r.mu.Lock()
+	n, ok := r.nicks[user]
+	guild := r.guild
+	r.mu.Unlock()
+	if ok && now.Before(n.expires) {
+		return n.name
+	}
+	if guild == "" {
+		var ch struct {
+			Guild string `json:"guild_id"`
+		}
+		if _, err := r.getJSON("/channels/"+r.channel, &ch); err != nil || ch.Guild == "" {
+			if err != nil {
+				r.logf("discord reader: the channel's server: %v", err)
+			}
+			return n.name
+		}
+		guild = ch.Guild
+	}
+	var member struct {
+		Nick string `json:"nick"`
+	}
+	wait, err := r.getJSON("/guilds/"+guild+"/members/"+user, &member)
 	if err != nil {
-		return nil, 0, err
+		r.logf("discord reader: server name of %s: %v", user, err)
+	}
+	if err != nil || wait > 0 {
+		return n.name
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.guild = guild
+	if r.nicks == nil {
+		r.nicks = map[string]nick{}
+	}
+	r.nicks[user] = nick{member.Nick, now.Add(NickTTL)}
+	return member.Nick
+}
+
+func (r *Reader) get(query string) ([]apiMessage, time.Duration, error) {
+	var msgs []apiMessage
+	wait, err := r.getJSON("/channels/"+r.channel+"/messages"+query, &msgs)
+	return msgs, wait, err
+}
+
+// getJSON reads an API path into out, or says how long Discord asks to wait
+func (r *Reader) getJSON(path string, out any) (time.Duration, error) {
+	req, err := http.NewRequest("GET", API+path, nil)
+	if err != nil {
+		return 0, err
 	}
 	req.Header.Set("Authorization", "Bot "+r.token)
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return nil, retryAfter(resp, data), nil
+		return retryAfter(resp, data), nil
 	case resp.StatusCode >= 300:
-		return nil, 0, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(data)))
+		return 0, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(data)))
 	}
-	var msgs []apiMessage
-	if err := json.Unmarshal(data, &msgs); err != nil {
-		return nil, 0, err
-	}
-	return msgs, 0, nil
+	return 0, json.Unmarshal(data, out)
 }
 
 // Snowflakes are decimal numbers that grow with time.

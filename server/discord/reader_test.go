@@ -10,17 +10,32 @@ import (
 	"time"
 )
 
-// fakeChannel answers GET /channels/<id>/messages as Discord does, newest first; the first
-// limited calls get a 429
-func fakeChannel(t *testing.T, limited int) (add func(m map[string]any), auth func() []string) {
+// fakeChannel answers as Discord does for channel 77 on server 5: its messages (newest first),
+// the channel, and its members, of whom umeep has the nickname "Meep on server"; the first
+// limited message requests get a 429
+func fakeChannel(t *testing.T, limited int) (add func(m map[string]any), auth func() []string, members func() int) {
 	var mu sync.Mutex
 	var msgs []map[string]any
 	var auths []string
+	memberCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		auths = append(auths, r.Header.Get("Authorization"))
-		if r.URL.Path != "/channels/77/messages" {
+		switch r.URL.Path {
+		case "/channels/77":
+			fmt.Fprint(rw, `{"id": "77", "guild_id": "5"}`)
+			return
+		case "/guilds/5/members/umeep":
+			memberCalls++
+			fmt.Fprint(rw, `{"nick": "Meep on server", "user": {"id": "umeep"}}`)
+			return
+		case "/guilds/5/members/umoop":
+			memberCalls++
+			fmt.Fprint(rw, `{"nick": null, "user": {"id": "umoop"}}`)
+			return
+		case "/channels/77/messages":
+		default:
 			rw.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -50,23 +65,25 @@ func fakeChannel(t *testing.T, limited int) (add func(m map[string]any), auth fu
 	API = srv.URL
 	t.Cleanup(func() { API = old })
 	return func(m map[string]any) { mu.Lock(); msgs = append(msgs, m); mu.Unlock() },
-		func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), auths...) }
+		func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), auths...) },
+		func() int { mu.Lock(); defer mu.Unlock(); return memberCalls }
 }
 
 func msg(id, author, content string) map[string]any {
 	return map[string]any{"id": id, "type": 0, "content": content, "author": map[string]any{"id": "u" + author, "username": author}}
 }
 
-// A reader delivers what people post after it started, oldest first, and skips bots (the feed's
-// own posts), webhooks and system messages.
+// A reader delivers what people post after it started, oldest first, named by their server
+// nickname (looked up once) or display name, and skips bots (the feed's own posts), webhooks and
+// system messages.
 func TestReader(t *testing.T) {
-	add, auths := fakeChannel(t, 1)
+	add, auths, members := fakeChannel(t, 1)
 	add(msg("100", "old", "before the start"))
 	r := NewReader("tok", "77", 5*time.Millisecond, t.Logf)
 	got := make(chan Message, 10)
-	stop := make(chan struct{})
-	go r.Run(stop, func(m Message) { got <- m })
-	defer close(stop)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() { r.Run(stop, func(m Message) { got <- m }); close(done) }()
+	defer func() { close(stop); <-done }()
 	for r.newest() == "" {
 		time.Sleep(time.Millisecond)
 	}
@@ -82,10 +99,11 @@ func TestReader(t *testing.T) {
 	mention["mentions"] = []map[string]any{{"id": "555", "username": "moop"}}
 	pic := msg("999", "moop", "")
 	pic["attachments"] = []map[string]any{{"filename": "run.png"}}
-	for _, m := range []map[string]any{bot, hook, join, pic, mention} {
+	again := msg("1001", "meep", "again")
+	for _, m := range []map[string]any{bot, hook, join, pic, mention, again} {
 		add(m)
 	}
-	want := []Message{{"999", "umoop", "moop", "[run.png]"}, {"1000", "umeep", "Meep", "hi @moop :pog: #channel :joy:"}}
+	want := []Message{{"999", "umoop", "moop", "[run.png]"}, {"1000", "umeep", "Meep on server", "hi @moop :pog: #channel :joy:"}, {"1001", "umeep", "Meep on server", "again"}}
 	for _, w := range want {
 		select {
 		case m := <-got:
@@ -105,6 +123,9 @@ func TestReader(t *testing.T) {
 		if a != "Bot tok" {
 			t.Fatalf("authorization %q", a)
 		}
+	}
+	if n := members(); n != 2 {
+		t.Fatalf("%d server name lookups for 2 posters, want 2", n)
 	}
 }
 
