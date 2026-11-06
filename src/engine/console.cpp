@@ -234,12 +234,47 @@ void getbind(char *key, int type)
     result(km ? km->actions[type] : "");
 }   
 
+// Binds made by a map's script (its menus' actions, while mapbinding is set) last until the next
+// map load, which gives the player's own binds back, and are never saved.
+bool mapbinding = false;
+struct mapbind { int code, state; char *own; };
+static vector<mapbind> mapbinds;
+
+static const char *mapbindown(const keym &km, int state)
+{
+    loopv(mapbinds) if(mapbinds[i].code == km.code && mapbinds[i].state == state) return mapbinds[i].own;
+    return NULL;
+}
+
+void restoremapbinds()
+{
+    loopv(mapbinds)
+    {
+        mapbind &b = mapbinds[i];
+        keym *km = keyms.access(b.code);
+        if(!km) { delete[] b.own; continue; }
+        char *&binding = km->actions[b.state];
+        if(!keypressed || keyaction!=binding) delete[] binding;
+        binding = b.own;
+    }
+    mapbinds.setsize(0);
+}
+
 void bindkey(char *key, char *action, int state, const char *cmd)
 {
     if(identflags&IDF_OVERRIDDEN) { conoutf(CON_ERROR, "cannot override %s \"%s\"", cmd, key); return; }
     keym *km = findbind(key);
     if(!km) { conoutf(CON_ERROR, "unknown key \"%s\"", key); return; }
     char *&binding = km->actions[state];
+    if(mapbinding && !mapbindown(*km, state))
+    {
+        mapbind &b = mapbinds.add();
+        b.code = km->code;
+        b.state = state;
+        b.own = newstring(binding);
+    }
+    // the player's own bind replaces a map's for good
+    else if(!mapbinding) loopvrev(mapbinds) if(mapbinds[i].code == km->code && mapbinds[i].state == state) delete[] mapbinds.remove(i).own;
     if(!keypressed || keyaction!=binding) delete[] binding;
     // trim white-space to make searchbinds more reliable
     while(iscubespace(*action)) action++;
@@ -662,10 +697,11 @@ void writebinds(stream *f)
         loopv(binds)
         {
             keym &km = *binds[i];
-            if(*km.actions[j]) 
+            const char *own = mapbindown(km, j), *action = own ? own : km.actions[j];
+            if(*action)
             {
-                if(validateblock(km.actions[j])) f->printf("%s %s [%s]\n", cmds[j], escapestring(km.name), km.actions[j]);
-                else f->printf("%s %s %s\n", cmds[j], escapestring(km.name), escapestring(km.actions[j]));
+                if(validateblock(action)) f->printf("%s %s [%s]\n", cmds[j], escapestring(km.name), action);
+                else f->printf("%s %s %s\n", cmds[j], escapestring(km.name), escapestring(action));
             }
         }
     }

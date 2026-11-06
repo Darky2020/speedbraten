@@ -14,6 +14,9 @@ extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);
 extern int simspeedpercent;
+// set while a map's script runs: its binds last until restoremapbinds, at the next map load
+extern bool mapbinding;
+extern void restoremapbinds();
 
 struct rawevent
 {

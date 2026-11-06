@@ -1060,7 +1060,14 @@ namespace game
                 if(e.arg) conoutf(CON_ERROR, "replay command refused: %s", e.cmd);
                 else execute(e.cmd);
                 break;
-            case INPUT_MAPGUI: if(e.cmd && mapguiontop()) execute(e.cmd); break;
+            case INPUT_MAPGUI:
+                if(e.cmd && mapguiontop())
+                {
+                    mapbinding = true;
+                    execute(e.cmd);
+                    mapbinding = false;
+                }
+                break;
             case INPUT_GUI: setmapguistate(e.cmd ? e.cmd : "", bitsfloat(e.cursorx), bitsfloat(e.cursory)); break;
             case INPUT_ZOOM: zoom = e.arg; break;
             case INPUT_SETTING:
@@ -1467,6 +1474,7 @@ namespace game
 
     void inputmapstart(const char *name, int mode)
     {
+        restoremapbinds();
         if(!instantresetting) tellsmapload();
         respawnonkey = false;
         mapstartstate.setsize(0);

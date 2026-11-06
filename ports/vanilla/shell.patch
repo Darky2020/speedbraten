@@ -228,7 +228,56 @@
      clearsleep(*clearoverrides!=0 || identflags&IDF_OVERRIDDEN);
 --- a/engine/console.cpp
 +++ b/engine/console.cpp
-@@ -317,6 +317,7 @@
+@@ -226,6 +226,32 @@
+     keym *km = findbind(key);
+     result(km ? km->actions[type] : "");
+ }   
++
++// Binds made by a map's script (its menus' actions, while mapbinding is set) last until the next
++// map load, which gives the player's own binds back, and are never saved.
++bool mapbinding = false;
++struct mapbind { int code, state; char *own; };
++static vector<mapbind> mapbinds;
++
++static const char *mapbindown(const keym &km, int state)
++{
++    loopv(mapbinds) if(mapbinds[i].code == km.code && mapbinds[i].state == state) return mapbinds[i].own;
++    return NULL;
++}
++
++void restoremapbinds()
++{
++    loopv(mapbinds)
++    {
++        mapbind &b = mapbinds[i];
++        keym *km = keyms.access(b.code);
++        if(!km) { delete[] b.own; continue; }
++        char *&binding = km->actions[b.state];
++        if(!keypressed || keyaction!=binding) delete[] binding;
++        binding = b.own;
++    }
++    mapbinds.setsize(0);
++}
+ 
+ void bindkey(char *key, char *action, int state, const char *cmd)
+ {
+@@ -233,6 +259,15 @@
+     keym *km = findbind(key);
+     if(!km) { conoutf(CON_ERROR, "unknown key \"%s\"", key); return; }
+     char *&binding = km->actions[state];
++    if(mapbinding && !mapbindown(*km, state))
++    {
++        mapbind &b = mapbinds.add();
++        b.code = km->code;
++        b.state = state;
++        b.own = newstring(binding);
++    }
++    // the player's own bind replaces a map's for good
++    else if(!mapbinding) loopvrev(mapbinds) if(mapbinds[i].code == km->code && mapbinds[i].state == state) delete[] mapbinds.remove(i).own;
+     if(!keypressed || keyaction!=binding) delete[] binding;
+     // trim white-space to make searchbinds more reliable
+     while(iscubespace(*action)) action++;
+@@ -317,6 +352,7 @@
  
      void run()
      {
@@ -236,11 +285,10 @@
          if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
          else if(action)
          {
-@@ -366,9 +367,27 @@
- }
+@@ -367,8 +403,26 @@
  
  COMMAND(onrelease, "s");
-+
+ 
 +static int bindstate()
 +{
 +    if(mainmenu) return keym::ACTION_DEFAULT;
@@ -257,14 +305,14 @@
 +    const char *action = k->actions[state][0] ? k->actions[state] : k->actions[keym::ACTION_DEFAULT];
 +    return action[0] ? action : NULL;
 +}
- 
++
  void execbind(keym &k, bool isdown)
  {
 +    inputsourcescope src(k.code < 0 ? INPUTSRC_MOUSE : INPUTSRC_KEY);
      loopv(releaseactions)
      {
          releaseaction &ra = releaseactions[i];
-@@ -605,6 +624,7 @@
+@@ -605,6 +659,7 @@
          if(!consolekey(code, isdown))
          {
              if(modstate&KMOD_GUI) return;
@@ -272,7 +320,22 @@
              if(haskey) execbind(*haskey, isdown);
          }
      }
-@@ -655,6 +675,8 @@
+@@ -626,10 +681,11 @@
+         loopv(binds)
+         {
+             keym &km = *binds[i];
+-            if(*km.actions[j]) 
++            const char *own = mapbindown(km, j), *action = own ? own : km.actions[j];
++            if(*action)
+             {
+-                if(validateblock(km.actions[j])) f->printf("%s %s [%s]\n", cmds[j], escapestring(km.name), km.actions[j]);
+-                else f->printf("%s %s %s\n", cmds[j], escapestring(km.name), escapestring(km.actions[j]));
++                if(validateblock(action)) f->printf("%s %s [%s]\n", cmds[j], escapestring(km.name), action);
++                else f->printf("%s %s %s\n", cmds[j], escapestring(km.name), escapestring(action));
+             }
+         }
+     }
+@@ -655,6 +711,8 @@
          dir[--dirlen] = '\0';
  }
  
@@ -281,7 +344,7 @@
  struct filesval
  {
      int type;
-@@ -682,7 +704,11 @@
+@@ -682,7 +740,11 @@
              cleanfilesdir(buf);
              listfiles(buf, ext, files);
          }
