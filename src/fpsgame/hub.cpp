@@ -1789,19 +1789,42 @@ namespace game
         w.var(uint(*id));
         hubsend(HM_LOBBYJOIN, p.getbuf(), p.length());
     });
+    static void spectateplayer(const hubplayer &p)
+    {
+        spectatebegin(p.id, p.name, clientmap, gamemode, runkind());
+        vector<uchar> b;
+        sbr2::byteswriter w(b);
+        w.var(p.id);
+        hubsend(HM_SPECTATE, b.getbuf(), b.length());
+        conoutf("\f2waiting for %s's run", p.name);
+    }
     ICOMMAND(hubspectate, "i", (int *id),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
         if(remote) { conoutf(CON_ERROR, "leave the game server first"); return; }
         hubplayer *p = findplayer(uint(*id));
         if(!p || p->id == hubmyid) { conoutf(CON_ERROR, "no such player"); return; }
-        spectatebegin(p->id, p->name, clientmap, gamemode, runkind());
-        vector<uchar> b;
-        sbr2::byteswriter w(b);
-        w.var(p->id);
-        hubsend(HM_SPECTATE, b.getbuf(), b.length());
-        conoutf("\f2waiting for %s's run", p->name);
+        spectateplayer(*p);
     });
+    // nextfollow while spectating a hub player: the next (dir 1) or previous (dir -1) other player
+    // in a lobby, by hub id
+    bool hubspectatenext(int dir)
+    {
+        if(!spectating()) return false;
+        if(!hubready()) return true;
+        const hubplayer *best = NULL, *wrap = NULL;
+        uint cur = spectatingid();
+        loopv(hubplayers)
+        {
+            const hubplayer &p = hubplayers[i];
+            if(!p.lobby || p.id == hubmyid || p.id == cur) continue;
+            if(dir > 0 ? p.id > cur && (!best || p.id < best->id) : p.id < cur && (!best || p.id > best->id)) best = &p;
+            if(!wrap || (dir > 0 ? p.id < wrap->id : p.id > wrap->id)) wrap = &p;
+        }
+        if(!best) best = wrap;
+        if(best) spectateplayer(*best);
+        return true;
+    }
     static void sendstopspectate()
     {
         if(!hubready()) return;

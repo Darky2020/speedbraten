@@ -415,7 +415,7 @@ static int bindstate()
 {
     if(mainmenu) return keym::ACTION_DEFAULT;
     if(editmode) return keym::ACTION_EDITING;
-    if(player->state==CS_SPECTATOR) return keym::ACTION_SPECTATOR;
+    if(player->state==CS_SPECTATOR || game::spectating()) return keym::ACTION_SPECTATOR;
     return keym::ACTION_DEFAULT;
 }
 
@@ -447,7 +447,7 @@ void execbind(keym &k, bool isdown)
         if(!mainmenu)
         {
             if(editmode) state = keym::ACTION_EDITING;
-            else if(player->state==CS_SPECTATOR) state = keym::ACTION_SPECTATOR;
+            else if(player->state==CS_SPECTATOR || game::spectating()) state = keym::ACTION_SPECTATOR;
         }
         char *&action = k.actions[state][0] ? k.actions[state] : k.actions[keym::ACTION_DEFAULT];
         keyaction = action;

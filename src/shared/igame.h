@@ -100,6 +100,8 @@ namespace game
     // true when it used the event
     extern bool hudeditkey(int code, bool isdown);
     extern bool hudeditmove(int dx, int dy);
+    // a hub player's run is being spectated: the spectator binds apply
+    extern bool spectating();
     extern void tellsharness(); // a harness command changed the game: marks the run's provenance
     extern void begintick();
     extern void enddisplay();

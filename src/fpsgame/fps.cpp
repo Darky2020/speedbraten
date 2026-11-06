@@ -53,6 +53,7 @@ namespace game
 
     void nextfollow(int dir)
     {
+        if(hubspectatenext(dir)) return;
         if(player1->state!=CS_SPECTATOR || clients.empty())
         {
             stopfollowing();

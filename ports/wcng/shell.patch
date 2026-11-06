@@ -229,7 +229,7 @@
      clearsleep(*clearoverrides!=0 || identflags&IDF_OVERRIDDEN);
 --- a/engine/console.cpp
 +++ b/engine/console.cpp
-@@ -245,6 +245,32 @@
+@@ -245,13 +245,48 @@
      keym *km = findbind(key);
      result(km ? km->actions[type] : "");
  }   
@@ -245,7 +245,7 @@
 +    loopv(mapbinds) if(mapbinds[i].code == km.code && mapbinds[i].state == state) return mapbinds[i].own;
 +    return NULL;
 +}
-+
+ 
 +void restoremapbinds()
 +{
 +    loopv(mapbinds)
@@ -259,10 +259,10 @@
 +    }
 +    mapbinds.setsize(0);
 +}
- 
++
  void bindkey(char *key, char *action, int state, const char *cmd)
  {
-@@ -252,6 +278,15 @@
+     if(identflags&IDF_OVERRIDDEN) { conoutf(CON_ERROR, "cannot override %s \"%s\"", cmd, key); return; }
      keym *km = findbind(key);
      if(!km) { conoutf(CON_ERROR, "unknown key \"%s\"", key); return; }
      char *&binding = km->actions[state];
@@ -286,18 +286,19 @@
          if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
          else if(action)
          {
-@@ -458,8 +494,26 @@
+@@ -457,9 +493,27 @@
+ }
  
  COMMAND(onrelease, "s");
- 
++
 +static int bindstate()
 +{
 +    if(mainmenu) return keym::ACTION_DEFAULT;
 +    if(editmode) return keym::ACTION_EDITING;
-+    if(player->state==CS_SPECTATOR) return keym::ACTION_SPECTATOR;
++    if(player->state==CS_SPECTATOR || game::spectating()) return keym::ACTION_SPECTATOR;
 +    return keym::ACTION_DEFAULT;
 +}
-+
+ 
 +const char *getbindaction(int code)
 +{
 +    keym *k = keyms.access(code);
@@ -313,6 +314,15 @@
      loopv(releaseactions)
      {
          releaseaction &ra = releaseactions[i];
+@@ -476,7 +530,7 @@
+         if(!mainmenu)
+         {
+             if(editmode) state = keym::ACTION_EDITING;
+-            else if(player->state==CS_SPECTATOR) state = keym::ACTION_SPECTATOR;
++            else if(player->state==CS_SPECTATOR || game::spectating()) state = keym::ACTION_SPECTATOR;
+         }
+         char *&action = k.actions[state][0] ? k.actions[state] : k.actions[keym::ACTION_DEFAULT];
+         keyaction = action;
 @@ -699,6 +753,7 @@
          if(!consolekey(code, isdown))
          {
@@ -2287,7 +2297,15 @@
          if(player1->state!=CS_ALIVE || player1->physstate<PHYS_SLOPE) return;
          if(lastmillis-player1->lasttaunt<1000) return;
          player1->lasttaunt = lastmillis;
-@@ -224,9 +227,32 @@
+@@ -44,6 +47,7 @@
+ 
+     void nextfollow(int dir)
+     {
++        if(hubspectatenext(dir)) return;
+         if(player1->state!=CS_SPECTATOR || clients.empty())
+         {
+             stopfollowing();
+@@ -224,9 +228,32 @@
  
      VARFP(slowmosp, 0, 0, 1, { if(m_sp && !slowmosp) server::forcegamespeed(100); });
  
@@ -2321,7 +2339,7 @@
          server::forcegamespeed(intermission ? 100 : clamp(player1->health, 25, 200));
          if(player1->health<player1->maxhealth && lastmillis-max(maptime, lastslowmohealth)>player1->health*player1->health/2)
          {
-@@ -235,10 +261,17 @@
+@@ -235,10 +262,17 @@
          }
      }
  
@@ -2340,7 +2358,7 @@
  
          physicsframe();
          ai::navigate();
-@@ -257,8 +290,9 @@
+@@ -257,8 +291,9 @@
          {
              if(player1->state == CS_DEAD)
              {
@@ -2351,7 +2369,7 @@
                  {
                      player1->move = player1->strafe = 0;
                      moveplayer(player1, 10, true);
-@@ -278,7 +312,9 @@
+@@ -278,7 +313,9 @@
                  else if(cmode) cmode->checkitems(player1);
              }
          }
@@ -2362,7 +2380,7 @@
      }
  
      float proximityscore(float x, float lower, float upper)
-@@ -291,6 +327,8 @@
+@@ -291,6 +328,8 @@
  
      static inline float harmonicmean(float a, float b) { return a + b > 0 ? 2 * a * b / (a + b) : 0.0f; }
  
@@ -2371,7 +2389,7 @@
      // avoid spawning near other players
      float ratespawn(dynent *d, const extentity &e)
      {
-@@ -303,7 +341,7 @@
+@@ -303,7 +342,7 @@
              const fpsent *o = players[i];
              if(o == p)
              {
@@ -2380,7 +2398,7 @@
              }
              else if(o->state != CS_ALIVE || isteam(o->team, p->team)) continue;
  
-@@ -311,7 +349,7 @@
+@@ -311,7 +350,7 @@
              float dist = dir.squaredlen();
              if(dist >= minplayerdist*minplayerdist) continue;
              dist = sqrtf(dist);
@@ -2389,7 +2407,7 @@
  
              // scale actual distance if not in line of sight
              if(raycube(loc, dir, dist) < dist) dist *= 1.5f;
-@@ -325,6 +363,7 @@
+@@ -325,6 +364,7 @@
      {
          int ent = m_classicsp && d == player1 && respawnent >= 0 ? respawnent : -1;
          int tag = cmode ? cmode->getspawngroup(d) : 0;
@@ -2397,7 +2415,7 @@
          findplayerspawn(d, ent, tag);
      }
  
-@@ -364,14 +403,24 @@
+@@ -364,14 +404,24 @@
              }
          }
      }
@@ -2423,7 +2441,7 @@
          if(!connected || intermission) return;
          if((player1->attacking = on) && attackspawn) respawn();
      }
-@@ -380,11 +429,17 @@
+@@ -380,11 +430,17 @@
  
      bool canjump()
      {
@@ -2441,7 +2459,7 @@
      bool allowmove(physent *d)
      {
          if(d->type!=ENT_PLAYER) return true;
-@@ -419,7 +474,7 @@
+@@ -419,7 +475,7 @@
  
          if(d->health<=0) { if(local) killed(d, actor); }
          else if(d==h) playsound(S_PAIN6);
@@ -2450,7 +2468,7 @@
      }
  
      VARP(deathscore, 0, 1, 1);
-@@ -441,14 +496,14 @@
+@@ -441,14 +497,14 @@
              d->attacking = false;
              //d->pitch = 0;
              d->roll = 0;
@@ -2468,7 +2486,7 @@
          }
      }
  
-@@ -649,15 +704,35 @@
+@@ -649,15 +705,35 @@
      }
  
      VARP(showmodeinfo, 0, 1, 1);
@@ -2504,7 +2522,7 @@
  
          clearteaminfo();
  
-@@ -673,6 +748,7 @@
+@@ -673,6 +749,7 @@
              d->maxhealth = 100;
              d->lifesequence = -1;
              d->respawned = d->suicided = -2;
@@ -2512,7 +2530,7 @@
              d->teamkills = 0;
          }
  
-@@ -723,8 +799,12 @@
+@@ -723,8 +800,12 @@
          ai::clearwaypoints(true);
  
          respawnent = -1; // so we don't respawn at an old spot
@@ -2525,7 +2543,7 @@
          entities::resetspawns();
          copystring(clientmap, name ? name : "");
  
-@@ -796,6 +876,15 @@
+@@ -796,6 +877,15 @@
          return NULL;
      }
  
@@ -2541,7 +2559,7 @@
      bool duplicatename(fpsent *d, const char *name = NULL, const char *alt = NULL)
      {
          if(!name) name = d->name;
-@@ -871,7 +960,7 @@
+@@ -871,7 +961,7 @@
          else if(d->type==ENT_AI) suicidemonster((monster *)d);
          else if(d->type==ENT_INANIMATE) suicidemovable((movable *)d);
      }
@@ -2550,7 +2568,7 @@
  
      bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
  
-@@ -1160,11 +1249,21 @@
+@@ -1160,11 +1250,21 @@
  
          if(!m_edit && !m_sp)
          {
@@ -2573,7 +2591,7 @@
      //NEW
  
      MODVARP(showtimeleft, 0, 1, 1);
-@@ -1516,6 +1615,7 @@
+@@ -1516,6 +1616,7 @@
      const char *savedconfig() { return "config.cfg"; }
      const char *restoreconfig() { return "restore.cfg"; }
      const char *defaultconfig() { return "data/defaults.cfg"; }
@@ -3813,7 +3831,7 @@
      extern const char *autoexec();
      extern const char *wcautoexec(); //NEW
      extern const char *wcconfig(); //NEW
-@@ -79,16 +91,30 @@
+@@ -79,16 +91,32 @@
      extern void preload();
      extern float abovegameplayhud(int w, int h);
      extern void gameplayhud(int w, int h);
@@ -3838,6 +3856,8 @@
 +    // true when it used the event
 +    extern bool hudeditkey(int code, bool isdown);
 +    extern bool hudeditmove(int dx, int dy);
++    // a hub player's run is being spectated: the spectator binds apply
++    extern bool spectating();
 +    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
 +    extern void begintick();
 +    extern void enddisplay();
