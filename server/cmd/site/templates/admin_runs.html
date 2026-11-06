@@ -17,7 +17,7 @@
 {{range .Runs}}<tr{{if .Deleted}} class="faint"{{end}}><td class="num">{{.ID}}</td><td class="dim small">{{.Started}}</td>
 <td><a href="/admin/player?id={{.Player}}">{{.Name}}</a>{{if .Banned}} <span class="rejected small">banned</span>{{end}}</td>
 <td>{{.Map}}<div class="kind">{{.Kind}}</div></td>
-<td class="num">{{if .Finished}}<span class="time">{{.Length}}</span>{{else}}<span class="dim">{{.Length}}</span><div class="kind">unfinished</div>{{end}}</td>
+<td class="num">{{if .Reached}}<span class="time">{{.Length}}</span><div class="kind">finished</div>{{else}}<span class="dim">{{.Length}}</span><div class="kind">{{if not .Finished}}stream cut short{{else if .Verdict}}DNF{{end}}</div>{{end}}</td>
 <td>{{if .Verdict}}<span class="{{.Verdict}}">{{.Verdict}}</span>{{else}}<span class="dim">{{if .Finished}}not judged yet{{else}}stopped{{end}}</span>{{end}}{{if .Deleted}} <span class="rejected small">deleted</span>{{end}}<div class="kind">{{if .Reason}}{{.Reason}}{{else}}{{.Stop}}{{end}}</div></td>
 <td class="num dim small">{{if .Violations}}{{.Violations}} viol.<br>{{end}}{{.Lag}} ms</td>
 <td class="small"><a href="/admin/file?run={{.ID}}">file</a>

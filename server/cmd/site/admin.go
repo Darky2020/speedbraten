@@ -142,6 +142,8 @@ type runRow struct {
 	ID, Started, Install, Player, Name, Map, Kind, Length, Verdict, Reason, Stop, Lag string
 	Violations                                                                        int64
 	Finished, Deleted, Banned                                                         bool
+	// Reached: the run got to its goal (a judged run without a time is a DNF)
+	Reached bool
 }
 
 type runFilter struct {
@@ -150,7 +152,7 @@ type runFilter struct {
 }
 
 var (
-	runVerdicts = []option{{"", "any verdict"}, {"valid", "valid"}, {"rejected", "rejected"}, {"unverified", "unverified"}, {"none", "no verdict"}, {"unfinished", "unfinished"}}
+	runVerdicts = []option{{"", "any verdict"}, {"valid", "valid"}, {"rejected", "rejected"}, {"unverified", "unverified"}, {"none", "no verdict"}, {"finished", "finished runs"}, {"dnf", "DNF"}, {"unfinished", "stream cut short"}}
 	runKinds    = []option{{"", "any kind"}, {"flagrun", "flagrun"}, {"race", "race"}, {"campaign", "campaign"}, {"dmsp", "dmsp"}}
 	runModes    = []option{{"", "any mode"}, {"11", "ctf"}, {"12", "insta ctf"}, {"17", "effic ctf"}, {"0", "ffa"}, {"1", "coop edit"}, {"-3", "SP"}, {"-2", "DMSP"}}
 	runProblems = []option{{"", "any problems"}, {"violations", "with violations"}, {"lag", "lag over"}}
@@ -224,6 +226,10 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		args = append(args, f.Verdict)
 	case "none":
 		where = append(where, "verdict IS NULL AND IFNULL(finished, 0) = 1")
+	case "finished":
+		where = append(where, "IFNULL(runtimems, 0) > 0")
+	case "dnf":
+		where = append(where, "verdict IS NOT NULL AND IFNULL(runtimems, 0) = 0")
 	case "unfinished":
 		where = append(where, "IFNULL(finished, 0) = 0")
 	}
@@ -311,7 +317,7 @@ func (a *admin) runs(w http.ResponseWriter, r *http.Request) {
 		k := board.Key{Map: v[3], Kind: v[4], Mode: mode}
 		rr := runRow{ID: v[0], Started: when(v[1]), Install: v[2], Player: player, Name: a.store.Name(player), Map: k.MapLabel(), Kind: k.KindLabel(),
 			Verdict: v[7], Reason: v[8], Stop: v[9], Violations: viol, Lag: v[11], Finished: v[12] == "1",
-			Deleted: a.store.IsRemoved(id), Banned: banned[player]}
+			Deleted: a.store.IsRemoved(id), Banned: banned[player], Reached: ms > 0}
 		if rr.Name == "" {
 			rr.Name = shortKey(player)
 		}

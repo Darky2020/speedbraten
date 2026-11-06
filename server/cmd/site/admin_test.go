@@ -414,3 +414,43 @@ func TestAdminReplayDelay(t *testing.T) {
 		t.Fatalf("a negative delay: %d", w.Code)
 	}
 }
+
+// Each run says whether it got to its goal: a finish time, DNF for a judged run without one, or a
+// stream that was cut short; the verdict filter picks finished runs and DNFs.
+func TestAdminRunResults(t *testing.T) {
+	f := newAdminFixture(t)
+	w, err := sqlite.Open(filepath.Join(f.dir, "witness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if _, err := w.Exec("INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, started, ended, finished) VALUES(6, 3, 'kc', 'forge', 'carl', 'flagrun', 17, 0, 'valid', 1792900020000, 1792900010000, 1792900014000, 1)"); err != nil {
+		t.Fatal(err)
+	}
+	cell := func(body, id string) string {
+		m := regexp.MustCompile(`<td class="num">` + id + `</td>(?s:.*?)<td class="num">(.*?)</td>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("run %s not listed", id)
+		}
+		return m[1]
+	}
+	body := f.do("GET", "/admin/runs", password, nil, "10.0.0.1").Body.String()
+	for id, want := range map[string]string{"1": "finished", "6": "DNF", "5": "stream cut short"} {
+		if got := cell(body, id); !strings.Contains(got, want) {
+			t.Errorf("run %s length cell %q, want %q", id, got, want)
+		}
+	}
+	ids := func(target string) string {
+		var out []string
+		for _, m := range regexp.MustCompile(`<td class="num">(\d+)</td>`).FindAllStringSubmatch(f.do("GET", target, password, nil, "10.0.0.1").Body.String(), -1) {
+			out = append(out, m[1])
+		}
+		return strings.Join(out, " ")
+	}
+	if got := ids("/admin/runs?verdict=dnf"); got != "6" {
+		t.Errorf("DNF filter: %q", got)
+	}
+	if got := ids("/admin/runs?verdict=finished&sort=old"); got != "1 2 3 4" {
+		t.Errorf("finished filter: %q", got)
+	}
+}
