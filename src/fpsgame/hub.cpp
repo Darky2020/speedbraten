@@ -1682,6 +1682,18 @@ namespace game
         spectatestop();
         autolobbydue = true;
     });
+    // spectates again the player watched before a replay was opened, if they are still on the hub
+    void hubspectateresume(uint target)
+    {
+        hubplayer *p = target && hubready() && !remote ? findplayer(target) : NULL;
+        if(!p || p->id == hubmyid) return;
+        spectateresume(p->id, p->name);
+        vector<uchar> b;
+        sbr2::byteswriter w(b);
+        w.var(p->id);
+        hubsend(HM_SPECTATE, b.getbuf(), b.length());
+        conoutf("\f2waiting for %s's run", p->name);
+    }
     void hubspectateleave()
     {
         if(!spectating()) return;

@@ -356,6 +356,10 @@ namespace game
     extern void spectateend(const char *why);
     extern void spectatestop();
     extern void spectatequit();
+    extern void spectatepause();
+    extern uint spectatepausedtarget();
+    extern void spectateresume(uint target, const char *name);
+    extern void hubspectateresume(uint target);
     extern void spectateupdate();
     // a map the player loads while spectating ends the spectating (hub.cpp)
     extern void hubspectateleave();

@@ -748,6 +748,10 @@ namespace game
 
     void viewinputrun(const inputrun &src, const char *file)
     {
+        // the spectated run's playback would hold this one until its own data came in; leaving the
+        // replay watches that player again
+        if(!replayviewing) spectatepause();
+        hubspectateleave();
         if(!replayviewing)
         {
             copystring(replayreturnmap, connected ? getclientmap() : "");
@@ -784,8 +788,10 @@ namespace game
             restoresettings();
             releasecontrols();
         }
+        uint spectated = spectatepausedtarget();
         if(replayreturnmap[0]) changemap(replayreturnmap, replayreturnmode);
         else execute("disconnect");
+        hubspectateresume(spectated);
     }
 
     static const viewstate *seekstate = NULL;

@@ -113,6 +113,27 @@ namespace game
     // stops without going back, for a map load that follows straight away
     void spectatequit() { if(spectarget) spectatefinish(false); }
 
+    // who was being watched when a replay was opened, and where spectating was to return to, so
+    // that leaving the replay watches them again
+    static uint pausedtarget = 0;
+    static string pausedmap = "", pausedkind = "";
+    static int pausedmode = 0;
+
+    void spectatepause()
+    {
+        pausedtarget = spectarget;
+        copystring(pausedmap, returnmap);
+        copystring(pausedkind, returnkind);
+        pausedmode = returnmode;
+    }
+
+    uint spectatepausedtarget() { uint t = pausedtarget; pausedtarget = 0; return t; }
+
+    void spectateresume(uint target, const char *name)
+    {
+        spectatebegin(target, name, pausedmap, pausedmode, pausedkind);
+    }
+
     // harness: the spectate state
     ICOMMAND(spectatestate, "", (),
     {
