@@ -29,8 +29,8 @@ identically on any other computer.
 | Racing the PB ghost, with the live difference under the timer | A split zone, and the split against your PB and best segment |
 | ![A map's leaderboard with /board](screenshots/board.jpg) | ![The board above a flag](screenshots/flagboard.jpg) |
 | `/board`: the world record, top runs and your place | Above each flag: your best from it, the map PB and the top runs |
-| ![The race map browser](screenshots/racemaps.jpg) | ![Playing a replay](screenshots/replay.jpg) |
-| The race map browser | Playing back a replay |
+| ![The race map browser](screenshots/racemaps.jpg) | ![Playing a replay with the input display](screenshots/replay.jpg) |
+| The race map browser | Playing back a replay, with its keys and mouse movement |
 | ![A hub lobby's scoreboard](screenshots/lobby.jpg) | ![The replay browser](screenshots/replays.jpg) |
 | A hub lobby: live run times, session bests and PBs | The replay browser: filters, PBs and witness verdicts |
 
