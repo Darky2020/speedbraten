@@ -421,6 +421,18 @@ namespace game
         intret(browsedmaps.length());
     });
     ICOMMAND(mapbrowsename, "i", (int *i), result(browsedmaps.inrange(*i) ? browsedmaps[*i] : ""));
+    // a random one of the browsed maps other than the current one, "" if none; drawn from its own
+    // generator, as the game's random numbers belong to the simulation
+    ICOMMAND(mapbrowserandom, "", (),
+    {
+        static uint state = 0;
+        if(!state) state = (uint(time(NULL)) ^ (uint(totalmillis) << 16)) | 1;
+        vector<int> picks;
+        loopv(browsedmaps) if(strcmp(browsedmaps[i], getclientmap()) || browsedmaps.length() == 1) picks.add(i);
+        if(picks.empty()) { result(""); return; }
+        state ^= state << 13; state ^= state >> 17; state ^= state << 5;
+        result(browsedmaps[picks[state % uint(picks.length())]]);
+    });
 
     static void hubreset()
     {
