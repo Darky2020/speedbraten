@@ -294,6 +294,7 @@ namespace game
     extern void witnessstop(const char *reason);
     extern int replaylongestidle(const inputrun &run);
     extern bool readreplay(const char *file, inputrun *run, replayinfo &info);
+    extern bool readlegacyghost(const char *file, inputrun &run, replayinfo &info, int &side);
     extern bool readreplayprefix(const char *file, inputrun &run, replayinfo &info, int &known);
     // content: the replay's SBR2 content hash (32 bytes), or NULL
     extern void statsrecord(const inputrun &run, const replayinfo &info, const char *replay, const uchar *content = NULL);

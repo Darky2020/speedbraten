@@ -995,6 +995,40 @@ namespace game
         return buf.length() >= 4 && !memcmp(buf.getbuf(), "SBR2", 4) && readsbr2prefix(file, buf, run, info, known);
     }
 
+    // A legacy flagrun record's ghost (tools/legacyflagruns.py): gzip of "SBGH", var version, str
+    // map, var mode, var side (the taken flag's index + 1, 0 unknown), var runtime ms, str holder,
+    // str date, then a gHST payload without the attempt index. Read as a finished flagrun whose one
+    // attempt has only the path.
+    bool readlegacyghost(const char *file, inputrun &run, replayinfo &info, int &side)
+    {
+        run.clear();
+        info = replayinfo();
+        stream *f = opengzfile(path(file, true), "rb");
+        if(!f) return false;
+        vector<uchar> buf;
+        uchar chunk[65536];
+        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0 && buf.length() < (4<<20);) buf.put(chunk, int(n));
+        delete f;
+        if(buf.length() < 4 || memcmp(buf.getbuf(), "SBGH", 4)) return false;
+        sbr2::bytesreader r(buf.getbuf() + 4, buf.length() - 4);
+        if(r.var() != 1) return false;
+        string s, date;
+        if(!r.str(s, sizeof(s))) return false;
+        fromutf8(info.map, s);
+        info.mode = int(r.var());
+        side = int(r.var());
+        info.runtime = int(r.var());
+        if(!r.str(s, sizeof(s)) || !r.str(date, sizeof(date))) return false;
+        fromutf8(info.player, s);
+        info.flagrun = info.finished = info.started = info.maps = 1;
+        inputattempt &a = run.add();
+        copystring(a.map, info.map);
+        copystring(a.player, info.player);
+        a.mode = info.mode;
+        a.flagrun = 1;
+        return r.ok && readtrace(r, a) && !r.left() && a.trace.length() > 0;
+    }
+
     bool writereplay(const char *file, const inputrun &run, const replayinfo &info, uchar *content)
     {
         return writesbr2(file, run, info, content);

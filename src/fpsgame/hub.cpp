@@ -41,9 +41,10 @@ namespace game
     {
         string map, kind, legacyname, legacysource;
         int mode, myrank, myms, legacyms;
+        int legacyfiles; // a bit per LEGACY_ file the hub has
         vector<boardrow> rows;
         bool have;
-        hubboard() : mode(0), myrank(0), myms(0), legacyms(0), have(false) { map[0] = kind[0] = legacyname[0] = legacysource[0] = '\0'; }
+        hubboard() : mode(0), myrank(0), myms(0), legacyms(0), legacyfiles(0), have(false) { map[0] = kind[0] = legacyname[0] = legacysource[0] = '\0'; }
     };
     // the maps flagrun boards are kept for, as the hub last sent them
     static vector<char *> flagrunmaps, racemaps;
@@ -100,16 +101,42 @@ namespace game
         return s;
     }
 
-    // A board run's replay being downloaded into replays/downloaded/, then watched or raced as a ghost.
+    // A board run's replay being downloaded into replays/downloaded/, then watched or raced as a ghost;
+    // or a board's legacy record file (downloadlegacy >= 0).
     static uint downloadrun = 0;
+    static int downloadlegacy = -1, downloadmode = 0;
     static bool downloadwatch = false;
-    static string downloadfile = "", downloadlabel = "";
+    static string downloadfile = "", downloadlabel = "", downloadmap = "";
     static vector<uchar> downloaddata;
 
     static void replaydownloadend()
     {
         downloadrun = 0;
+        downloadlegacy = -1;
         downloaddata.setsize(0);
+    }
+
+    static bool downloading() { return downloadrun || downloadlegacy >= 0; }
+
+    // adds a piece of the download; true once the whole file is saved
+    static bool downloadpiece(int size, int offset, const uchar *data, int len)
+    {
+        if(!size) { replaydownloadend(); return false; }
+        if(offset != downloaddata.length() || size > (16<<20) || offset + len > size)
+        {
+            conoutf(CON_ERROR, "the download went wrong");
+            replaydownloadend();
+            return false;
+        }
+        downloaddata.put(data, len);
+        if(downloaddata.length() < size) return false;
+        stream *f = openrawfile(path(downloadfile, true), "wb");
+        bool ok = f && f->write(downloaddata.getbuf(), downloaddata.length()) == size_t(downloaddata.length());
+        delete f;
+        replaydownloadend();
+        if(!ok) { conoutf(CON_ERROR, "could not save %s", downloadfile); return false; }
+        conoutf("saved %s", downloadfile);
+        return true;
     }
 
     static void useboardreplay(const char *file, bool watch, const char *label)
@@ -132,22 +159,25 @@ namespace game
     static void replaydata(uint run, int size, int offset, const uchar *data, int len)
     {
         if(!downloadrun || run != downloadrun) return;
-        if(!size) { replaydownloadend(); return; }
-        if(offset != downloaddata.length() || size > (16<<20) || offset + len > size)
-        {
-            conoutf(CON_ERROR, "the replay download went wrong");
-            replaydownloadend();
-            return;
-        }
-        downloaddata.put(data, len);
-        if(downloaddata.length() < size) return;
-        stream *f = openrawfile(path(downloadfile, true), "wb");
-        bool ok = f && f->write(downloaddata.getbuf(), downloaddata.length()) == size_t(downloaddata.length());
-        delete f;
-        replaydownloadend();
-        if(!ok) { conoutf(CON_ERROR, "could not save %s", downloadfile); return; }
-        conoutf("saved %s", downloadfile);
-        useboardreplay(downloadfile, downloadwatch, downloadlabel);
+        if(downloadpiece(size, offset, data, len)) useboardreplay(downloadfile, downloadwatch, downloadlabel);
+    }
+
+    // file: the ghost (raced) or the cut demo (played)
+    static void uselegacyfile(int what, const char *file, const char *label)
+    {
+        if(what == LEGACY_GHOST) { useboardreplay(file, false, label); return; }
+        if(multiplayer(false)) { conoutf(CON_ERROR, "leave the server to watch the demo"); return; }
+        string name;
+        copystring(name, file + strlen("demo/"));
+        name[max(int(strlen(name)) - 4, 0)] = '\0';
+        defformatstring(cmd, "demo %s", escapestring(name));
+        execute(cmd);
+    }
+
+    static void legacydata(const char *map, int mode, int what, int size, int offset, const uchar *data, int len)
+    {
+        if(downloadlegacy < 0 || what != downloadlegacy || mode != downloadmode || strcmp(map, downloadmap)) return;
+        if(downloadpiece(size, offset, data, len)) uselegacyfile(what, downloadfile, downloadlabel);
     }
 
     // Maps a player lacks come from the hub, which serves the witness's copies. They are kept in
@@ -269,7 +299,8 @@ namespace game
     // fetch it from the hub and change map once it is here
     bool hubfetchmap(const char *name, int mode)
     {
-        if(!hubmapname(name) || !hubready()) return false;
+        int gamemode = mode;
+        if(m_demo || !hubmapname(name) || !hubready()) return false;
         bool stale = havemap(name) && hubmapstale(name);
         if(havemap(name) && !stale) return false;
         if(!hubgetmap(name, mode)) return false;
@@ -1005,6 +1036,7 @@ namespace game
                         gettext(r, b.legacyname, sizeof(b.legacyname));
                         b.legacyms = int(r.var());
                         gettext(r, b.legacysource, sizeof(b.legacysource));
+                        if(r.left()) b.legacyfiles = int(r.var());
                     }
                     if(!r.ok) break;
                     b.have = true;
@@ -1059,6 +1091,16 @@ namespace game
                     uint run = uint(r.var());
                     int size = int(r.var()), offset = int(r.var());
                     if(r.ok) replaydata(run, size, offset, r.p, r.left());
+                    break;
+                }
+                case HM_LEGACYDATA:
+                {
+                    string map, kind;
+                    gettext(r, map, sizeof(map));
+                    int mode = int(r.svar());
+                    gettext(r, kind, sizeof(kind));
+                    int what = int(r.var()), size = int(r.var()), offset = int(r.var());
+                    if(r.ok) legacydata(map, mode, what, size, offset, r.p, r.left());
                     break;
                 }
                 case HM_MAPDATA:
@@ -1595,6 +1637,8 @@ namespace game
         else if(!strcmp(field, "legacytime")) result(b.legacyms ? formatruntime(b.legacyms) : "");
         else if(!strcmp(field, "legacysource")) result(b.legacyms ? b.legacysource : "");
         else if(!strcmp(field, "legacydiff")) result(legacydiff(b));
+        else if(!strcmp(field, "legacyghost")) intret(b.legacyms && b.legacyfiles&(1<<LEGACY_GHOST) ? 1 : 0);
+        else if(!strcmp(field, "legacydemo")) intret(b.legacyms && b.legacyfiles&(1<<LEGACY_DEMO) ? 1 : 0);
         else result("");
     });
     ICOMMAND(hubboardrow, "is", (int *i, char *field),
@@ -1624,7 +1668,7 @@ namespace game
         for(char *c = file + strlen("replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
         defformatstring(label, "%s %s", row.name, formatruntime(row.ms));
         if(stream *f = openrawfile(path(file, true), "rb")) { delete f; useboardreplay(file, watch, label); return; }
-        if(downloadrun) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
+        if(downloading()) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
         if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download replays"); return; }
         vector<uchar> p;
         sbr2::byteswriter w(p);
@@ -1636,6 +1680,37 @@ namespace game
         copystring(downloadlabel, label);
         downloaddata.setsize(0);
         conoutf("downloading %s's run (%s)..", row.name, formatruntime(row.ms));
+    });
+
+    // boardlegacy watch|ghost: plays the menus' board's legacy record demo, or races its ghost,
+    // downloading it from the hub the first time
+    ICOMMAND(boardlegacy, "s", (char *action),
+    {
+        const hubboard &b = viewboard;
+        int what = !strcmp(action, "watch") ? LEGACY_DEMO : LEGACY_GHOST;
+        if(!b.legacyms || !(b.legacyfiles & (1<<what))) return;
+        string file;
+        formatstring(file, what == LEGACY_DEMO ? "demo/legacy_%s_%d.dmo" : "replays/downloaded/legacy_%s_%d.sbg", b.map, b.mode);
+        for(char *c = file + strlen(what == LEGACY_DEMO ? "demo/" : "replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+        defformatstring(label, "%s %s", b.legacyname, formatruntime(b.legacyms));
+        if(stream *f = openrawfile(path(file, true), "rb")) { delete f; uselegacyfile(what, file, label); return; }
+        if(downloading()) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
+        if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download the legacy record"); return; }
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        puttext(w, b.map);
+        w.svar(b.mode);
+        w.str(b.kind);
+        w.var(what);
+        if(!hubsend(HM_LEGACY, p.getbuf(), p.length())) return;
+        downloadlegacy = what;
+        downloadmode = b.mode;
+        copystring(downloadmap, b.map);
+        downloadwatch = what == LEGACY_DEMO;
+        copystring(downloadfile, file);
+        copystring(downloadlabel, label);
+        downloaddata.setsize(0);
+        conoutf("downloading %s's legacy record..", b.legacyname);
     });
 
     ICOMMAND(hubmylobby, "", (), { hublobby *l = mylobby(); intret(l ? int(l->id) : 0); });

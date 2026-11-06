@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.13
+
+- Opening a replay while spectating works; leaving it goes back to spectating.
+- Binds a map's menu makes (Lost's B) last only for that map.
+- Legacy flagrun records: race them as a ghost or watch their demo from the board.
+- /demo no longer tries to download the demo's name as a map.
+
 ## v0.3.12
 
 - No false "won't be witnessed" warning when a race starts.

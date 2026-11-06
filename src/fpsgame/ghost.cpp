@@ -59,6 +59,14 @@ namespace game
     static vector<ghostsample> samples;
     static vector<int> samplemaps;
 
+    // a replay, or a legacy record's ghost (.sbg)
+    static bool readghostfile(const char *file, inputrun &run, replayinfo &info)
+    {
+        int len = strlen(file), side = 0;
+        if(len > 4 && !strcasecmp(file + len - 4, ".sbg")) return readlegacyghost(file, run, info, side);
+        return readreplay(file, &run, info);
+    }
+
     static bool loadghost(const char *file)
     {
         if(!strcmp(file, ghostfile)) return samples.length() > 0;
@@ -68,7 +76,7 @@ namespace game
         ghostrun.clear();
         replayinfo info;
         ghostruntime = -1;
-        if(!file[0] || !readreplay(file, &ghostrun, info)) return false;
+        if(!file[0] || !readghostfile(file, ghostrun, info)) return false;
         ghostruntime = info.finished ? info.runtime : -1;
         loopvk(ghostrun.attempts) loopv(ghostrun.attempts[k]->trace)
         {
@@ -471,7 +479,7 @@ namespace game
     {
         inputrun run;
         replayinfo info;
-        if(!readreplay(file, &run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
+        if(!readghostfile(file, run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
         bool path = false;
         loopv(run.attempts) if(run.attempts[i]->trace.length()) path = true;
         if(!path) { conoutf(CON_ERROR, "%s has no ghost path: only replays made with speedbraten v0.1.0 or later can be ghosts", file); return; }
