@@ -372,6 +372,9 @@ namespace game
     extern void drawreplayinputs(int w, int h);
     extern int replayinputs;
     extern bool replayviewtakes(int code);
+    // a legacy record's demo played from the board: R plays it again, Backspace leaves (hub.cpp)
+    extern bool legacydemokey(int code, bool isdown);
+    extern void drawlegacydemo(int w, int h);
     extern bool (*replaywaitattempt)();
     extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
     extern bool inputreplayneeds(int known);

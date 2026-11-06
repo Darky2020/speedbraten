@@ -128,7 +128,7 @@ namespace game
     // keys for the HUD editor, or the replay view's keys, which don't run their binds
     bool hudeditkey(int code, bool isdown)
     {
-        if(!hudediting) return replayviewtakes(code);
+        if(!hudediting) return legacydemokey(code, isdown) || replayviewtakes(code);
         switch(code)
         {
             case SDLK_ESCAPE:

@@ -162,16 +162,76 @@ namespace game
         if(downloadpiece(size, offset, data, len)) useboardreplay(downloadfile, downloadwatch, downloadlabel);
     }
 
+    // the legacy demo being watched, and the map to go back to when leaving it ("": disconnect)
+    static string legacydemoname = "", legacyreturnmap = "";
+    static int legacyreturnmode = 0;
+    static bool legacydemoon = false, legacydemostarted = false; // started: the demo's map has loaded
+
+    static bool legacydemoactive()
+    {
+        if(!legacydemoon) return false;
+        if(m_demo || demoplayback) legacydemostarted = true;
+        else if(legacydemostarted) legacydemoon = false;
+        return legacydemoon && legacydemostarted;
+    }
+
+    static void playlegacydemo()
+    {
+        defformatstring(cmd, "demo %s", escapestring(legacydemoname));
+        execute(cmd);
+    }
+
+    static void leavelegacydemo()
+    {
+        legacydemoon = false;
+        if(legacyreturnmap[0]) changemap(legacyreturnmap, legacyreturnmode);
+        else execute("disconnect");
+    }
+
+    bool legacydemokey(int code, bool isdown)
+    {
+        if(!legacydemoactive() || (code != SDLK_r && code != SDLK_BACKSPACE)) return false;
+        if(isdown)
+        {
+            if(code == SDLK_r) playlegacydemo();
+            else leavelegacydemo();
+        }
+        return true;
+    }
+
+    void drawlegacydemo(int w, int h)
+    {
+        if(!legacydemoactive()) return;
+        defformatstring(line, "\f7legacy record demo   %s", demoplayback ? "\f7playing" : "\f3ended");
+        const char *keys = "\f7R restart   \f7Backspace leave";
+        const float scale = 0.4f;
+        int lw = 0, lh = 0, kw = 0, kh = 0;
+        text_bounds(line, lw, lh);
+        text_bounds(keys, kw, kh);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        int y = int(h*0.78f/scale) - lh;
+        draw_text(line, int(w/2.0f/scale - lw/2.0f), y, 255, 255, 255, 230);
+        draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
+        pophudmatrix();
+    }
+
     // file: the ghost (raced) or the cut demo (played)
     static void uselegacyfile(int what, const char *file, const char *label)
     {
         if(what == LEGACY_GHOST) { useboardreplay(file, false, label); return; }
         if(multiplayer(false)) { conoutf(CON_ERROR, "leave the server to watch the demo"); return; }
-        string name;
-        copystring(name, file + strlen("demo/"));
-        name[max(int(strlen(name)) - 4, 0)] = '\0';
-        defformatstring(cmd, "demo %s", escapestring(name));
-        execute(cmd);
+        if(!legacydemoactive())
+        {
+            copystring(legacyreturnmap, connected && !m_demo ? getclientmap() : "");
+            legacyreturnmode = gamemode;
+        }
+        copystring(legacydemoname, file + strlen("demo/"));
+        legacydemoname[max(int(strlen(legacydemoname)) - 4, 0)] = '\0';
+        legacydemoon = true;
+        legacydemostarted = false;
+        playlegacydemo();
     }
 
     static void legacydata(const char *map, int mode, int what, int size, int offset, const uchar *data, int len)

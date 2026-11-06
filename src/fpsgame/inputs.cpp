@@ -1528,6 +1528,15 @@ namespace game
         if(chained) {}
         else if(unstarted) witnessdrop("the map changed");
         else witnessstop("the map changed");
+        // a demo's players move by its recorded positions: nothing to record or witness
+        int gamemode = mode;
+        if(m_demo || demoplayback)
+        {
+            if(!recording.empty()) recording.moveto(previous);
+            recording.clear();
+            recordingoff = true;
+            return;
+        }
         seedgame();
         uint seed;
         // a campaign run that starts after the campaign's first map is practice: no witness
@@ -1906,6 +1915,7 @@ namespace game
         else if(spawncountdown(buf)) {}
         else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
         drawreplayview(w, h);
+        drawlegacydemo(w, h);
         drawreplayinputs(w, h);
         if(!buf[0]) return;
         const float scale = 0.4f;

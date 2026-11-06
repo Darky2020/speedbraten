@@ -4,7 +4,8 @@
 
 - Opening a replay while spectating works; leaving it goes back to spectating.
 - Binds a map's menu makes (Lost's B) last only for that map.
-- Legacy flagrun records: race them as a ghost or watch their demo from the board.
+- Legacy flagrun records: race them as a ghost or watch their demo from the board (R restarts it, Backspace leaves).
+- Watching a demo is no longer recorded as a run or sent to the witness.
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12
