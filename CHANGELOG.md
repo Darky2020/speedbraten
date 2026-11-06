@@ -6,6 +6,7 @@
 - Binds a map's menu makes (Lost's B) last only for that map.
 - Legacy flagrun records: race them as a ghost or watch their demo from the board (R restarts it, Backspace leaves).
 - Watching a demo is no longer recorded as a run or sent to the witness.
+- Spectating a hub player shows their name, how far behind, and SPECTATOR like vanilla.
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12
