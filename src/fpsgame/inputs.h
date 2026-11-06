@@ -363,6 +363,10 @@ namespace game
     extern void playinputrun(const inputrun &run, const char *file = NULL);
     extern void viewinputrun(const inputrun &run, const char *file);
     extern bool inputreplayactive();
+    extern bool replayviewinputs(const inputattempt *&a, int &tick);
+    extern void drawreplayinputs(int w, int h);
+    extern int replayinputs;
+    extern bool replayviewtakes(int code);
     extern bool (*replaywaitattempt)();
     extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
     extern bool inputreplayneeds(int known);

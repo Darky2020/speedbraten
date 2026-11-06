@@ -8,6 +8,9 @@ bool simticking = false, insimtick = false;
 static bool simrestarted = false;
 static int simaccum = 0;
 static bool simclockskip = false;
+// game time per frame time, in percent; a watched replay sets it to slow down
+int simspeedpercent = 100;
+static int simspeedcarry = 0;
 
 // Puts the game clock at a fixed value and drops the time spent until the next frame
 // (e.g. map loading), so a new local game always starts from the same clock state.
@@ -35,7 +38,16 @@ void simadvanceclock()
     if(simticking)
     {
         if(curtime>200) curtime = 200;
-        if(!game::ispaused() && !game::holdsim()) simaccum += curtime;
+        if(!game::ispaused() && !game::holdsim())
+        {
+            if(simspeedpercent == 100) { simaccum += curtime; simspeedcarry = 0; }
+            else
+            {
+                int scaled = curtime*simspeedpercent + simspeedcarry;
+                simaccum += scaled/100;
+                simspeedcarry = scaled%100;
+            }
+        }
     }
     else if(!game::ispaused()) lastmillis += curtime;
 }

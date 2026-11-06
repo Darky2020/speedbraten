@@ -13,6 +13,7 @@ extern int fixedframe;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);
+extern int simspeedpercent;
 
 struct rawevent
 {
@@ -70,3 +71,4 @@ struct inputsourcescope
 // untextured rectangles in the HUD's current coordinates (engine/huddraw.cpp)
 extern void hudfillrect(float x0, float y0, float x1, float y1, int colour, int alpha = 255);
 extern void hudoutlinerect(float x0, float y0, float x1, float y1, float width, int colour, int alpha = 255);
+extern void hudfilldisc(float cx, float cy, float r, int colour, int alpha = 255);

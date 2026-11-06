@@ -26,6 +26,7 @@ fpsgame/flagboards.cpp
 fpsgame/ghost.cpp
 fpsgame/hub.cpp
 fpsgame/hudedit.cpp
+fpsgame/inputdisplay.cpp
 fpsgame/inputs.cpp
 fpsgame/inputs.h
 fpsgame/replayfile.cpp

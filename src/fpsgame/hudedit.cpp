@@ -4,6 +4,7 @@
 
 #include "game.h"
 #include "sbcompat.h"
+#include "inputs.h"
 
 extern int screenw, screenh;
 extern float guisens;
@@ -124,9 +125,10 @@ namespace game
         return true;
     }
 
+    // keys for the HUD editor, or the replay view's keys, which don't run their binds
     bool hudeditkey(int code, bool isdown)
     {
-        if(!hudediting) return false;
+        if(!hudediting) return replayviewtakes(code);
         switch(code)
         {
             case SDLK_ESCAPE:

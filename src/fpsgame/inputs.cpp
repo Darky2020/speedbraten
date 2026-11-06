@@ -36,7 +36,7 @@ namespace game
     MOD(VARP, replayfastspeed, 2, 4, 20); // while space is held
     MOD(VARP, replayviewhud, 0, 1, 1);
     MOD(VARP, replayviewkeys, 0, 1, 1); // the line of keys under it
-    static bool replayviewing = false, replayviewpaused = false, replayviewfast = false;
+    static bool replayviewing = false, replayviewpaused = false, replayviewfast = false, replayviewslow = false;
     static int replayfastrest = 0; // game time owed to the fast-forward, below one tick
     static inputrun replayviewrun;
     static string replayviewfile = "", replayreturnmap = "";
@@ -724,6 +724,15 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    // the attempt and tick a watched replay is at, for the input display; false when none is watched
+    bool replayviewinputs(const inputattempt *&a, int &tick)
+    {
+        if(!replayviewing || !replaying || !replaydata.attempts.inrange(replayattempt)) return false;
+        a = &replaycur();
+        tick = curtick;
+        return true;
+    }
+
     // 0: a watched replay ends like any input replay instead of holding its last frame, for
     // harness scripts, whose sleeps only run while the simulation ticks
     VAR(replayendhold, 0, 1, 1);
@@ -757,7 +766,8 @@ namespace game
 
     static void stopviewing()
     {
-        replayviewing = replayviewpaused = replayviewfast = false;
+        replayviewing = replayviewpaused = replayviewfast = replayviewslow = false;
+        simspeedpercent = 100;
         replayfastrest = 0;
         replayseektarget = -1;
         clearviewstates();
@@ -830,6 +840,19 @@ namespace game
         viewinputrun(run, file[0] ? file : NULL);
     }
 
+    // the keys the replay view uses, which then don't run their binds
+    bool replayviewtakes(int code)
+    {
+        if(!replayviewing) return false;
+        switch(code)
+        {
+            case SDLK_SPACE: case SDLK_LSHIFT: case SDLK_RSHIFT: case SDLK_p: case SDLK_r: case SDLK_i:
+            case SDLK_LEFT: case SDLK_RIGHT: case SDLK_BACKSPACE:
+                return true;
+        }
+        return false;
+    }
+
     static void replayviewkey(int keycode)
     {
         switch(keycode)
@@ -839,12 +862,14 @@ namespace game
             case SDLK_LEFT: seekreplay(-replayseekstep); break;
             case SDLK_RIGHT: seekreplay(replayseekstep); break;
             case SDLK_BACKSPACE: leavereplayview(); break;
+            case SDLK_i: replayinputs = !replayinputs; break;
         }
     }
 
     // the extra game time a held space adds to a frame of us microseconds
     static void replayfastframe(int us)
     {
+        simspeedpercent = replayviewing && replayviewslow && !replayviewfast && replaying ? 50 : 100;
         if(!replayviewing || !replayviewfast || !replaying || replayviewhold()) { replayfastrest = 0; return; }
         replayfastrest += int(min((long long)us*(replayfastspeed-1)/1000, 1000LL));
         int ms = replayfastrest - replayfastrest%SIMTICK;
@@ -863,8 +888,9 @@ namespace game
         if(replayviewended()) copystring(state, "\f3ended");
         else if(replayviewpaused) copystring(state, "\f2paused");
         else if(replayviewfast) formatstring(state, "\f0x%d", replayfastspeed);
+        else if(replayviewslow) copystring(state, "\f0x0.5");
         else copystring(state, "\f7playing");
-        formatstring(keys, "\f7P %s   \f7left/right %ds   \f7hold space x%d   \f7R restart   \f7Backspace leave", replayviewpaused ? "play" : "pause", replayseekstep, replayfastspeed);
+        formatstring(keys, "\f7P %s   \f7left/right %ds   \f7hold space x%d   \f7hold shift x0.5   \f7I inputs   \f7R restart   \f7Backspace leave", replayviewpaused ? "play" : "pause", replayseekstep, replayfastspeed);
         defformatstring(line, "\f7replay %s   %s", pos, state);
         const float scale = 0.4f;
         int lw = 0, lh = 0, kw = 0, kh = 0;
@@ -1530,8 +1556,10 @@ namespace game
         }
         if(replayviewing && !(e.flags&rawevent::TEXT))
         {
+            bool shift = e.keycode == SDLK_LSHIFT || e.keycode == SDLK_RSHIFT;
             if(e.kind == rawevent::KEYDOWN && e.keycode == SDLK_SPACE) replayviewfast = true;
-            else if((e.kind == rawevent::KEYUP && e.keycode == SDLK_SPACE) || e.kind == rawevent::FOCUS) replayviewfast = false;
+            else if((e.kind == rawevent::KEYUP && e.keycode == SDLK_SPACE) || e.kind == rawevent::FOCUS) replayviewfast = replayviewslow = false;
+            else if(shift) replayviewslow = e.kind == rawevent::KEYDOWN;
             else if(e.kind == rawevent::KEYDOWN) replayviewkey(e.keycode);
         }
         if(!simticking || replaying || recordingoff || recording.attempts.empty() || !connected) return;
@@ -1864,6 +1892,7 @@ namespace game
         else if(spawncountdown(buf)) {}
         else if(splicetextuntil && totalmillis - splicetextuntil < 0) copystring(buf, "splice");
         drawreplayview(w, h);
+        drawreplayinputs(w, h);
         if(!buf[0]) return;
         const float scale = 0.4f;
         int tw = 0, th = 0;

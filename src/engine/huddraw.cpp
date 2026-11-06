@@ -21,3 +21,16 @@ void hudoutlinerect(float x0, float y0, float x1, float y1, float width, int col
     hudfillrect(x0, y0 + width, x0 + width, y1 - width, colour, alpha);
     hudfillrect(x1 - width, y0 + width, x1, y1 - width, colour, alpha);
 }
+
+void hudfilldisc(float cx, float cy, float r, int colour, int alpha)
+{
+    hudnotextureshader->set();
+    gle::colorub((colour>>16)&0xFF, (colour>>8)&0xFF, colour&0xFF, alpha);
+    gle::defvertex(2);
+    gle::begin(GL_TRIANGLE_FAN);
+    gle::attribf(cx, cy);
+    loopi(33) gle::attribf(cx + r*cosf(i*2*M_PI/32), cy + r*sinf(i*2*M_PI/32));
+    gle::end();
+    gle::colorf(1, 1, 1);
+    hudshader->set();
+}
