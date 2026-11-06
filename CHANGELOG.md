@@ -3,6 +3,8 @@
 ## v0.3.12
 
 - No false "won't be witnessed" warning when a race starts.
+- Replays show your keys and mouse movement; I toggles it, shift plays at half speed.
+- Flagrun and race map pickers: a random map button.
 
 ## v0.3.11
 
