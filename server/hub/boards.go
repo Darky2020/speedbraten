@@ -31,7 +31,7 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 	}
 	store := h.boards
 	if store == nil {
-		h.send(p, MsgBoardRows, boardMsg(k, nil, 0, 0, nil))
+		h.send(p, MsgBoardRows, boardMsg(k, nil, 0, 0, nil, 0))
 		return nil
 	}
 	p.boardBusy = true
@@ -59,7 +59,11 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 		if len(rows) > BoardRows {
 			rows = rows[:BoardRows]
 		}
-		msg := boardMsg(k, rows, rank, ms, legacy)
+		var files uint64
+		if legacy != nil {
+			files = h.legacyFiles(k)
+		}
+		msg := boardMsg(k, rows, rank, ms, legacy, files)
 		h.mu.Lock()
 		p.boardBusy = false
 		if !p.closed {
@@ -70,7 +74,8 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 	return nil
 }
 
-func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64, legacy *board.Legacy) []byte {
+// files: the legacy record's files (legacyFiles)
+func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64, legacy *board.Legacy, files uint64) []byte {
 	var w writer
 	w.str(k.Map)
 	w.s(int64(k.Mode))
@@ -93,6 +98,7 @@ func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64, legacy *board
 		w.str(legacy.Player)
 		w.u(uint64(legacy.MS))
 		w.str(legacy.Source)
+		w.u(files)
 	}
 	return w.b
 }

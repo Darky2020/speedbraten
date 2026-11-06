@@ -142,6 +142,7 @@ func main() {
 	siteDB := flag.String("sitedb", "", "the leaderboard site's site.db (its moderation); default <data dir>/site.db")
 	maps := flag.String("maps", "", "game data dir whose packages/base maps players may download (the witness's)")
 	raceMaps := flag.String("racemaps", "", "package dir of the race maps (<dir>/packages/base), listed and downloadable")
+	legacy := flag.String("legacy", "", "dir of the legacy flagrun records' ghosts and cut demos (tools/legacyflagruns.py --out)")
 	releases := flag.String("releases", "https://api.github.com/repos/Darky2020/speedbraten/releases/latest", "GitHub API URL of the newest client release, \"\" for none")
 	discordBot := flag.String("discordbot", "", "file holding the Discord bot's token")
 	discordChannels := flag.String("discord", "", "Discord channel ids (comma-separated, or @file: one per line) for joins, leaves, chat, records and the lobbies, and whose messages players see")
@@ -155,7 +156,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps}
+	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps, Legacy: *legacy}
 	if *raceMaps != "" {
 		cfg.Thumbs = filepath.Join(*dir, "thumbs")
 	}

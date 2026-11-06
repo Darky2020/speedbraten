@@ -50,6 +50,8 @@ type Config struct {
 	// Thumbs: where the race maps' pictures are kept as small JPEGs made from
 	// <RaceMaps>/packages/base/screenshots/<map>.webp; none without it
 	Thumbs string
+	// Legacy: where flagrun boards' legacy record files are kept (legacy.go); none without it
+	Legacy string
 	// Feed, if set, hears of joins, leaves, chat, records and the lobbies (feed.go)
 	Feed Feed
 	Now  func() time.Time
@@ -605,6 +607,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.replayRequest(p, &r)
 	case MsgGetMap:
 		return h.mapRequest(p, &r)
+	case MsgLegacy:
+		return h.legacyRequest(p, &r)
 	case MsgGetThumb:
 		return h.thumbRequest(p, &r)
 	case MsgFinish:

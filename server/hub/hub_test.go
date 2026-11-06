@@ -1104,10 +1104,15 @@ func TestBoardRequest(t *testing.T) {
 	}
 }
 
-// A board's legacy record comes after its rows, also on a board without witnessed runs.
+// A board's legacy record comes after its rows, also on a board without witnessed runs, with
+// the legacy files the hub has for it.
 func TestBoardLegacy(t *testing.T) {
 	f := newFixture(t)
 	dir := t.TempDir()
+	f.h.cfg.Legacy = dir
+	if err := os.WriteFile(filepath.Join(dir, "forge-17.sbg"), []byte("ghost"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	wpath := filepath.Join(dir, "witness.db")
 	w, err := sqlite.Create(wpath)
 	if err != nil {
@@ -1147,8 +1152,60 @@ func TestBoardLegacy(t *testing.T) {
 	if has, name, ms, src := m.r.u(), m.r.str(64), m.r.u(), m.r.str(64); has != 1 || name != "Dino" || ms != 5912 || src != "flagruns.com" {
 		t.Fatalf("legacy %d %q %d %q", has, name, ms, src)
 	}
+	if files := m.r.u(); files != 1<<LegacyGhost {
+		t.Fatalf("legacy files %b, want the ghost only", files)
+	}
 	if err := m.r.done(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A legacy file arrives in pieces; one the hub doesn't have, or a name that isn't a map's, gets
+// an empty piece.
+func TestLegacyRequest(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	f.h.cfg.Legacy = dir
+	want := bytes.Repeat([]byte("ghost!"), 10000) // more than one piece
+	if err := os.WriteFile(filepath.Join(dir, "forge-17.sbg"), want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	ask := func(mapname, kind string, what uint64) {
+		var q writer
+		q.str(mapname)
+		q.s(17)
+		q.str(kind)
+		q.u(what)
+		a.send(MsgLegacy, q.b)
+	}
+	piece := func() (string, uint64, uint64, uint64, []byte) {
+		m := a.expect(MsgLegacyData)
+		mapname, _, _ := m.r.str(64), m.r.s(), m.r.str(16)
+		what, size, off := m.r.u(), m.r.u(), m.r.u()
+		return mapname, what, size, off, m.r.b
+	}
+	ask("forge", "flagrun", LegacyGhost)
+	var got []byte
+	for len(got) < len(want) {
+		mapname, what, size, off, b := piece()
+		if mapname != "forge" || what != LegacyGhost || size != uint64(len(want)) || off != uint64(len(got)) {
+			t.Fatalf("piece: %s %d size %d offset %d after %d bytes", mapname, what, size, off, len(got))
+		}
+		got = append(got, b...)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("the ghost arrived changed")
+	}
+	for _, q := range []struct {
+		mapname, kind string
+		what          uint64
+	}{{"forge", "flagrun", LegacyDemo}, {"forge", "race", LegacyGhost}, {"../" + filepath.Base(dir), "flagrun", LegacyGhost}, {"forge", "flagrun", 7}} {
+		ask(q.mapname, q.kind, q.what)
+		a.expectNotice("no legacy files")
+		if _, _, size, _, _ := piece(); size != 0 {
+			t.Fatalf("%+v: %d bytes", q, size)
+		}
 	}
 }
 
