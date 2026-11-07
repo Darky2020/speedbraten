@@ -804,7 +804,7 @@ namespace game
     static void boardupdate()
     {
         const char *kind = runkind();
-        if(!kind[0] || remote || spectating()) return;
+        if(!kind[0] || remote) return;
         bool same = !strcmp(boardaskedmap, runmap()) && boardaskedmode == runmode() && !strcmp(boardaskedkind, kind);
         bool running = false;
         runtimerticks(running);
