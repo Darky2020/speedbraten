@@ -185,6 +185,7 @@ namespace witness
             addcolumn("runs", "verdict TEXT") && addcolumn("runs", "reason TEXT") && addcolumn("runs", "resim TEXT") && addcolumn("sessions", "nonce TEXT") && addcolumn("runs", "judged INTEGER") && addcolumn("runs", "follows INTEGER") &&
             addcolumn("runs", "map TEXT") && addcolumn("runs", "player TEXT") && addcolumn("sessions", "host TEXT") &&
             addcolumn("runs", "runkind TEXT") && addcolumn("runs", "mode INTEGER") && addcolumn("runs", "runtimems INTEGER") && addcolumn("sessions", "installpub TEXT") &&
+            addcolumn("runs", "reachedend INTEGER") &&
             sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS installs(installkey TEXT PRIMARY KEY, host TEXT, firstseen INTEGER);"
                 "CREATE TABLE IF NOT EXISTS bests(map TEXT, runkind TEXT, mode INTEGER, installkey TEXT, runtimems INTEGER, run INTEGER, achieved INTEGER, PRIMARY KEY(map, runkind, mode, installkey));"
                 "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, run INTEGER UNIQUE, installpub TEXT, player TEXT, map TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, record INTEGER, previous INTEGER, created INTEGER);"
@@ -629,7 +630,7 @@ namespace witness
             r.done = r.ended = true;
             string hex;
             tohexstr(r.reader.content, sbr2::HASHSIZE, hex);
-            run("UPDATE runs SET finished = 1, content = ?, violations = ?, maxlagms = ?, ended = ? WHERE id = ?", "siiii", hex, (long long)r.violations, (long long)r.maxlagms, (long long)(nowus()/1000), r.row);
+            run("UPDATE runs SET finished = 1, content = ?, violations = ?, maxlagms = ?, ended = ?, reachedend = ? WHERE id = ?", "siiiii", hex, (long long)r.violations, (long long)r.maxlagms, (long long)(nowus()/1000), (long long)(r.reachedend ? 1 : 0), r.row);
             if(r.file)
             {
                 loopv(r.signatures) { vector<uchar> chunk; sbr2::appendchunk(chunk, "sIGN", r.signatures[i]); r.file->write(chunk.getbuf(), chunk.length()); }
@@ -1342,11 +1343,13 @@ namespace witness
             live ? "live, after the end" : "re-simulated", (nowus() - job.since) / 1e6);
     }
 
-    // a finished run for the batch queue, unless its install already has its share there
+    // a finished run for the batch queue; one that ended before its finish is left unjudged once
+    // its install already has its share there
     static void queuebatch(long long row)
     {
         string key[1];
         int queued = 0;
+        if(scalar("SELECT COUNT(*) FROM runs WHERE id = ? AND reachedend = 1", "i", row)) { resimqueue.add(row); return; }
         if(rowtext("SELECT installkey FROM runs WHERE id = ?", row, 1, key))
             loopv(resimqueue) { string other[1]; if(rowtext("SELECT installkey FROM runs WHERE id = ?", resimqueue[i], 1, other) && !strcmp(other[0], key[0])) queued++; }
         if(queued < limit(L_QUEUED)) { resimqueue.add(row); return; }
