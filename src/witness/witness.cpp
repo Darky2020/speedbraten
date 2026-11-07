@@ -576,7 +576,7 @@ namespace witness
             }
             int found = c.seeds.find(seed);
             if(!b.ok || (found < 0 && !earlierseed(c, seed))) { r.seedsok = false; run("UPDATE runs SET seedsok = 0 WHERE id = ?", "i", r.row); }
-            else if(!c.seedsused[found]) { c.seedsused[found] = true; run("UPDATE seeds SET used = ? WHERE session = ? AND seed = ?", "iii", (long long)(nowus()/1000), c.sessionrow, (long long)seed); sendseed(c); }
+            else if(found >= 0 && !c.seedsused[found]) { c.seedsused[found] = true; run("UPDATE seeds SET used = ? WHERE session = ? AND seed = ?", "iii", (long long)(nowus()/1000), c.sessionrow, (long long)seed); sendseed(c); }
             r.segticks = 0;
             if(r.livepid) livemore(r);
             else livestart(c, r);
