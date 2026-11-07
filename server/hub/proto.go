@@ -29,6 +29,7 @@ const (
 	MsgGetMap      = 18
 	MsgGetThumb    = 19
 	MsgLegacy      = 20
+	MsgAway        = 21
 
 	MsgWelcome     = 101
 	MsgWitness     = 102
@@ -57,6 +58,10 @@ const (
 	StateMenu    = 0
 	StatePlaying = 1
 	StateRun     = 2
+
+	// MsgAway's flags, also at the end of MsgPlayer
+	AwayDND = 1 // do not disturb
+	AwayAFK = 2 // no input for a while
 
 	ChatGlobal  = 0
 	ChatLobby   = 1

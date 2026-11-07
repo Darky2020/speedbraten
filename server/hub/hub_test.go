@@ -226,6 +226,48 @@ func (c *client) expectLobby() lobbyinfo {
 
 func newKey() noise.DHKey { k, _ := noisechan.GenerateKey(); return k }
 
+// A player's away flags go to everyone at the end of their PLAYER record, once per change.
+func TestAway(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	away := func(flags uint64) {
+		var w writer
+		w.u(flags)
+		b.send(MsgAway, w.b)
+	}
+	flagsOf := func(m msg) uint64 {
+		m.r.str(64)
+		m.r.u()
+		m.r.str(64)
+		m.r.s()
+		m.r.u()
+		m.r.str(16)
+		flags := m.r.u()
+		if err := m.r.done(); err != nil {
+			t.Fatal(err)
+		}
+		return flags
+	}
+	// bob's records from joining come first, without flags
+	next := func() uint64 {
+		for {
+			if got := flagsOf(a.expectPlayer(b.id)); got != 0 {
+				return got
+			}
+		}
+	}
+	away(AwayDND)
+	if got := next(); got != AwayDND {
+		t.Fatalf("flags %d, want do not disturb", got)
+	}
+	away(AwayDND)
+	away(AwayDND | AwayAFK | 8)
+	if got := flagsOf(a.expectPlayer(b.id)); got != AwayDND|AwayAFK {
+		t.Fatalf("flags %d after an unchanged and an unknown bit, want dnd|afk", got)
+	}
+}
+
 func TestNamesAndPresence(t *testing.T) {
 	f := newFixture(t)
 	ka, kb := newKey(), newKey()

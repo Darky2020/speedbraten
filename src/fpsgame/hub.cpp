@@ -25,6 +25,7 @@ namespace game
         uint id, lobby;
         int state, mode;
         string name, map, kind;
+        int away; // AWAY_ flags
         bool running;
         int ms, best, pb, statat; // best, pb: -1 none; statat: totalmillis ms arrived at
     };
@@ -67,6 +68,8 @@ namespace game
     static string hubrefusal = "";
     static string hubmyname = "", hubaskedname = "", hubtarget = "", hubchangedat = "";
     static int hubretry = 0, hublaststate = WITNESS_IDLE, hubsentstate = -1, hubsentmode = 0;
+    static int hubsentaway = -1, lastinputat = 0;
+    enum { AFKMILLIS = 30000 };
     static string hubsentmap = "", hubsentkind = "";
     static bool hubasking = false, hubchecking = false, hubkeychanged = false, hubwelcomed = false, hubreported = false;
     // The players the hub lists right after its welcome were already online: joins and leaves are told from
@@ -567,6 +570,7 @@ namespace game
         hubmyid = 0;
         hubmyname[0] = hubaskedname[0] = hubsentmap[0] = hubrefusal[0] = '\0';
         hubsentstate = -1;
+        hubsentaway = -1;
         hubwelcomed = hublisted = false;
         autolobbydue = true;
         playalonglobby = 0;
@@ -645,6 +649,19 @@ namespace game
         server::forcenextflagrun(!strcmp(l.kind, "flagrun") ? 1 : 0);
         server::forcenextracerules(!strcmp(l.kind, "race") ? 1 : 0);
         changemap(l.map, l.mode);
+    }
+
+    // a key, button or wheel turn of the player's own: they are not away
+    void hubinputseen() { lastinputat = totalmillis; }
+
+    static void sendaway()
+    {
+        int away = (donotdisturb ? AWAY_DND : 0) | (totalmillis - lastinputat > AFKMILLIS ? AWAY_AFK : 0);
+        if(away == hubsentaway) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(away);
+        if(hubsend(HM_AWAY, p.getbuf(), p.length())) hubsentaway = away;
     }
 
     static void sendstatus()
@@ -916,6 +933,7 @@ namespace game
                     q.mode = int(r.svar());
                     q.lobby = uint(r.var());
                     gettext(r, q.kind, sizeof(q.kind));
+                    q.away = r.left() ? int(r.var()) : 0;
                     if(!r.ok) break;
                     hubplayer *old = findplayer(q.id);
                     if(old)
@@ -1327,6 +1345,7 @@ namespace game
                 hubsendtext(HM_SETNAME, player1->name);
             }
             sendstatus();
+            sendaway();
             askthumbs();
             autolobby();
             followupdate();
@@ -1512,7 +1531,14 @@ namespace game
 
         g.pushlist();
         g.text("name", COL_GRAY);
-        loopv(rows) g.text(rows[i]->name, rows[i]->id == l->host ? COL_MASTER : rowcolor(rows[i]));
+        loopv(rows)
+        {
+            const hubplayer *p = rows[i];
+            g.pushlist();
+            g.text(p->name, p->id == l->host ? COL_MASTER : rowcolor(p));
+            if(p->away & (AWAY_DND|AWAY_AFK)) g.textf(" %s", COL_GRAY, NULL, p->away & AWAY_DND ? "dnd" : "afk");
+            g.poplist();
+        }
         g.poplist();
 
         g.space(2);
@@ -1672,6 +1698,7 @@ namespace game
         else if(!strcmp(field, "map")) result(p->map);
         else if(!strcmp(field, "mode")) result(server::modename(p->mode, ""));
         else if(!strcmp(field, "kind")) result(p->kind);
+        else if(!strcmp(field, "away")) result(p->away & AWAY_DND ? "dnd" : p->away & AWAY_AFK ? "afk" : "");
         else if(!strcmp(field, "lobby")) intret(int(p->lobby));
         else if(!strcmp(field, "playing")) intret(p->state != HUBSTATE_MENU ? 1 : 0);
         else if(!strcmp(field, "lobbysize")) { hublobby *l = findlobby(p->lobby); intret(l ? l->members.length() : 0); }

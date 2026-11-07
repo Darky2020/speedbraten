@@ -379,6 +379,7 @@ namespace game
     extern bool legacydemokey(int code, bool isdown);
     extern void drawlegacydemo(int w, int h);
     extern void legacydemoframe();
+    extern void hubinputseen();
     extern bool (*replaywaitattempt)();
     extern void inputreplayextend(const inputrun &src, bool complete, bool appendonly);
     extern bool inputreplayneeds(int known);

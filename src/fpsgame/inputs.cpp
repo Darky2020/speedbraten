@@ -1607,6 +1607,7 @@ namespace game
 
     void rawinput(const rawevent &e)
     {
+        hubinputseen();
         if(respawnonkey && (e.kind == rawevent::KEYDOWN || e.kind == rawevent::BUTTONDOWN) && !(e.flags&(rawevent::TEXT|rawevent::REPEAT)) &&
            !replaying && connected && (flagrunrules() || racerules()))
         {

@@ -16,6 +16,7 @@
 - The hub tab fits 8 players on one page.
 - Do not disturb (hub tab, off at every launch): others' chat and joins and leaves go to the full console only; no lobby ghosts or record sound.
 - TAB shows your runs on the map, last run, 10-run average, board place and the record.
+- TAB marks lobby players who are in do not disturb (dnd) or away for 30 s (afk).
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12

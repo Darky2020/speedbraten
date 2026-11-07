@@ -89,6 +89,7 @@ type player struct {
 	mapname    string
 	mode       int64
 	kind       string
+	away       uint64 // AwayDND, AwayAFK
 	lobby      *lobby
 	watching   bool // in lobby as a spectator of the one it spectates
 	admin      bool
@@ -321,6 +322,7 @@ func (h *Hub) playerMsg(p *player) []byte {
 	}
 	w.u(lid)
 	w.str(p.kind)
+	w.u(p.away)
 	return w.b
 }
 
@@ -609,6 +611,19 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.mapRequest(p, &r)
 	case MsgLegacy:
 		return h.legacyRequest(p, &r)
+	case MsgAway:
+		away := r.u()
+		if err := r.done(); err != nil {
+			return err
+		}
+		away &= AwayDND | AwayAFK
+		if away == p.away {
+			return nil
+		}
+		p.away = away
+		if p.name != "" {
+			h.broadcast(MsgPlayer, h.playerMsg(p))
+		}
 	case MsgGetThumb:
 		return h.thumbRequest(p, &r)
 	case MsgFinish:
