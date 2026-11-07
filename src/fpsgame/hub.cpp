@@ -309,6 +309,9 @@ namespace game
 
     static bool hubready();
     static void puttext(sbr2::byteswriter &w, const char *s);
+    static bool spectateanother(const char *why);
+    static void sendstopspectate();
+    static void spectatefollowup();
 
     // asks the hub for a map; mode: load it in that mode once it is here (INT_MAX: just keep it)
     static bool hubgetmap(const char *name, int mode)
@@ -1006,7 +1009,7 @@ namespace game
                     uint target = uint(r.var());
                     string why = "";
                     gettext(r, why, sizeof(why));
-                    if(r.ok && target == spectatingid()) { spectateend(why); autolobbydue = true; }
+                    if(r.ok && target == spectatingid() && !spectateanother(why)) { spectateend(why); autolobbydue = true; }
                     break;
                 }
                 case HM_RESULT:
@@ -1298,6 +1301,7 @@ namespace game
             sendpos();
             sendruntime();
             boardupdate();
+            spectatefollowup();
             spectateupdate();
         }
     }
@@ -1798,6 +1802,45 @@ namespace game
         hubsend(HM_SPECTATE, b.getbuf(), b.length());
         conoutf("\f2waiting for %s's run", p.name);
     }
+    // the lobby the spectated player was last seen playing in, 0 before
+    static uint speclobby = 0;
+
+    // watches another player of the lobby the spectated one played in, if there is one
+    static bool spectateanother(const char *why)
+    {
+        hublobby *l = speclobby ? findlobby(speclobby) : NULL;
+        if(!l || !hubready()) return false;
+        uint gone = spectatingid();
+        hubplayer *next = NULL;
+        loopv(l->members) if(l->members[i] != gone && l->members[i] != hubmyid)
+        {
+            hubplayer *p = findplayer(l->members[i]);
+            if(p && (!next || p->id < next->id)) next = p;
+        }
+        if(!next) return false;
+        conoutf("\f2%s: spectating %s instead", why, next->name);
+        spectateplayer(*next);
+        return true;
+    }
+
+    // once a frame while spectating: when the spectated player stops playing in their lobby (they
+    // left it, or started spectating someone), another player of that lobby is watched
+    static void spectatefollowup()
+    {
+        if(!spectating()) { speclobby = 0; return; }
+        uint target = spectatingid();
+        loopv(hublobbies) if(hasmember(hublobbies[i], target)) { speclobby = hublobbies[i].id; return; }
+        if(!speclobby) return;
+        hubplayer *p = findplayer(target);
+        defformatstring(why, "%s stopped playing", p ? p->name : "the player");
+        if(spectateanother(why)) return;
+        speclobby = 0;
+        conoutf("\f2stopped spectating: %s", why);
+        sendstopspectate();
+        spectatestop();
+        autolobbydue = true;
+    }
+
     ICOMMAND(hubspectate, "i", (int *id),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
