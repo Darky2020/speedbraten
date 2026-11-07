@@ -310,9 +310,10 @@ namespace game
     static bool hubready();
     static void puttext(sbr2::byteswriter &w, const char *s);
     static bool spectateanother(const char *why);
-    // do not disturb: others' chat, comings and goings, lobby ghosts and the record sound are left
-    // out; not saved, so every launch starts with it off
+    // do not disturb: others' chat and comings and goings go to the full console only, lobby ghosts
+    // and the record sound are left out; not saved, so every launch starts with it off
     MOD(VAR, donotdisturb, 0, 0, 1);
+    static int quiettype(int type) { return donotdisturb ? CON_QUIET : type; }
     static void sendstopspectate();
     static void spectatefollowup();
 
@@ -740,19 +741,19 @@ namespace game
     static void lobbycomings(const hublobby &before, const hublobby &now)
     {
         bool mine = hasmember(before, hubmyid) || hasspec(before, hubmyid);
-        if(donotdisturb || !mine || !(hasmember(now, hubmyid) || hasspec(now, hubmyid))) return;
+        if(!mine || !(hasmember(now, hubmyid) || hasspec(now, hubmyid))) return;
         loopv(now.members) if(now.members[i] != hubmyid && !hasmember(before, now.members[i]) && !hasspec(before, now.members[i]))
-            conoutf("\f1[lobby] \f0%s\f2 joined the lobby", playername(now.members[i]));
+            conoutf(quiettype(CON_INFO), "\f1[lobby] \f0%s\f2 joined the lobby", playername(now.members[i]));
         loopv(now.specs) if(now.specs[i] != hubmyid && !hasspec(before, now.specs[i]))
         {
             uint t = now.watched[i];
-            if(t == hubmyid) conoutf("\f1[lobby] \f0%s\f2 is spectating you", playername(now.specs[i]));
-            else conoutf("\f1[lobby] \f0%s\f2 is spectating %s", playername(now.specs[i]), playername(t));
+            if(t == hubmyid) conoutf(quiettype(CON_INFO), "\f1[lobby] \f0%s\f2 is spectating you", playername(now.specs[i]));
+            else conoutf(quiettype(CON_INFO), "\f1[lobby] \f0%s\f2 is spectating %s", playername(now.specs[i]), playername(t));
         }
         loopv(before.members) if(before.members[i] != hubmyid && !hasmember(now, before.members[i]) && !hasspec(now, before.members[i]))
-            conoutf("\f1[lobby] \f0%s\f2 left the lobby", playername(before.members[i]));
+            conoutf(quiettype(CON_INFO), "\f1[lobby] \f0%s\f2 left the lobby", playername(before.members[i]));
         loopv(before.specs) if(before.specs[i] != hubmyid && !hasspec(now, before.specs[i]))
-            conoutf("\f1[lobby] \f0%s\f2 %s", playername(before.specs[i]), hasmember(now, before.specs[i]) ? "joined the lobby" : "stopped spectating");
+            conoutf(quiettype(CON_INFO), "\f1[lobby] \f0%s\f2 %s", playername(before.specs[i]), hasmember(now, before.specs[i]) ? "joined the lobby" : "stopped spectating");
     }
 
     static void askboard(const char *map, int mode, const char *kind)
@@ -897,7 +898,7 @@ namespace game
                     else
                     {
                         hubplayers.add(q);
-                        if(hublisted && !donotdisturb && q.id != hubmyid && q.name[0]) conoutf("\f1[hub] \f0%s\f2 joined the hub", q.name);
+                        if(hublisted && q.id != hubmyid && q.name[0]) conoutf(quiettype(CON_INFO), "\f1[hub] \f0%s\f2 joined the hub", q.name);
                     }
                     break;
                 }
@@ -906,7 +907,7 @@ namespace game
                     uint id = uint(r.var());
                     loopv(hubplayers) if(hubplayers[i].id == id)
                     {
-                        if(hublisted && !donotdisturb && hubplayers[i].name[0]) conoutf("\f1[hub] \f0%s\f2 left the hub", hubplayers[i].name);
+                        if(hublisted && hubplayers[i].name[0]) conoutf(quiettype(CON_INFO), "\f1[hub] \f0%s\f2 left the hub", hubplayers[i].name);
                         hubplayers.remove(i);
                         break;
                     }
@@ -959,8 +960,8 @@ namespace game
                     gettext(r, name, sizeof(name));
                     char text[1024] = "";
                     gettext(r, text, sizeof(text));
-                    if(!r.ok || (donotdisturb && from != hubmyid)) break;
-                    conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : scope == HUBCHAT_DISCORD ? "discord" : "global", name, text);
+                    if(!r.ok) break;
+                    conoutf(from != hubmyid ? quiettype(CON_CHAT) : CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : scope == HUBCHAT_DISCORD ? "discord" : "global", name, text);
                     break;
                 }
                 case HM_FINISHED:

@@ -15,6 +15,8 @@ extern bool minimized;
 extern void simfastforward(int ms);
 extern int simspeedpercent;
 // set while a map's script runs: its binds last until restoremapbinds, at the next map load
+// console lines only the full console shows (left out of the top left one and the mini console)
+enum { CON_QUIET = 1<<26 };
 extern bool mapbinding;
 extern void restoremapbinds();
 

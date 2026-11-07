@@ -229,11 +229,33 @@
      clearsleep(*clearoverrides!=0 || identflags&IDF_OVERRIDDEN);
 --- a/engine/console.cpp
 +++ b/engine/console.cpp
-@@ -245,13 +245,48 @@
-     keym *km = findbind(key);
+@@ -92,8 +92,8 @@
+     }
+ }
+ 
+-ICOMMAND(conskip, "i", (int *n), setconskip(conskip, fullconsole ? fullconfilter : confilter, *n));
+-ICOMMAND(miniconskip, "i", (int *n), setconskip(miniconskip, miniconfilter, *n));
++ICOMMAND(conskip, "i", (int *n), setconskip(conskip, fullconsole ? fullconfilter : confilter&~CON_QUIET, *n));
++ICOMMAND(miniconskip, "i", (int *n), setconskip(miniconskip, miniconfilter&~CON_QUIET, *n));
+ 
+ ICOMMAND(clearconsole, "", (), { while(conlines.length()) delete[] conlines.pop().line; });
+ 
+@@ -149,9 +149,9 @@
+     extern void consolebox(int x1, int y1, int x2, int y2);
+     if(fullconsole) consolebox(conpad, conpad, conwidth+conpad+2*conoff, conheight+conpad+2*conoff);
+     
+-    int y = drawconlines(conskip, fullconsole ? 0 : confade, conwidth, conheight, conpad+conoff, fullconsole ? fullconfilter : confilter);
++    int y = drawconlines(conskip, fullconsole ? 0 : confade, conwidth, conheight, conpad+conoff, fullconsole ? fullconfilter : confilter&~CON_QUIET);
+     if(!fullconsole && (miniconsize && miniconwidth))
+-        drawconlines(miniconskip, miniconfade, (miniconwidth*(w - 2*(conpad + conoff)))/100, min(FONTH*miniconsize, abovehud - y), conpad+conoff, miniconfilter, abovehud, -1);
++        drawconlines(miniconskip, miniconfade, (miniconwidth*(w - 2*(conpad + conoff)))/100, min(FONTH*miniconsize, abovehud - y), conpad+conoff, miniconfilter&~CON_QUIET, abovehud, -1);
+     return fullconsole ? conheight + 2*(conpad + conoff) : y;
+ }
+ 
+@@ -246,12 +246,47 @@
      result(km ? km->actions[type] : "");
  }   
-+
+ 
 +// Binds made by a map's script (its menus' actions, while mapbinding is set) last until the next
 +// map load, which gives the player's own binds back, and are never saved.
 +bool mapbinding = false;
@@ -245,7 +267,7 @@
 +    loopv(mapbinds) if(mapbinds[i].code == km.code && mapbinds[i].state == state) return mapbinds[i].own;
 +    return NULL;
 +}
- 
++
 +void restoremapbinds()
 +{
 +    loopv(mapbinds)
@@ -286,11 +308,10 @@
          if(flags&CF_EXECUTE && buf[0]=='/') execute(buf+1);
          else if(action)
          {
-@@ -457,9 +493,27 @@
- }
+@@ -458,8 +494,26 @@
  
  COMMAND(onrelease, "s");
-+
+ 
 +static int bindstate()
 +{
 +    if(mainmenu) return keym::ACTION_DEFAULT;
@@ -298,7 +319,7 @@
 +    if(player->state==CS_SPECTATOR || game::spectating()) return keym::ACTION_SPECTATOR;
 +    return keym::ACTION_DEFAULT;
 +}
- 
++
 +const char *getbindaction(int code)
 +{
 +    keym *k = keyms.access(code);

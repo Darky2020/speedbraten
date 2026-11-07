@@ -94,8 +94,8 @@ void setconskip(int &skip, int filter, int n)
     }
 }
 
-ICOMMAND(conskip, "i", (int *n), setconskip(conskip, fullconsole ? fullconfilter : confilter, *n));
-ICOMMAND(miniconskip, "i", (int *n), setconskip(miniconskip, miniconfilter, *n));
+ICOMMAND(conskip, "i", (int *n), setconskip(conskip, fullconsole ? fullconfilter : confilter&~CON_QUIET, *n));
+ICOMMAND(miniconskip, "i", (int *n), setconskip(miniconskip, miniconfilter&~CON_QUIET, *n));
 
 ICOMMAND(clearconsole, "", (), { while(conlines.length()) delete[] conlines.pop().line; });
 
@@ -156,8 +156,8 @@ int renderconsole(int w, int h, int abovehud)                   // render buffer
     }
     
     int conheight = min(FONTH*consize, h - 2*(conpad + conoff));
-    int y = drawconlines(conskip, confade, conwidth, conheight, conpad+conoff, confilter);
-    if(miniconsize && miniconwidth) drawconlines(miniconskip, miniconfade, (miniconwidth*(w - 2*(conpad + conoff)))/100, min(FONTH*miniconsize, abovehud - y), conpad+conoff, miniconfilter, abovehud, -1);
+    int y = drawconlines(conskip, confade, conwidth, conheight, conpad+conoff, confilter&~CON_QUIET);
+    if(miniconsize && miniconwidth) drawconlines(miniconskip, miniconfade, (miniconwidth*(w - 2*(conpad + conoff)))/100, min(FONTH*miniconsize, abovehud - y), conpad+conoff, miniconfilter&~CON_QUIET, abovehud, -1);
     return y;
 }
 
