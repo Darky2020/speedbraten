@@ -163,7 +163,7 @@ namespace game
     }
 
     // the legacy demo being watched, and the map to go back to when leaving it ("": disconnect)
-    static string legacydemoname = "", legacyreturnmap = "";
+    static string legacydemoname = "", legacyreturnmap = "", legacydemoholder = "";
     static int legacyreturnmode = 0;
     static bool legacydemoon = false, legacydemostarted = false; // started: the demo's map has loaded
 
@@ -186,6 +186,33 @@ namespace game
         legacydemoon = false;
         if(legacyreturnmap[0]) changemap(legacyreturnmap, legacyreturnmode);
         else execute("disconnect");
+    }
+
+    // whether a demo player's name is the record holder's: the same ignoring case, else one that
+    // holds it (a clan tag around it)
+    static int holdermatch(const char *name, const char *holder)
+    {
+        if(!holder[0]) return 0;
+        if(!strcasecmp(name, holder)) return 2;
+        int n = strlen(name), h = strlen(holder);
+        for(int i = 0; i + h <= n; i++) if(!strncasecmp(name + i, holder, h)) return 1;
+        return 0;
+    }
+
+    // once a frame: a legacy record's demo follows its record holder once they are in it
+    void legacydemoframe()
+    {
+        if(!legacydemoactive() || !demoplayback || followingplayer()) return;
+        fpsent *best = NULL;
+        int bestmatch = 0;
+        loopv(players) if(players[i] != player1 && players[i]->state != CS_SPECTATOR)
+        {
+            int m = holdermatch(players[i]->name, legacydemoholder);
+            if(m > bestmatch) { best = players[i]; bestmatch = m; }
+        }
+        if(!best) return;
+        defformatstring(cmd, "follow %d", best->clientnum);
+        execute(cmd);
     }
 
     bool legacydemokey(int code, bool isdown)
@@ -227,6 +254,7 @@ namespace game
             copystring(legacyreturnmap, connected && !m_demo ? getclientmap() : "");
             legacyreturnmode = gamemode;
         }
+        copystring(legacydemoholder, viewboard.legacyname);
         copystring(legacydemoname, file + strlen("demo/"));
         legacydemoname[max(int(strlen(legacydemoname)) - 4, 0)] = '\0';
         legacydemoon = true;
