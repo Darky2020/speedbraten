@@ -270,3 +270,27 @@ func TestRaceMapsDir(t *testing.T) {
 		t.Fatal("race completion should count the race dir's maps")
 	}
 }
+
+// The header says how many are on the hub, from the presence the hub keeps in hub.db, and says
+// nothing while that is old or missing.
+func TestOnline(t *testing.T) {
+	store, dir := fixture(t)
+	s := newSite(store)
+	if _, body := get(t, s, "/"); strings.Contains(body, `class="online"`) {
+		t.Fatal("online shown without the hub's presence")
+	}
+	h, err := sqlite.Open(filepath.Join(dir, "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	h.Exec("CREATE TABLE presence(id INTEGER PRIMARY KEY, players INTEGER, names TEXT, updated INTEGER)")
+	h.Exec("INSERT INTO presence VALUES(1, 2, 'alice, bob', ?)", time.Now().Unix())
+	if _, body := get(t, s, "/flagruns"); !strings.Contains(body, `<span class="online" title="alice, bob"><i></i>2 online</span>`) {
+		t.Fatal("no online count with a fresh presence")
+	}
+	h.Exec("UPDATE presence SET updated = ?", time.Now().Add(-10*time.Minute).Unix())
+	if _, body := get(t, s, "/"); strings.Contains(body, `class="online"`) {
+		t.Fatal("online shown from a stale presence")
+	}
+}

@@ -98,7 +98,27 @@ var funcs = template.FuncMap{
 		return fmt.Sprintf("%.1f%%", float64(a)*100/float64(b))
 	},
 	"join": func(s []string) string { return strings.Join(s, ", ") },
+	"online": func() onlineNow {
+		if siteOnline == nil {
+			return onlineNow{}
+		}
+		return siteOnline()
+	},
 }
+
+// onlineNow is the hub's player count for the page header; Shown is false while the hub hasn't
+// said lately
+type onlineNow struct {
+	Shown bool
+	Count int
+	Names string
+}
+
+// siteOnline answers the templates' online; set by newSite
+var siteOnline func() onlineNow
+
+// how old the hub's presence may be and still be shown
+const onlineStale = 3 * time.Minute
 
 func page(files ...string) *template.Template {
 	paths := []string{"templates/layout.html", "templates/records.html", "templates/panels.html"}
@@ -146,6 +166,10 @@ func (s *site) raceMaps() []string {
 
 func newSite(store *board.Store) *site {
 	s := &site{store: store, mux: http.NewServeMux(), hubAddr: "141.95.67.191"}
+	siteOnline = func() onlineNow {
+		n, names, ok := store.Online(onlineStale)
+		return onlineNow{Shown: ok, Count: n, Names: names}
+	}
 	s.mux.HandleFunc("/", s.home)
 	s.mux.HandleFunc("/races", s.races)
 	s.mux.HandleFunc("/flagruns", s.flagruns)

@@ -1543,3 +1543,28 @@ func TestRelease(t *testing.T) {
 		t.Fatal("bob didn't hear of the release on joining")
 	}
 }
+
+// The hub writes the named players on it to hub.db's presence for the site, as they change.
+func TestPresence(t *testing.T) {
+	f := newFixture(t)
+	read := func() (string, string) {
+		rows, err := f.h.st.db.Query("SELECT players, names FROM presence WHERE id = 1")
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("presence %v %v", rows, err)
+		}
+		return rows[0][0], rows[0][1]
+	}
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	f.connect(newKey(), "3.3.3.3", "")
+	f.h.PresenceTick()
+	if n, names := read(); n != "2" || names != "alice, bob" {
+		t.Fatalf("presence %s %q", n, names)
+	}
+	b.conn.Close()
+	a.expect(MsgGone)
+	f.h.PresenceTick()
+	if n, names := read(); n != "1" || names != "alice" {
+		t.Fatalf("presence after bob left: %s %q", n, names)
+	}
+}

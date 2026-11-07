@@ -79,6 +79,8 @@ type Hub struct {
 	maxView     int
 	feed        feedState
 	discordTalk map[string]*bucket // Discord user id -> its chat rate limit
+	presence    string             // the named players last written to hub.db, comma-separated
+	presenceAt  time.Time
 }
 
 type player struct {

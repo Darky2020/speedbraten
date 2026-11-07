@@ -189,6 +189,12 @@ func main() {
 		r := discord.NewReader(discordToken, ch, 2*time.Second, log.Printf)
 		go r.Run(nil, func(m discord.Message) { h.DiscordSay(m.AuthorID, m.Author, m.Text) })
 	}
+	go func() {
+		for {
+			h.PresenceTick()
+			time.Sleep(15 * time.Second)
+		}
+	}()
 	if cfg.Feed != nil {
 		go func() {
 			for {

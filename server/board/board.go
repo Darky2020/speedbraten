@@ -285,6 +285,24 @@ func (s *Store) locked(f func()) error {
 	return nil
 }
 
+// Online is who the hub last said was on it: their number and names, and false when the hub
+// hasn't written that within stale (it is stopped, or older than the presence table).
+func (s *Store) Online(stale time.Duration) (int, string, bool) {
+	if s.hub == nil {
+		return 0, "", false
+	}
+	rows, err := s.hub.Query("SELECT players, names, updated FROM presence WHERE id = 1")
+	if err != nil || len(rows) == 0 {
+		return 0, "", false
+	}
+	updated, _ := strconv.ParseInt(rows[0][2], 10, 64)
+	if time.Since(time.Unix(updated, 0)) > stale {
+		return 0, "", false
+	}
+	n, _ := strconv.Atoi(rows[0][0])
+	return n, rows[0][1], true
+}
+
 // Boards lists every board, most entries first, then by map, kind and mode.
 func (s *Store) Boards() ([]*Board, error) {
 	var out []*Board

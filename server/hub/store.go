@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS reports (
 	reason TEXT NOT NULL,
 	reviewed INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS presence (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	players INTEGER NOT NULL,
+	names TEXT NOT NULL,
+	updated INTEGER NOT NULL
+);
 `
 
 type store struct{ db *sqlite.DB }
@@ -131,6 +137,12 @@ func (s *store) logChat(now int64, key, name string, scope int, lobby uint64, te
 
 func (s *store) report(now int64, reporter, reported, name, reason string) error {
 	_, err := s.db.Exec("INSERT INTO reports (time, reporter, reported, name, reason) VALUES (?, ?, ?, ?, ?)", now, reporter, reported, name, reason)
+	return err
+}
+
+// setPresence records who is on the hub now, for the leaderboard site; names comma-separated
+func (s *store) setPresence(players int, names string, now int64) error {
+	_, err := s.db.Exec("INSERT INTO presence(id, players, names, updated) VALUES(1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET players = excluded.players, names = excluded.names, updated = excluded.updated", players, names, now)
 	return err
 }
 
