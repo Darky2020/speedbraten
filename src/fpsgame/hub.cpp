@@ -1353,12 +1353,13 @@ namespace game
     }
 
     // TAB in a run away from a lobby: the lobby's columns with the player alone
-    static bool localscoreboard(g3d_gui &g)
+    // the statistics of the run being played's category, looked up again when it or they change
+    static const runsummary &currentsummary()
     {
-        const char *kind = runkind(), *statskind = runtimerkindname();
-        if(!kind[0] || !statskind) return false;
         static runsummary summary;
         static string summarykey = "";
+        const char *statskind = runtimerkindname();
+        if(!statskind) { summary = runsummary(); summarykey[0] = '\0'; return summary; }
         bool segmented = inputsplicecount() > 0;
         defformatstring(key, "%s %s %d %d %d", runmap(), statskind, runmode(), segmented ? 1 : 0, statsversion());
         if(strcmp(key, summarykey))
@@ -1366,6 +1367,34 @@ namespace game
             copystring(summarykey, key);
             statsrunsummary(runmap(), statskind, runmode(), segmented, summary);
         }
+        return summary;
+    }
+
+    // TAB's line of one's own numbers on the map being played: attempts, finishes, PB and last
+    // run, then the place on its board and the board's record
+    static void scoreboardstats(g3d_gui &g)
+    {
+        if(!runtimerkindname()) return;
+        const runsummary &s = currentsummary();
+        string pb, last;
+        copystring(pb, s.pb >= 0 ? formatruntime(s.pb) : "-");
+        copystring(last, s.last >= 0 ? formatruntime(s.last) : "-");
+        g.space(.75f);
+        g.textf("%s: %d attempts, %d finished, PB %s, last %s", COL_GRAY, NULL, runlabel(runmap()), s.attempts, s.finished, pb, last);
+        if(!curboard.have || !isboard(curboard, runmap(), runmode(), runkind())) return;
+        string place;
+        if(curboard.myrank) formatstring(place, "board #%d", curboard.myrank);
+        else copystring(place, "not on the board");
+        if(curboard.rows.length() && curboard.rows[0].rank == 1)
+            g.textf("%s, record %s (%s)", COL_GRAY, NULL, place, formatruntime(curboard.rows[0].ms), curboard.rows[0].name);
+        else g.textf("%s", COL_GRAY, NULL, place);
+    }
+
+    static bool localscoreboard(g3d_gui &g)
+    {
+        const char *kind = runkind(), *statskind = runtimerkindname();
+        if(!kind[0] || !statskind) return false;
+        const runsummary &summary = currentsummary();
         const sessionbest *best = findsessionbest(runmap(), kind, runmode());
         bool running = false;
         int ms = runtimerticks(running)*SIMTICK;
@@ -1399,6 +1428,7 @@ namespace game
         rightjustified(g.text(summary.pb >= 0 ? formatruntime(summary.pb) : "-", colour));
         g.poplist();
         g.poplist();
+        scoreboardstats(g);
         g.space(.25f);
         #undef rightjustified
         return true;
@@ -1495,6 +1525,7 @@ namespace game
         }
         #undef rowcolor
         #undef rightjustified
+        scoreboardstats(g);
         g.space(.25f);
         return true;
     }
