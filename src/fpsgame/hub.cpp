@@ -310,6 +310,8 @@ namespace game
     static bool hubready();
     static void puttext(sbr2::byteswriter &w, const char *s);
     static bool spectateanother(const char *why);
+    // do not disturb: others' chat, comings and goings, lobby ghosts and the record sound are left out
+    MOD(VARP, donotdisturb, 0, 0, 1);
     static void sendstopspectate();
     static void spectatefollowup();
 
@@ -737,7 +739,7 @@ namespace game
     static void lobbycomings(const hublobby &before, const hublobby &now)
     {
         bool mine = hasmember(before, hubmyid) || hasspec(before, hubmyid);
-        if(!mine || !(hasmember(now, hubmyid) || hasspec(now, hubmyid))) return;
+        if(donotdisturb || !mine || !(hasmember(now, hubmyid) || hasspec(now, hubmyid))) return;
         loopv(now.members) if(now.members[i] != hubmyid && !hasmember(before, now.members[i]) && !hasspec(before, now.members[i]))
             conoutf("\f1[lobby] \f0%s\f2 joined the lobby", playername(now.members[i]));
         loopv(now.specs) if(now.specs[i] != hubmyid && !hasspec(before, now.specs[i]))
@@ -894,7 +896,7 @@ namespace game
                     else
                     {
                         hubplayers.add(q);
-                        if(hublisted && q.id != hubmyid && q.name[0]) conoutf("\f1[hub] \f0%s\f2 joined the hub", q.name);
+                        if(hublisted && !donotdisturb && q.id != hubmyid && q.name[0]) conoutf("\f1[hub] \f0%s\f2 joined the hub", q.name);
                     }
                     break;
                 }
@@ -903,7 +905,7 @@ namespace game
                     uint id = uint(r.var());
                     loopv(hubplayers) if(hubplayers[i].id == id)
                     {
-                        if(hublisted && hubplayers[i].name[0]) conoutf("\f1[hub] \f0%s\f2 left the hub", hubplayers[i].name);
+                        if(hublisted && !donotdisturb && hubplayers[i].name[0]) conoutf("\f1[hub] \f0%s\f2 left the hub", hubplayers[i].name);
                         hubplayers.remove(i);
                         break;
                     }
@@ -951,12 +953,12 @@ namespace game
                 case HM_CHATFROM:
                 {
                     int scope = int(r.var());
-                    r.var();
+                    uint from = uint(r.var());
                     string name = "";
                     gettext(r, name, sizeof(name));
                     char text[1024] = "";
                     gettext(r, text, sizeof(text));
-                    if(!r.ok) break;
+                    if(!r.ok || (donotdisturb && from != hubmyid)) break;
                     conoutf(CON_CHAT, "\f1[%s] %s:\f0 %s", scope == HUBCHAT_LOBBY ? "lobby" : scope == HUBCHAT_DISCORD ? "discord" : "global", name, text);
                     break;
                 }
@@ -1056,9 +1058,9 @@ namespace game
                         copystring(legacytime, formatruntime(legacyms));
                         conoutf(CON_GAMEINFO, "\f6LEGACY RECORD BEATEN!!  \f7%s  \f0%s  \f2%s  \f4(%s %s, %s, %s%s\f4)", board, name, time, legacyname, legacytime, legacysource,
                                 ms < legacyms ? "\f0" : "\f3", signedgap(ms - legacyms));
-                        playsound(S_ITEMSPAWN);
+                        if(!donotdisturb) playsound(S_ITEMSPAWN);
                     }
-                    else if(record) playsound(S_FLAGSCORE);
+                    else if(record && !donotdisturb) playsound(S_FLAGSCORE);
                     if(isboard(curboard, map, mode, kind))
                     {
                         askboard(map, mode, kind);
@@ -1895,6 +1897,8 @@ namespace game
         hubsend(HM_SPECTATE, b.getbuf(), b.length());
         conoutf("\f2waiting for %s's run", p->name);
     }
+    bool hubdonotdisturb() { return donotdisturb != 0; }
+
     void hubspectateleave()
     {
         if(!spectating()) return;

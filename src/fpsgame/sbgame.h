@@ -53,6 +53,7 @@ extern void inputrunfinished(int runtime);
 extern void hubrunfinished(int runtime);
 // nextfollow while spectating a hub player cycles the hub's players (hub.cpp)
 extern bool hubspectatenext(int dir);
+extern bool hubdonotdisturb();
 extern const char *formatruntime(int ms);
 extern void inputdisconnect();
 extern void snaprecorder(snapio &s);

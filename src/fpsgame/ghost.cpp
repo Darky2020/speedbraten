@@ -451,7 +451,7 @@ namespace game
     static void renderlobbyghosts(bool mainpass)
     {
         loopvrev(lobbyghostlist) if(totalmillis - lobbyghostlist[i]->got.last().tick > LOBBYGHOSTTIMEOUT) delete lobbyghostlist.remove(i);
-        if(!lobbyghosts || !connected) return;
+        if(!lobbyghosts || hubdonotdisturb() || !connected) return;
         loopv(lobbyghostlist)
         {
             lobbyghost &l = *lobbyghostlist[i];
