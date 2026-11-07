@@ -1614,7 +1614,9 @@ namespace witness
                     eb.data = c.out.getbuf();
                     eb.dataLength = c.out.length();
                     int n = enet_socket_send(c.sock, NULL, &eb, 1);
-                    if(n < 0) c.closing = true;
+                    // a dead socket stays writable to select(): keeping its output would keep the
+                    // client, and the loop, from ever settling
+                    if(n < 0) { c.closing = true; c.out.setsize(0); }
                     else c.out.remove(0, n);
                 }
                 if(!c.open && now - c.connected > HANDSHAKETIMEOUT) c.closing = true;
