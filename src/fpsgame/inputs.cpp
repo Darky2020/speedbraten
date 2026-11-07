@@ -1558,8 +1558,17 @@ namespace game
         else witnessstop("the map changed");
         // a demo's players move by its recorded positions: nothing to record or witness
         int gamemode = mode;
+        static bool afterdemo = false;
+        if(!m_demo && !demoplayback && afterdemo)
+        {
+            // what the player's side queued while the demo played (spawns, model changes) means
+            // nothing to this game, and a life whose state holds it is not a fresh one
+            messages.setsize(0);
+            afterdemo = false;
+        }
         if(m_demo || demoplayback)
         {
+            afterdemo = true;
             if(!recording.empty()) recording.moveto(previous);
             recording.clear();
             recordingoff = true;

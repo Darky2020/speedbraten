@@ -6,6 +6,7 @@
 - Binds a map's menu makes (Lost's B) last only for that map.
 - Legacy flagrun records: race them as a ghost or watch their demo from the board (R restarts it, Backspace leaves).
 - Watching a demo is no longer recorded as a run or sent to the witness.
+- The first run after watching a demo is no longer rejected ("life start differs: messages").
 - Spectating a hub player shows their name, how far behind, and SPECTATOR like vanilla.
 - While spectating a hub player, your spectator binds apply: MOUSE1/MOUSE2 go to the next/previous player.
 - Spectating catches up in a moment, from the current flagrun or race life, without freezing and jumping every minute.
