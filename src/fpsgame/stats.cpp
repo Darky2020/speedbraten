@@ -25,6 +25,7 @@ namespace game
     bool statsghostchoice(const char *map, const char *kind, int mode, char *source, char *file, char *label) { return false; }
     bool statssplitsofreplay(const char *file, vector<splittime> &out) { return false; }
     void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out) { out = runsummary(); }
+    void statsplayedmaps(const char *kind, int mode, vector<char *> &out) {}
     int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side) { return -1; }
     void statssetghost(const char *map, const char *kind, int mode, const char *source, const char *file, const char *label) {}
 #else
@@ -384,6 +385,17 @@ namespace game
         int ms = sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL ? sqlite3_column_int(st, 0) : -1;
         sqlite3_finalize(st);
         return ms;
+    }
+
+    // the maps with any attempt, finished or not, in a kind and mode
+    void statsplayedmaps(const char *kind, int mode, vector<char *> &out)
+    {
+        sqlite3_stmt *st = prepare("SELECT DISTINCT map FROM attempts WHERE kind = ? AND mode = ?");
+        if(!st) return;
+        bindtext(st, 1, kind);
+        sqlite3_bind_int(st, 2, mode);
+        while(sqlite3_step(st) == SQLITE_ROW) out.add(newstring((const char *)sqlite3_column_text(st, 0)));
+        sqlite3_finalize(st);
     }
 
     void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out)

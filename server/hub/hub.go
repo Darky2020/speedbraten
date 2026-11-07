@@ -611,6 +611,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.mapRequest(p, &r)
 	case MsgLegacy:
 		return h.legacyRequest(p, &r)
+	case MsgBoardSummary:
+		return h.boardSummaryRequest(p, &r)
 	case MsgAway:
 		away := r.u()
 		if err := r.done(); err != nil {

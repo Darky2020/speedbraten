@@ -75,6 +75,79 @@ func (h *Hub) boardRequest(p *player, r *reader) error {
 }
 
 // files: the legacy record's files (legacyFiles)
+// boardSummaryRequest sends a line per board for the map browser's filters: its record, the asking
+// player's rank and its legacy record, boards with only a legacy record included. Read off the
+// hub's lock, sharing the BOARD requests' one-at-a-time limit. Called with h.mu held.
+func (h *Hub) boardSummaryRequest(p *player, r *reader) error {
+	if err := r.done(); err != nil {
+		return err
+	}
+	store := h.boards
+	if store == nil || p.boardBusy {
+		return nil
+	}
+	p.boardBusy = true
+	key := p.key
+	go func() {
+		msg := boardSummaryMsg(store, store.InstallOfPub(key), h.cfg.Logf)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		p.boardBusy = false
+		if !p.closed {
+			h.send(p, MsgBoardSummaryData, msg)
+		}
+	}()
+	return nil
+}
+
+type boardSummary struct {
+	recordMS, rank, legacyMS int64
+}
+
+func boardSummaryMsg(store *board.Store, mine string, logf func(string, ...any)) []byte {
+	sums := map[board.Key]*boardSummary{}
+	boards, err := store.Boards()
+	if err != nil {
+		logf("board summary: %v", err)
+	}
+	for _, b := range boards {
+		s := &boardSummary{}
+		if len(b.Entries) > 0 {
+			s.recordMS = b.Entries[0].MS
+		}
+		for _, e := range b.Entries {
+			if mine != "" && e.Install == mine {
+				s.rank = int64(e.Rank)
+				break
+			}
+		}
+		sums[b.Key] = s
+	}
+	legacy, err := store.LegacyRecords()
+	if err != nil {
+		logf("board summary: %v", err)
+	}
+	for _, l := range legacy {
+		s := sums[l.Key]
+		if s == nil {
+			s = &boardSummary{}
+			sums[l.Key] = s
+		}
+		s.legacyMS = l.MS
+	}
+	var w writer
+	w.u(uint64(len(sums)))
+	for k, s := range sums {
+		w.str(k.Map)
+		w.str(k.Kind)
+		w.s(int64(k.Mode))
+		w.u(uint64(s.recordMS))
+		w.u(uint64(s.rank))
+		w.u(uint64(s.legacyMS))
+	}
+	return w.b
+}
+
 func boardMsg(k board.Key, rows []board.Entry, rank int, ms int64, legacy *board.Legacy, files uint64) []byte {
 	var w writer
 	w.str(k.Map)

@@ -1070,6 +1070,65 @@ func TestLobbyStats(t *testing.T) {
 	}
 }
 
+// The board summary lists every board with its record, the asker's rank and its legacy record,
+// boards with only a legacy record too.
+func TestBoardSummary(t *testing.T) {
+	f := newFixture(t)
+	dir := t.TempDir()
+	wpath := filepath.Join(dir, "witness.db")
+	w, err := sqlite.Create(wpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	ka := newKey()
+	for _, q := range []string{
+		"CREATE TABLE sessions(id INTEGER PRIMARY KEY, installkey TEXT, installpub TEXT)",
+		"CREATE TABLE runs(id INTEGER PRIMARY KEY, installkey TEXT, map TEXT, player TEXT, runkind TEXT, mode INTEGER, runtimems INTEGER, verdict TEXT, judged INTEGER)",
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.Exec("INSERT INTO sessions(installkey, installpub) VALUES('wa', ?)", hex.EncodeToString(ka.Public))
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('kb', 'forge', 'bob', 'flagrun', 17, 9000, 'valid', 1)")
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('wa', 'forge', 'alice', 'flagrun', 17, 9500, 'valid', 1)")
+	w.Exec("INSERT INTO runs(installkey, map, player, runkind, mode, runtimems, verdict, judged) VALUES('wa', 'bklyn', 'alice', 'flagrun', 11, 7000, 'valid', 1)")
+	store, err := board.Open(wpath, "", filepath.Join(dir, "site.db"), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.SetLegacy(board.Legacy{Key: board.Key{Map: "bklyn", Kind: "flagrun", Mode: 11}, Player: "Buck", MS: 7220, Source: "Flagrun-Demos"})
+	store.SetLegacy(board.Legacy{Key: board.Key{Map: "tempest", Kind: "flagrun", Mode: 11}, Player: "Buck", MS: 9000, Source: "Flagrun-Demos"})
+	f.h.SetBoards(store)
+
+	a := f.connect(ka, "1.1.1.1", "alice")
+	a.send(MsgBoardSummary, nil)
+	m := a.expect(MsgBoardSummaryData)
+	got := map[string][3]uint64{}
+	for n := m.r.u(); n > 0; n-- {
+		k := fmt.Sprintf("%s %s %d", m.r.str(64), m.r.str(16), m.r.s())
+		got[k] = [3]uint64{m.r.u(), m.r.u(), m.r.u()}
+	}
+	if err := m.r.done(); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][3]uint64{
+		"forge flagrun 17":   {9000, 2, 0},
+		"bklyn flagrun 11":   {7000, 1, 7220},
+		"tempest flagrun 11": {0, 0, 9000},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("%s: got %v, want %v (record, rank, legacy)", k, got[k], v)
+		}
+	}
+}
+
 func TestBoardRequest(t *testing.T) {
 	f := newFixture(t)
 	dir := t.TempDir()

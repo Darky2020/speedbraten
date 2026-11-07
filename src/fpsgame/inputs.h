@@ -337,6 +337,7 @@ namespace game
         runsummary() : attempts(0), finished(0), pb(-1), last(-1), lastpb(-1), avg10(-1) {}
     };
     extern void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out);
+    extern void statsplayedmaps(const char *kind, int mode, vector<char *> &out);
     extern int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side);
     extern const inputattempt *inputrunfirst();
     // the map being played got its seed from the witness, so its runs are witnessed

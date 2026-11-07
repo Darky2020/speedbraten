@@ -542,13 +542,64 @@ namespace game
         return !n;
     }
 
-    ICOMMAND(mapbrowse, "ss", (char *kind, char *text),
+    // a line of the hub's board summary: a board's record, the player's rank on it and its legacy
+    // record, 0 for none
+    struct boardsum { string map, kind; int mode, recordms, rank, legacyms; };
+    static vector<boardsum> boardsums;
+    static bool haveboardsums = false;
+    static int boardsumsat = -100000;
+    enum { BOARDSUMREFRESH = 30000 };
+
+    static const boardsum *findboardsum(const char *map, const char *kind, int mode)
+    {
+        loopv(boardsums) if(boardsums[i].mode == mode && !strcmp(boardsums[i].map, map) && !strcmp(boardsums[i].kind, kind)) return &boardsums[i];
+        return NULL;
+    }
+
+    // the map browser's filters, 0: any. Played: never played, played, has a run (on the board),
+    // has the record; record: the board has one, has none; legacy: not beaten, beaten
+    VAR(mapfilterplayed, 0, 0, 4);
+    VAR(mapfilterrecord, 0, 0, 2);
+    VAR(mapfilterlegacy, 0, 0, 2);
+
+    // asks the hub for the board summary when the one held is older than BOARDSUMREFRESH
+    ICOMMAND(hubboardsummary, "", (),
+    {
+        if(!hubready() || totalmillis - boardsumsat < BOARDSUMREFRESH) return;
+        boardsumsat = totalmillis;
+        hubsend(HM_BOARDSUMMARY, NULL, 0);
+    });
+
+    static bool mapfilters(const char *map, const char *kind, int mode, const vector<char *> &played)
+    {
+        if(mapfilterplayed == 1 || mapfilterplayed == 2)
+        {
+            bool was = false;
+            loopv(played) if(!strcmp(played[i], map)) { was = true; break; }
+            if(was != (mapfilterplayed == 2)) return false;
+        }
+        if(!haveboardsums || (mapfilterplayed < 3 && !mapfilterrecord && !mapfilterlegacy)) return true;
+        const boardsum *b = findboardsum(map, kind, mode);
+        int recordms = b ? b->recordms : 0, rank = b ? b->rank : 0, legacyms = b ? b->legacyms : 0;
+        if(mapfilterplayed == 3 && !rank) return false;
+        if(mapfilterplayed == 4 && rank != 1) return false;
+        if(mapfilterrecord && (recordms > 0) != (mapfilterrecord == 1)) return false;
+        if(mapfilterlegacy && (!legacyms || (recordms > 0 && recordms < legacyms) != (mapfilterlegacy == 2))) return false;
+        return true;
+    }
+
+    ICOMMAND(mapbrowse, "ssi", (char *kind, char *text, int *mode),
     {
         browsedmaps.deletearrays();
         const vector<char *> &maps = !strcmp(kind, "flagrun") ? flagrunmaps : racemaps;
-        loopv(maps) if(namecontains(maps[i], text)) browsedmaps.add(newstring(maps[i]));
+        vector<char *> played;
+        if(mapfilterplayed == 1 || mapfilterplayed == 2) statsplayedmaps(kind, *mode, played);
+        loopv(maps) if(namecontains(maps[i], text) && mapfilters(maps[i], kind, *mode, played)) browsedmaps.add(newstring(maps[i]));
+        played.deletearrays();
         intret(browsedmaps.length());
     });
+    // whether the hub sent the board summary the record and legacy filters need
+    ICOMMAND(mapfiltersready, "", (), intret(haveboardsums ? 1 : 0));
     ICOMMAND(mapbrowsename, "i", (int *i), result(browsedmaps.inrange(*i) ? browsedmaps[*i] : ""));
     // a random one of the browsed maps other than the current one, "" if none; drawn from its own
     // generator, as the game's random numbers belong to the simulation
@@ -1214,6 +1265,26 @@ namespace game
                     gettext(r, kind, sizeof(kind));
                     int what = int(r.var()), size = int(r.var()), offset = int(r.var());
                     if(r.ok) legacydata(map, mode, what, size, offset, r.p, r.left());
+                    break;
+                }
+                case HM_BOARDSUMMARYDATA:
+                {
+                    vector<boardsum> sums;
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 20000; i++)
+                    {
+                        boardsum &b = sums.add();
+                        gettext(r, b.map, sizeof(b.map));
+                        gettext(r, b.kind, sizeof(b.kind));
+                        b.mode = int(r.svar());
+                        b.recordms = int(r.var());
+                        b.rank = int(r.var());
+                        b.legacyms = int(r.var());
+                    }
+                    if(!r.ok) break;
+                    boardsums.move(sums);
+                    haveboardsums = true;
+                    if(identexists("sb_scanmaps")) execute("sb_scanmaps");
                     break;
                 }
                 case HM_MAPDATA:
