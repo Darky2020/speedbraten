@@ -13,8 +13,8 @@
 - Flagruns and races: an option to suicide after a finish, to start the next run.
 - The board page shows the top 10.
 - The hub tab fits 8 players on one page.
-- Do not disturb (hub tab): hides others' chat, joins and leaves, lobby ghosts and the record sound.
-- TAB shows your attempts, finishes, PB and last run on the map, your board place and the record.
+- Do not disturb (hub tab, off at every launch): hides others' chat, joins and leaves, lobby ghosts and the record sound.
+- TAB shows your runs on the map, last run, 10-run average, board place and the record.
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12

@@ -310,8 +310,9 @@ namespace game
     static bool hubready();
     static void puttext(sbr2::byteswriter &w, const char *s);
     static bool spectateanother(const char *why);
-    // do not disturb: others' chat, comings and goings, lobby ghosts and the record sound are left out
-    MOD(VARP, donotdisturb, 0, 0, 1);
+    // do not disturb: others' chat, comings and goings, lobby ghosts and the record sound are left
+    // out; not saved, so every launch starts with it off
+    MOD(VAR, donotdisturb, 0, 0, 1);
     static void sendstopspectate();
     static void spectatefollowup();
 
@@ -1370,24 +1371,43 @@ namespace game
         return summary;
     }
 
-    // TAB's line of one's own numbers on the map being played: attempts, finishes, PB and last
-    // run, then the place on its board and the board's record
+    // TAB's table of one's own numbers on the map being played, under the players: finished runs of
+    // attempts, the last run and the average of the last 10, then the place on its board and the
+    // board's record
     static void scoreboardstats(g3d_gui &g)
     {
+        extern int runtimerpbcolour;
         if(!runtimerkindname()) return;
         const runsummary &s = currentsummary();
-        string pb, last;
-        copystring(pb, s.pb >= 0 ? formatruntime(s.pb) : "-");
-        copystring(last, s.last >= 0 ? formatruntime(s.last) : "-");
+        bool board = curboard.have && isboard(curboard, runmap(), runmode(), runkind());
+        #define statcolumn(title, b) { g.pushlist(); g.text(title, COL_GRAY); b; g.poplist(); g.space(2); }
         g.space(.75f);
-        g.textf("%s: %d attempts, %d finished, PB %s, last %s", COL_GRAY, NULL, runlabel(runmap()), s.attempts, s.finished, pb, last);
-        if(!curboard.have || !isboard(curboard, runmap(), runmode(), runkind())) return;
-        string place;
-        if(curboard.myrank) formatstring(place, "board #%d", curboard.myrank);
-        else copystring(place, "not on the board");
-        if(curboard.rows.length() && curboard.rows[0].rank == 1)
-            g.textf("%s, record %s (%s)", COL_GRAY, NULL, place, formatruntime(curboard.rows[0].ms), curboard.rows[0].name);
-        else g.textf("%s", COL_GRAY, NULL, place);
+        g.pushlist();
+        statcolumn("runs", g.textf("%d\f4/\f7%d", COL_WHITE, NULL, s.finished, s.attempts));
+        statcolumn("last", g.text(s.last >= 0 ? formatruntime(s.last) : "-", s.last >= 0 && s.last == s.pb ? runtimerpbcolour : COL_WHITE));
+        statcolumn("avg 10", g.text(s.avg10 >= 0 ? formatruntime(s.avg10) : "-", COL_WHITE));
+        if(board)
+        {
+            static const int medals[3] = { 0xFFD700, 0xC0C0C0, 0xCD7F32 };
+            int rank = curboard.myrank;
+            string place;
+            if(rank) formatstring(place, "#%d", rank);
+            else copystring(place, "-");
+            statcolumn("board", g.text(place, rank >= 1 && rank <= 3 ? medals[rank-1] : rank ? COL_WHITE : COL_GRAY));
+            if(curboard.rows.length() && curboard.rows[0].rank == 1)
+            {
+                g.pushlist();
+                g.text("record", COL_GRAY);
+                g.pushlist();
+                g.text(formatruntime(curboard.rows[0].ms), COL_YELLOW);
+                g.space(1);
+                g.text(curboard.rows[0].name, COL_WHITE);
+                g.poplist();
+                g.poplist();
+            }
+        }
+        g.poplist();
+        #undef statcolumn
     }
 
     static bool localscoreboard(g3d_gui &g)

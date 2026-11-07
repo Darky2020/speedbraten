@@ -418,6 +418,15 @@ namespace game
             if(sqlite3_column_type(st, 1) != SQLITE_NULL) out.lastpb = sqlite3_column_int(st, 1);
         }
         sqlite3_finalize(st);
+        st = prepare("SELECT AVG(runtime) FROM (SELECT runtime FROM attempts WHERE map = ? AND kind = ? AND mode = ? AND (splices > 0) = ? "
+                     "AND finished AND NOT assisted ORDER BY date DESC, id DESC LIMIT 10)");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        sqlite3_bind_int(st, 3, mode);
+        sqlite3_bind_int(st, 4, segmented ? 1 : 0);
+        if(sqlite3_step(st) == SQLITE_ROW && sqlite3_column_type(st, 0) != SQLITE_NULL) out.avg10 = int(sqlite3_column_double(st, 0) + 0.5);
+        sqlite3_finalize(st);
     }
 
     // Writes the attempts in the history chain, oldest first: "SBR2-history 1", the count, then

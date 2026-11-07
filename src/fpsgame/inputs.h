@@ -333,7 +333,8 @@ namespace game
     struct runsummary
     {
         int attempts, finished, pb, last, lastpb;
-        runsummary() : attempts(0), finished(0), pb(-1), last(-1), lastpb(-1) {}
+        int avg10; // ms, the average of the last 10 finished runs without assists; -1 without any
+        runsummary() : attempts(0), finished(0), pb(-1), last(-1), lastpb(-1), avg10(-1) {}
     };
     extern void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out);
     extern int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side);
