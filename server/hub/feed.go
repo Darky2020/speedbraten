@@ -112,6 +112,47 @@ func (h *Hub) feedChat(p *player, scope int, text string) {
 	h.feedPost("💬 " + where + "**" + feedName(p.name) + "**: " + feedName(text))
 }
 
+// feedWho is a player's name with (dnd) or (afk) when they are away
+func feedWho(p *player) string {
+	switch {
+	case p.away&AwayDND != 0:
+		return feedName(p.name) + " (dnd)"
+	case p.away&AwayAFK != 0:
+		return feedName(p.name) + " (afk)"
+	}
+	return feedName(p.name)
+}
+
+// whoText answers !who from Discord: the lobbies as the status gives them, then the named players
+// outside any lobby. Runs with h.mu held.
+func (h *Hub) whoText() string {
+	var out []*player
+	for _, p := range h.players {
+		if p.name != "" && p.lobby == nil {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	if len(h.lobbies) == 0 && len(out) == 0 {
+		return "🎮 nobody is on the hub"
+	}
+	var b strings.Builder
+	if len(h.lobbies) > 0 {
+		b.WriteString(h.lobbyStatus())
+	}
+	if len(out) > 0 {
+		var names []string
+		for _, p := range out {
+			names = append(names, feedWho(p))
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "💤 not in a lobby: %s", strings.Join(names, ", "))
+	}
+	return b.String()
+}
+
 // lobbyStatus is one line per lobby: its map and category, its members (the host first, crowned)
 // and who watches. Runs with h.mu held.
 func (h *Hub) lobbyStatus() string {
@@ -129,11 +170,11 @@ func (h *Hub) lobbyStatus() string {
 	for _, l := range ls {
 		var names []string
 		if l.host != nil {
-			names = append(names, "👑 "+feedName(l.host.name))
+			names = append(names, "👑 "+feedWho(l.host))
 		}
 		for _, m := range l.members {
 			if m != l.host {
-				names = append(names, feedName(m.name))
+				names = append(names, feedWho(m))
 			}
 		}
 		k := board.Key{Map: l.mapname, Kind: l.kind, Mode: int(l.mode)}
@@ -141,7 +182,7 @@ func (h *Hub) lobbyStatus() string {
 		if len(l.specs) > 0 {
 			var specs []string
 			for _, s := range l.specs {
-				specs = append(specs, feedName(s.name))
+				specs = append(specs, feedWho(s))
 			}
 			fmt.Fprintf(&b, " · 👀 %s", strings.Join(specs, ", "))
 		}

@@ -837,6 +837,12 @@ func (h *Hub) DiscordSay(user, name, text string) {
 	if !b.take(now, TalkRate, TalkBurst) {
 		return
 	}
+	if strings.EqualFold(text, "!who") {
+		if h.cfg.Feed != nil {
+			h.feedPost(h.whoText())
+		}
+		return
+	}
 	if err := h.st.logChat(now.Unix(), "discord:"+user, name, ChatDiscord, 0, text); err != nil {
 		h.cfg.Logf("chat log: %v", err)
 	}

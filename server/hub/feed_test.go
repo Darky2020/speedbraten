@@ -237,3 +237,51 @@ func TestDiscordSay(t *testing.T) {
 		t.Fatalf("chat log %v %v", rows, err)
 	}
 }
+
+// !who from Discord answers in the feed with the lobbies and who is outside one, marking players
+// who are away, and is not passed on to the game.
+func TestDiscordWho(t *testing.T) {
+	f, feed := newFeedFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	c := f.connect(newKey(), "3.3.3.3", "carol")
+	f.h.DiscordSay("42", "meep", "!who")
+	if posts, _ := feed.take(); len(posts) == 0 || !strings.Contains(posts[len(posts)-1], "💤 not in a lobby: alice, bob, carol") {
+		t.Fatalf("who with no lobby: %q", posts)
+	}
+
+	a.mapmsg(MsgLobbyCreate, "forge", 11)
+	l := b.expectLobby()
+	var w writer
+	w.u(l.id)
+	b.send(MsgLobbyJoin, w.b)
+	b.waitLobby(func(l lobbyinfo) bool { return len(l.members) == 2 })
+	w = writer{}
+	w.u(AwayAFK)
+	c.send(MsgAway, w.b)
+	w = writer{}
+	w.u(AwayDND)
+	b.send(MsgAway, w.b)
+	a.expectPlayer(c.id)
+	for {
+		m := a.expectPlayer(b.id)
+		m.r.str(64)
+		m.r.u()
+		m.r.str(64)
+		m.r.s()
+		m.r.u()
+		m.r.str(16)
+		if m.r.u() == AwayDND {
+			break
+		}
+	}
+	feed.take()
+	f.h.DiscordSay("42", "meep", " !WHO ")
+	posts, _ := feed.take()
+	if len(posts) != 1 || !strings.Contains(posts[0], "\n🚩 forge (flagrun, ctf): 👑 alice, bob (dnd)") || !strings.Contains(posts[0], "\n💤 not in a lobby: carol (afk)") {
+		t.Fatalf("who: %q", posts)
+	}
+	if _, ok := a.next(MsgChatFrom, 100*time.Millisecond); ok {
+		t.Fatal("!who reached the game as chat")
+	}
+}
