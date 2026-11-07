@@ -358,6 +358,8 @@ namespace game
     // A live load keeps the keys the player holds now: the state's movement and attack belong
     // to the moment it was saved, and the keys pressed then are not held any more.
     static void hubviewfrom(const statestart &st);
+    static void hubviewlater(const statestart &st);
+    static statestart *nextview = NULL; // see hubviewlater
 
     static bool loadlivestate(statestart &st, int kind)
     {
@@ -367,6 +369,7 @@ namespace game
         bool jumping = d.jumping, attacking = d.attacking;
         if(!replaying && !recordingoff) witnessstop("a state was loaded");
         hubviewstop();
+        DELETEP(nextview);
         chainpending = false;
         if(!restorestate(st.state)) return false;
         if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); }
@@ -433,6 +436,8 @@ namespace game
         lifestart = l;
         tellslifestart();
         if(curtick >= 1) witnesslife();
+        // a spectator joining in a flagrun or race plays only the life going on
+        if(curtick >= 1) hubviewlater(*l);
     }
 
     // After a witnessed run ends in a life that goes on, the life's next run starts at the
@@ -572,20 +577,42 @@ namespace game
         hubviewbegin(header, recording.last(), st.tick);
     }
 
+    // A view from a snapshot of the timeline going on (a keyframe, a life start) goes out once the
+    // current view has closed a segment starting at or after the snapshot's tick: spectators then
+    // have the current view up to that tick and switch views there without a gap.
+    static void hubviewlater(const statestart &st)
+    {
+        if(!hubviewing()) { DELETEP(nextview); hubviewfrom(st); return; }
+        if(!nextview) nextview = new statestart;
+        nextview->state = st.state;
+        nextview->tick = st.tick;
+        nextview->branch = st.branch;
+        nextview->date = st.date;
+        memcpy(nextview->settings, st.settings, sizeof(st.settings));
+    }
+    static void hubviewpending()
+    {
+        if(!nextview || (hubviewing() && hubviewclosed() < nextview->tick)) return;
+        hubviewfrom(*nextview);
+        DELETEP(nextview);
+    }
+
     // A new spectator view from a snapshot of now: every HUBKEYFRAMETICKS, so a late spectator
-    // catches up through at most that, and when streaming becomes wanted mid-attempt.
-    enum { HUBKEYFRAMETICKS = 12000 };
+    // catches up through at most that, and when streaming becomes wanted mid-attempt. Keyframes
+    // are taken at a segment's first tick, where the current view can end without a partial one.
+    enum { HUBKEYFRAMETICKS = 12000, HUBKEYFRAMEALIGN = 200 };
     static void hubkeyframe()
     {
         if(replaying || recordingoff || curtick <= 1 || recording.attempts.empty()) return;
-        if(hubviewing() ? curtick - hubviewstart() < HUBKEYFRAMETICKS : curtick % 200 || !hubstreaming()) return;
+        if(curtick % HUBKEYFRAMEALIGN || nextview) return;
+        if(hubviewing() ? curtick - hubviewstart() < HUBKEYFRAMETICKS : !hubstreaming()) return;
         statestart st;
         if(!takesnapshot(st.state)) return;
         st.tick = curtick;
         st.branch = curbranch;
         st.date = uint(time(NULL));
         readsettings(st.settings);
-        hubviewfrom(st);
+        hubviewlater(st);
     }
 
     // loads the newest automatic state that lies at least a quarter interval back
@@ -1480,6 +1507,7 @@ namespace game
         mapstartstate.setsize(0);
         bool chained = mapchained(mode) && !recordingoff, unstarted = lifestart && !lifesaved && !liferunstarted();
         if(!chained || replaypending) { saveunfinishedrun(); hubviewstop(); }
+        DELETEP(nextview);
         lifestart = NULL;
         lives.deletecontents();
         lifepending = lifesaved = chainpending = false;
@@ -1612,6 +1640,7 @@ namespace game
     void frametimed(int us, int ticks, bool drawn)
     {
         replayfastframe(us);
+        spectateframe(us);
         witnessupdate();
         hubupdate();
         int aids = tellsframe(us);
@@ -1642,6 +1671,7 @@ namespace game
         t.fixedframe = max(t.fixedframe, fixedframe);
         witnessframe(curtick);
         hubviewframe(curtick);
+        hubviewpending();
     }
 
     void playinputrun(const inputrun &src, const char *file)

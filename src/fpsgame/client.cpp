@@ -903,7 +903,7 @@ namespace game
         else printvar(id, gamespeed);
     });
 
-    int scaletime(int t) { return t*gamespeed*spectatespeed()/100; }
+    int scaletime(int t) { return t*gamespeed; }
 
     // collect c2s messages conveniently
     vector<uchar> messages;

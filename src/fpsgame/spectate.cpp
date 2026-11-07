@@ -9,7 +9,7 @@
 namespace game
 {
     // views from the hub have segments of this many ticks in every mode
-    enum { CATCHUPSPEED = 1000, VIEWSEGMENT = 200 };
+    enum { VIEWSEGMENT = 200 };
 
     static uint spectarget = 0, specrun = 0;
     static bool specstarted = false, specchained = false;
@@ -18,6 +18,7 @@ namespace game
     // one in place once that one is played out, up to oldknown, without a map load.
     static bool specswitch = false;
     static int oldknown = 0;
+    static int switchtick = -1; // where the new view starts, once its file has arrived; -1 before
     static string specmap = "", speckind = "";
     static int specmode = 0;
     static string specname = "";
@@ -29,18 +30,34 @@ namespace game
     uint spectatingid() { return spectarget; }
     const char *spectatingname() { return specname; }
 
-    // the simulation waits for the file to catch up with playback
-    bool spectatehold() { return spectarget && specstarted && inputreplayneeds(specswitch ? oldknown : specknown); }
-
-    // percent of normal speed: fast while the spectated run plays more than two segments behind
-    int spectatespeed()
+    // the tick playback may run up to: the file's known tick, or while a new view waits to replace
+    // the playing one, where the new view starts (a gap or a rewind otherwise) unless the old one
+    // ends before that
+    static int playablelimit()
     {
-        if(!spectarget || !specstarted || !inputreplayactive()) return 100;
-        return (specswitch ? oldknown : specknown) - inputtick() > 2*VIEWSEGMENT ? CATCHUPSPEED : 100;
+        if(!specswitch) return specknown;
+        return switchtick >= 0 ? min(oldknown, switchtick) : oldknown;
+    }
+
+    // the simulation waits for the file to catch up with playback
+    bool spectatehold() { return spectarget && specstarted && inputreplayneeds(playablelimit()); }
+
+    // Far behind (a spectator who just joined), playback adds as many ticks a frame as fit in
+    // CATCHUPFRAMEUS of the frame's time, adapting to how long the frames take.
+    enum { CATCHUPFRAMEUS = 30000, CATCHUPMINTICKS = 4, CATCHUPMAXTICKS = 20000 };
+    static int catchupticks = CATCHUPMINTICKS;
+
+    // once per frame, with the time the last one took
+    void spectateframe(int us)
+    {
+        int behind = spectarget && specstarted && inputreplayactive() ? playablelimit() - inputtick() : 0;
+        if(behind <= 2*VIEWSEGMENT) { catchupticks = CATCHUPMINTICKS; return; }
+        catchupticks = us < CATCHUPFRAMEUS ? min(catchupticks*2, int(CATCHUPMAXTICKS)) : max(catchupticks/2, int(CATCHUPMINTICKS));
+        simfastforward(min(catchupticks, behind - VIEWSEGMENT)*SIMTICK);
     }
 
     // seconds of play the spectator is behind the newest segment, for the HUD
-    float spectatebehind() { return spectarget && specstarted ? max((specswitch ? oldknown : specknown) - inputtick(), 0)*SIMTICK/1000.0f : 0; }
+    float spectatebehind() { return spectarget && specstarted ? max(playablelimit() - inputtick(), 0)*SIMTICK/1000.0f : 0; }
 
     void spectatebegin(uint target, const char *name, const char *map, int mode, const char *kind)
     {
@@ -60,11 +77,14 @@ namespace game
     void spectaterun(uint run, const char *map, int mode, const char *kind, bool chained)
     {
         if(!spectarget) return;
+        // what arrived of the old view counts towards how far it can be played
+        if(specstarted && !specswitch) spectateupdate();
         stream *f = openrawfile(path(specfile, true), "wb");
         if(f) delete f;
         bool same = specstarted && inputreplayactive() && !strcmp(map, specmap) && mode == specmode;
         if(same && !specswitch) oldknown = specknown;
         specswitch = same;
+        switchtick = -1;
         specrun = run;
         specbytes = specparsed = specknown = 0;
         specchained = chained && specstarted && inputreplayactive();
@@ -137,8 +157,8 @@ namespace game
     // harness: the spectate state
     ICOMMAND(spectatestate, "", (),
     {
-        defformatstring(res, "target=%u started=%d switch=%d known=%d tick=%d replay=%d speed=%d map=%s", spectarget, specstarted ? 1 : 0,
-                        specswitch ? 1 : 0, specswitch ? oldknown : specknown, inputtick(), inputreplayactive() ? 1 : 0, spectatespeed(), clientmap);
+        defformatstring(res, "target=%u started=%d switch=%d known=%d tick=%d replay=%d catchup=%d map=%s", spectarget, specstarted ? 1 : 0,
+                        specswitch ? 1 : 0, playablelimit(), inputtick(), inputreplayactive() ? 1 : 0, catchupticks, clientmap);
         result(res);
     });
 
@@ -146,16 +166,22 @@ namespace game
     void spectateupdate()
     {
         if(!spectarget || specbytes == specparsed) return;
-        if(specswitch && !inputreplayneeds(oldknown)) return;
         inputrun run;
         replayinfo info;
         int known = 0;
+        if(specswitch && switchtick < 0)
+        {
+            if(!readreplayprefix(specfile, run, info, known) || run.attempts.empty()) return;
+            const inputattempt &a = *run.attempts[0];
+            switchtick = a.snapshot.empty() ? oldknown : max(a.starttick, 0);
+        }
+        if(specswitch && !inputreplayneeds(playablelimit())) return;
         if(!readreplayprefix(specfile, run, info, known)) return;
         specparsed = specbytes;
         specknown = known;
         if(specswitch)
         {
-            if(run.empty()) return;
+            if(run.attempts.empty()) return;
             specswitch = false;
             if(inputreplayswitch(run)) { inputreplayextend(run, false, false); return; }
             specstarted = false;

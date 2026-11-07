@@ -2234,6 +2234,8 @@ namespace game
 
     bool hubviewing() { return view != NULL; }
     int hubviewstart() { return view ? view->starttick : 0; }
+    // the first tick of the view's last closed segment, -1 before one has closed
+    int hubviewclosed() { return view && view->s.seg > view->starttick / HUBVIEWSEGMENT ? (view->s.seg - 1)*HUBVIEWSEGMENT : -1; }
     void hubviewstop() { DELETEP(view); }
 
     // header: the attempt as the view starts it (a map start, or a saved state at skiptick)

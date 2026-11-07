@@ -288,6 +288,7 @@ namespace game
     extern bool hubviewing();
     extern int hubviewstart();
     extern void hubviewstop();
+    extern int hubviewclosed();
     extern void hubviewbegin(const inputattempt &header, const inputattempt &data, int skiptick);
     extern void hubviewnextattempt(const inputattempt &a);
     extern void hubviewframe(int curtick);
@@ -362,6 +363,7 @@ namespace game
     extern void spectateresume(uint target, const char *name);
     extern void hubspectateresume(uint target);
     extern void spectateupdate();
+    extern void spectateframe(int us);
     // a map the player loads while spectating ends the spectating (hub.cpp)
     extern void hubspectateleave();
     // file: the replay file it was read from, or NULL

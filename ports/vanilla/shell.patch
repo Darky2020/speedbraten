@@ -2305,14 +2305,7 @@
  
      void changegamespeed(int val)
      {
-@@ -824,12 +843,14 @@
-         else printvar(id, gamespeed);
-     });
- 
--    int scaletime(int t) { return t*gamespeed; }
-+    int scaletime(int t) { return t*gamespeed*spectatespeed()/100; }
- 
-     // collect c2s messages conveniently
+@@ -830,6 +849,8 @@
      vector<uchar> messages;
      int messagecn = -1, messagereliable = false;
  
@@ -2973,19 +2966,17 @@
      extern string servdesc;
      extern vector<uchar> messages;
  
-@@ -761,6 +770,11 @@
+@@ -761,6 +770,9 @@
      extern void sendmapinfo();
      extern void stopdemo();
      extern void changemap(const char *name, int mode);
 +    // say (everyone) and sayteam (the lobby) away from a game server go to the hub (hub.cpp); false if it can't take them
 +    extern bool hubchat(const char *text, bool lobby = false);
 +    extern bool hubfetchmap(const char *name, int mode);
-+    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
-+    extern int spectatespeed();
      extern void forceintermission();
      extern void c2sinfo(bool force = false);
      extern void sendposition(fpsent *d, bool reliable = false);
-@@ -770,9 +784,12 @@
+@@ -770,9 +782,12 @@
      extern vector<monster *> monsters;
  
      extern void clearmonsters();
@@ -2998,7 +2989,7 @@
      extern void rendermonsters();
      extern void suicidemonster(monster *m);
      extern void hitmonster(int damage, monster *m, fpsent *at, const vec &vel, int gun);
-@@ -785,8 +802,10 @@
+@@ -785,8 +800,10 @@
      extern vector<movable *> movables;
  
      extern void clearmovables();
@@ -3009,7 +3000,7 @@
      extern void rendermovables();
      extern void suicidemovable(movable *m);
      extern void hitmovable(int damage, movable *m, fpsent *at, const vec &vel, int gun);
-@@ -803,16 +822,19 @@
+@@ -803,16 +820,19 @@
      extern bool intersect(dynent *d, const vec &from, const vec &to, float &dist = intersectdist);
      extern dynent *intersectclosest(const vec &from, const vec &to, fpsent *at, float &dist = intersectdist);
      extern void clearbouncers();
@@ -3029,7 +3020,7 @@
      extern void gunselect(int gun, fpsent *d);
      extern void weaponswitch(fpsent *d);
      extern void avoidweapons(ai::avoidset &obstacles, float radius);
-@@ -841,6 +863,7 @@
+@@ -841,6 +861,7 @@
      extern void moveragdolls();
      extern void changedplayermodel();
      extern const playermodelinfo &getplayermodelinfo(fpsent *d);
@@ -3037,7 +3028,7 @@
      extern int chooserandomplayermodel(int seed);
      extern void swayhudgun(int curtime);
      extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);
-@@ -856,6 +879,14 @@
+@@ -856,6 +877,14 @@
      extern const char *getdemofile(const char *file, bool init);
      extern void forcemap(const char *map, int mode);
      extern void forcepaused(bool paused);
@@ -3052,7 +3043,7 @@
      extern void forcegamespeed(int speed);
      extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
      extern int msgsizelookup(int msg);
-@@ -863,5 +894,7 @@
+@@ -863,5 +892,7 @@
      extern bool delayspawn(int type);
  }
  

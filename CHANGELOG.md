@@ -8,6 +8,7 @@
 - Watching a demo is no longer recorded as a run or sent to the witness.
 - Spectating a hub player shows their name, how far behind, and SPECTATOR like vanilla.
 - While spectating a hub player, your spectator binds apply: MOUSE1/MOUSE2 go to the next/previous player.
+- Spectating catches up in a moment, from the current flagrun or race life, without freezing and jumping every minute.
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12

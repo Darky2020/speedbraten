@@ -796,8 +796,6 @@ namespace game
     // say (everyone) and sayteam (the lobby) away from a game server go to the hub (hub.cpp); false if it can't take them
     extern bool hubchat(const char *text, bool lobby = false);
     extern bool hubfetchmap(const char *name, int mode);
-    // spectating through the hub (spectate.cpp): percent of normal speed while catching up
-    extern int spectatespeed();
     extern void forceintermission();
     extern void c2sinfo(bool force = false);
     extern void sendposition(fpsent *d, bool reliable = false);
