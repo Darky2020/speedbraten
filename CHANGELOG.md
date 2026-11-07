@@ -9,6 +9,10 @@
 - Spectating a hub player shows their name, how far behind, and SPECTATOR like vanilla.
 - While spectating a hub player, your spectator binds apply: MOUSE1/MOUSE2 go to the next/previous player.
 - Spectating catches up in a moment, from the current flagrun or race life, without freezing and jumping every minute.
+- When the player you spectate leaves or starts spectating, you watch another player of their lobby.
+- Flagruns and races: an option to suicide after a finish, to start the next run.
+- The board page shows the top 10.
+- The hub tab fits 8 players on one page.
 - /demo no longer tries to download the demo's name as a map.
 
 ## v0.3.12

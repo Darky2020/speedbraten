@@ -1641,6 +1641,7 @@ namespace game
     {
         replayfastframe(us);
         spectateframe(us);
+        runtimerframe();
         witnessupdate();
         hubupdate();
         int aids = tellsframe(us);

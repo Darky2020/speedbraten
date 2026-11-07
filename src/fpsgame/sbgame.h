@@ -64,6 +64,7 @@ extern void runtimerendsp();
 extern void runtimerflagtaken(fpsent *d, int flag, const vec &loc, float radius);
 extern void runtimerflagscored(fpsent *d);
 extern void runtimertick();
+extern void runtimerframe();
 extern int runtimerticks(bool &running);
 extern bool runtimerfinished();
 extern int runtimerflagside();

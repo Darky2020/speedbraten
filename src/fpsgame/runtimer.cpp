@@ -21,6 +21,7 @@ namespace game
     static bool liferan = false;  // the run of player1's current life started (flagrun/race)
     enum { RACESTARTEDTICKS = 200 };
     static int runbase = 0, runstart = 0, runend = 0, runflag = -1;
+    static bool suicidepending = false; // finishsuicide's, for the next frame
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
 
@@ -92,6 +93,7 @@ namespace game
 
     void runtimermapstart(int mode, bool local)
     {
+        suicidepending = false;
         bool sp = local && m_check(mode, M_DMSP | M_CLASSICSP);
         finishedatmapstart = runstate == RUN_FINISHED;
         bool chained = sp && runkind == RUNTIMER_SP && (runstate == RUN_RUNNING || runstate == RUN_SPLIT) && mapchained(mode);
@@ -104,10 +106,22 @@ namespace game
         else { runkind = RUNTIMER_NONE; runstate = RUN_IDLE; }
     }
 
+    // flagruns and races: a suicide once a run finishes, to start the next; it goes through the
+    // input queue after the tick so the replay records it
+    MOD(VARP, finishsuicide, 0, 0, 1);
+
+    void runtimerframe()
+    {
+        if(!suicidepending) return;
+        suicidepending = false;
+        if(player1->state == CS_ALIVE && inputrecordinglive()) execute("suicide");
+    }
+
     static void finishrun()
     {
         runend = inputtick();
         runstate = RUN_FINISHED;
+        if(finishsuicide && (runkind == RUNTIMER_FLAG || runkind == RUNTIMER_RACE) && inputrecordinglive()) suicidepending = true;
         conoutf(CON_GAMEINFO, "\f2run time: %s", formatruntime(runticks()*SIMTICK));
         inputrunfinished(runticks()*SIMTICK);
         hubrunfinished(runticks()*SIMTICK);
