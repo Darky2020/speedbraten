@@ -279,3 +279,23 @@ func TestFlagrunMaps(t *testing.T) {
 		t.Fatal("forge is on the list")
 	}
 }
+
+// Races are played in ffa or coop edit under the same rules: a map's runs from both share one
+// board, keyed as mode 0.
+func TestRaceModesShareABoard(t *testing.T) {
+	f := newFixture(t)
+	f.run(1, "ka", "a", "nadefly", "race", 0, 5000, "valid")
+	f.run(2, "kb", "b", "nadefly", "race", 1, 4800, "valid")
+	s := f.open()
+	e := entries(t, s, Key{"nadefly", "race", 0})
+	if len(e) != 2 || e[0].Run != 2 || e[0].Rank != 1 {
+		t.Fatalf("race board %+v", e)
+	}
+	if b, _ := s.Board(Key{"nadefly", "race", 1}); b == nil || b.Key.Mode != 0 || len(b.Entries) != 2 {
+		t.Fatalf("asked in coop edit: %+v", b)
+	}
+	recs, _ := s.Records(10)
+	if len(recs) != 2 || recs[0].Key.Mode != 0 || recs[0].Prev != 5000 {
+		t.Fatalf("race records %+v", recs)
+	}
+}

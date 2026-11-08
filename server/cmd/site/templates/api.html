@@ -13,6 +13,7 @@
 
 <section>
 <h2>Conventions</h2>
+<p>Runs whose replay is public carry <code>replay</code>, the URL to download the signed replay (a <code>.sbr</code> file to open in the client's replay browser or race as a ghost); it is absent while a new record's replay is still held back.</p>
 <p>Times come as <code>ms</code> (a number of milliseconds) and <code>time</code> (the same as <code>m:ss.mmm</code>). Dates (<code>when</code>) are RFC 3339 in UTC: when the witness judged the run.</p>
 <p>A <code>player</code> is a player's id, the same as in the address of their page (<code>/player?id=…</code>). Names can change and aren't unique; ids don't.</p>
 <p>Errors are <code>{"error": "…"}</code> with <code>400</code> for a missing or bad parameter, <code>404</code> for no such board or player, <code>405</code> for a method other than GET, <code>429</code> past the rate limit (with <code>Retry-After: 1</code>) and <code>500</code>.</p>
@@ -20,7 +21,7 @@
 <p>A board is one map in one mode for one kind of run. Objects that name a board carry <code>map</code>, <code>kind</code>, <code>mode</code> and <code>mode_name</code> (the mode as text).</p>
 <table class="params kinds">
 <tr><td><code>flagrun</code></td><td>take the enemy flag and score it: <code>11</code> ctf, <code>12</code> insta ctf, <code>17</code> effic ctf</td></tr>
-<tr><td><code>race</code></td><td>start to finish on a race map: <code>0</code> ffa or <code>1</code> coop edit</td></tr>
+<tr><td><code>race</code></td><td>start to finish on a race map: always <code>0</code>, since runs in ffa and in coop edit share one board per map (<code>mode_name</code> is <code>"ffa or coop edit"</code>); a race board asked for with mode <code>1</code> answers as mode <code>0</code></td></tr>
 <tr><td><code>campaign</code></td><td>a singleplayer campaign, all its maps in one run: the negative singleplayer modes</td></tr>
 </table>
 </section>
@@ -68,10 +69,12 @@
 <li><span class="f">ms</span><span class="pill t-number">number</span></li>
 <li><span class="f">time</span><span class="pill t-string">string</span></li>
 <li><span class="f">when</span><span class="pill t-string">string</span></li>
+<li><span class="f">run</span><span class="pill t-number">number</span></li>
+<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL, once public</span></li>
 </ul></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `[{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":3,"record":{"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z"}}]`}}</pre>
+<pre class="json">{{jsonhl `[{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":3,"record":{"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z","run":7,"replay":"https://speedbraten.example/replay?run=7"}}]`}}</pre>
 </section>
 
 <section id="board">
@@ -95,7 +98,7 @@
 <li><span class="f">time</span><span class="pill t-string">string</span></li>
 <li><span class="f">when</span><span class="pill t-string">string</span></li>
 <li><span class="f">run</span><span class="pill t-number">number</span><span class="d">the run's id</span></li>
-<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">path of the signed replay on this site; absent until the replay is public</span></li>
+<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL of the signed replay; absent until it is public</span></li>
 </ul></li>
 <li><span class="f">legacy</span><span class="pill t-object">object or null</span><span class="d">the best time from before the witness, not witnessed</span>
 <ul>
@@ -108,7 +111,7 @@
 </ul></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":[{"rank":1,"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z","run":7,"replay":"/replay?run=7"}],"legacy":{"player":"Rex","ms":8410,"time":"0:08.410","date":"2019-04-02","source":"flagruns.com","link":""}}`}}</pre>
+<pre class="json">{{jsonhl `{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":[{"rank":1,"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z","run":7,"replay":"https://speedbraten.example/replay?run=7"}],"legacy":{"player":"Rex","ms":8410,"time":"0:08.410","date":"2019-04-02","source":"flagruns.com","link":""}}`}}</pre>
 </section>
 
 <section id="records">
@@ -131,9 +134,10 @@
 <li><span class="f">prev_ms</span><span class="pill t-number">number</span><span class="d">the record it beat, <code>-1</code> for a board's first</span></li>
 <li><span class="f">when</span><span class="pill t-string">string</span></li>
 <li><span class="f">run</span><span class="pill t-number">number</span></li>
+<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL, once public</span></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","player":"4f1c9e…","name":"carol","ms":7100,"time":"0:07.100","prev_ms":7400,"when":"2026-11-08T22:47:16Z","run":9}]`}}</pre>
+<pre class="json">{{jsonhl `[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","player":"4f1c9e…","name":"carol","ms":7100,"time":"0:07.100","prev_ms":7400,"when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]`}}</pre>
 </section>
 
 <section id="player">
@@ -156,10 +160,11 @@
 <li><span class="f">time</span><span class="pill t-string">string</span></li>
 <li><span class="f">when</span><span class="pill t-string">string</span></li>
 <li><span class="f">run</span><span class="pill t-number">number</span></li>
+<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL, once public</span></li>
 </ul></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9}]}`}}</pre>
+<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]}`}}</pre>
 </section>
 </div>
 {{template "bottom" .}}

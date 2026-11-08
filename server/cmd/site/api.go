@@ -136,7 +136,30 @@ type apiKey struct {
 }
 
 func keyOf(k board.Key) apiKey {
-	return apiKey{Map: k.Map, Kind: k.Kind, Mode: k.Mode, ModeName: board.ModeName(k.Mode)}
+	name := board.ModeName(k.Mode)
+	if k.Kind == "race" {
+		name = "ffa or coop edit"
+	}
+	return apiKey{Map: k.Map, Kind: k.Kind, Mode: k.Mode, ModeName: name}
+}
+
+// replays gives the download URLs of the runs whose replays are public; the others are left out
+func (a *api) replays(r *http.Request, runs []int64) map[int64]string {
+	locks, err := a.s.store.ReplayLocks(runs, "")
+	if err != nil {
+		return nil
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	urls := map[int64]string{}
+	for _, run := range runs {
+		if _, locked := locks[run]; !locked {
+			urls[run] = scheme + "://" + r.Host + "/replay?run=" + strconv.FormatInt(run, 10)
+		}
+	}
+	return urls
 }
 
 type apiEntry struct {
@@ -147,15 +170,11 @@ type apiEntry struct {
 	Time   string `json:"time"`
 	When   string `json:"when"` // RFC 3339, when the run was judged
 	Run    int64  `json:"run"`
-	Replay string `json:"replay,omitempty"` // a path on the site; absent while the replay isn't public
+	Replay string `json:"replay,omitempty"` // download URL; absent while the replay isn't public
 }
 
-func entryOf(e board.Entry, locked bool) apiEntry {
-	out := apiEntry{Rank: e.Rank, Player: e.Install, Name: e.Name, MS: e.MS, Time: board.Time(e.MS), When: e.When.UTC().Format(time.RFC3339), Run: e.Run}
-	if !locked {
-		out.Replay = "/replay?run=" + strconv.FormatInt(e.Run, 10)
-	}
-	return out
+func entryOf(e board.Entry, replay string) apiEntry {
+	return apiEntry{Rank: e.Rank, Player: e.Install, Name: e.Name, MS: e.MS, Time: board.Time(e.MS), When: e.When.UTC().Format(time.RFC3339), Run: e.Run, Replay: replay}
 }
 
 func (a *api) online(r *http.Request) (int, any) {
@@ -189,6 +208,8 @@ func (a *api) boards(r *http.Request) (int, any) {
 		MS     int64  `json:"ms"`
 		Time   string `json:"time"`
 		When   string `json:"when"`
+		Run    int64  `json:"run"`
+		Replay string `json:"replay,omitempty"`
 	}
 	type out struct {
 		apiKey
@@ -201,6 +222,7 @@ func (a *api) boards(r *http.Request) (int, any) {
 		return 500, apiError{"something went wrong"}
 	}
 	list := []out{}
+	var runs []int64
 	for _, b := range all {
 		if q.Get("kind") != "" && b.Key.Kind != q.Get("kind") || q.Get("mode") != "" && strconv.Itoa(b.Key.Mode) != q.Get("mode") {
 			continue
@@ -208,9 +230,16 @@ func (a *api) boards(r *http.Request) (int, any) {
 		o := out{apiKey: keyOf(b.Key), Entries: len(b.Entries)}
 		if len(b.Entries) > 0 {
 			e := b.Entries[0]
-			o.Record = &rec{Player: e.Install, Name: e.Name, MS: e.MS, Time: board.Time(e.MS), When: e.When.UTC().Format(time.RFC3339)}
+			o.Record = &rec{Player: e.Install, Name: e.Name, MS: e.MS, Time: board.Time(e.MS), When: e.When.UTC().Format(time.RFC3339), Run: e.Run}
+			runs = append(runs, e.Run)
 		}
 		list = append(list, o)
+	}
+	urls := a.replays(r, runs)
+	for i := range list {
+		if list[i].Record != nil {
+			list[i].Record.Replay = urls[list[i].Record.Run]
+		}
 	}
 	return 200, list
 }
@@ -243,16 +272,18 @@ func (a *api) board(r *http.Request) (int, any) {
 	if b == nil && l == nil {
 		return 404, apiError{"no such board"}
 	}
+	if b != nil {
+		k = b.Key
+	}
 	res := out{apiKey: keyOf(k), Entries: []apiEntry{}}
 	if b != nil {
 		runs := make([]int64, len(b.Entries))
 		for i, e := range b.Entries {
 			runs[i] = e.Run
 		}
-		locks, _ := a.s.store.ReplayLocks(runs, "")
+		urls := a.replays(r, runs)
 		for _, e := range b.Entries {
-			_, locked := locks[e.Run]
-			res.Entries = append(res.Entries, entryOf(e, locked))
+			res.Entries = append(res.Entries, entryOf(e, urls[e.Run]))
 		}
 	}
 	if l != nil {
@@ -271,6 +302,7 @@ func (a *api) records(r *http.Request) (int, any) {
 		Prev   int64  `json:"prev_ms"` // the record it beat, -1 for a board's first
 		When   string `json:"when"`
 		Run    int64  `json:"run"`
+		Replay string `json:"replay,omitempty"`
 	}
 	q := r.URL.Query()
 	limit := 50
@@ -296,18 +328,27 @@ func (a *api) records(r *http.Request) (int, any) {
 		list = append(list, out{apiKey: keyOf(rec.Key), Player: rec.Install, Name: rec.Name, MS: rec.MS, Time: board.Time(rec.MS), Prev: rec.Prev,
 			When: rec.When.UTC().Format(time.RFC3339), Run: rec.Run})
 	}
+	runs := make([]int64, len(list))
+	for i, o := range list {
+		runs[i] = o.Run
+	}
+	urls := a.replays(r, runs)
+	for i := range list {
+		list[i].Replay = urls[list[i].Run]
+	}
 	return 200, list
 }
 
 func (a *api) player(r *http.Request) (int, any) {
 	type place struct {
 		apiKey
-		Rank int    `json:"rank"`
-		Of   int    `json:"of"`
-		MS   int64  `json:"ms"`
-		Time string `json:"time"`
-		When string `json:"when"`
-		Run  int64  `json:"run"`
+		Rank   int    `json:"rank"`
+		Of     int    `json:"of"`
+		MS     int64  `json:"ms"`
+		Time   string `json:"time"`
+		When   string `json:"when"`
+		Run    int64  `json:"run"`
+		Replay string `json:"replay,omitempty"`
 	}
 	type out struct {
 		ID     string  `json:"id"`
@@ -327,9 +368,14 @@ func (a *api) player(r *http.Request) (int, any) {
 		return 404, apiError{"no such player"}
 	}
 	res := out{ID: id, Name: name, Places: []place{}}
+	runs := make([]int64, len(places))
+	for i, p := range places {
+		runs[i] = p.Entry.Run
+	}
+	urls := a.replays(r, runs)
 	for _, p := range places {
 		res.Places = append(res.Places, place{apiKey: keyOf(p.Key), Rank: p.Entry.Rank, Of: p.Of, MS: p.Entry.MS, Time: board.Time(p.Entry.MS),
-			When: p.Entry.When.UTC().Format(time.RFC3339), Run: p.Entry.Run})
+			When: p.Entry.When.UTC().Format(time.RFC3339), Run: p.Entry.Run, Replay: urls[p.Entry.Run]})
 	}
 	return 200, res
 }

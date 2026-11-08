@@ -200,6 +200,10 @@ func (s *Store) load() error {
 	var runs []validRun
 	for _, r := range rows {
 		v := validRun{key: Key{Map: r[2], Kind: r[3], Mode: int(atoi(r[4]))}, run: atoi(r[0]), install: canon(r[1]), ms: atoi(r[5]), when: atoi(r[6])}
+		// race rules play the same in ffa and coop edit: one race board per map, as mode 0
+		if v.key.Kind == "race" {
+			v.key.Mode = 0
+		}
 		if removed[v.run] || banned[v.install] || v.key.Kind == "flagrun" && !IsFlagrunMap(v.key.Map) {
 			continue
 		}
@@ -344,8 +348,11 @@ func (s *Store) Boards() ([]*Board, error) {
 	return out, err
 }
 
-// Board is one board, or nil when it has no entries.
+// Board is one board, or nil when it has no entries. A race board is the same for every mode.
 func (s *Store) Board(k Key) (*Board, error) {
+	if k.Kind == "race" {
+		k.Mode = 0
+	}
 	var b *Board
 	err := s.locked(func() { b = s.boards[k] })
 	return b, err

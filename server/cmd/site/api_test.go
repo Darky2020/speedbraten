@@ -46,7 +46,7 @@ func TestAPI(t *testing.T) {
 		Legacy *struct{ Player string }
 	}
 	if code := getJSON(t, s, "/api/v1/board?map=forge&kind=flagrun&mode=17", &b); code != 200 || len(b.Entries) != 2 || b.Entries[0].Player != "ka" ||
-		b.Entries[1].MS != 9500 || b.Entries[0].Replay != "/replay?run=1" || b.Legacy != nil {
+		b.Entries[1].MS != 9500 || b.Entries[0].Replay != "http://example.com/replay?run=1" || b.Legacy != nil {
 		t.Fatalf("board %d %+v", code, b)
 	}
 	var e struct{ Error string }
