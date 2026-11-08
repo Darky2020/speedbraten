@@ -68,6 +68,10 @@ h2.section { font-size: 18px; margin: 8px 0 12px; }
 .modes a.on { border-color: var(--accent); color: var(--accent); }
 .prose { max-width: 760px; margin: 0 auto; }
 .prose h2 { font-size: 18px; margin: 26px 0 8px; }
+.prose pre { background: var(--head); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.45; }
+.prose .card .body > h2:first-child { margin-top: 0; }
+.api td { white-space: normal; vertical-align: top; }
+.api td:first-child { white-space: nowrap; }
 .prose code, td code { background: var(--head); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 13px; }
 svg.graph { width: 100%; height: auto; display: block; }
 footer { width: 100%; max-width: 1140px; margin: 12px auto 0; padding: 0 16px 32px; color: var(--faint); font-size: 13px; }
@@ -107,7 +111,7 @@ button:hover { border-color: var(--accent); }
 {{with online}}{{if .Shown}}<span class="online"{{if .Names}} title="{{.Names}}"{{end}}><i></i>{{.Count}} online</span>{{end}}{{end}}</div></div>
 <main>{{end}}
 {{define "bottom"}}</main>
-<footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a></footer>
+<footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a> · <a href="/api">API</a></footer>
 {{if not .Admin}}<script>
 (function () {
   var bar = document.querySelector('.bar .in');

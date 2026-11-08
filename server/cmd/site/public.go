@@ -137,6 +137,7 @@ var (
 	mapPage      = page("map.html")
 	playerPage   = page("player.html")
 	infoPage     = page("info.html")
+	apiPage      = page("api.html")
 	recordsPage  = page("records.html")
 )
 
@@ -182,6 +183,9 @@ func newSite(store *board.Store) *site {
 	s.mux.HandleFunc("/player", s.player)
 	s.mux.HandleFunc("/records", s.records)
 	s.mux.HandleFunc("/info", s.info)
+	s.mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
+		render(w, apiPage, "api.html", map[string]any{"Title": "API", "Tab": "info"})
+	})
 	newAPI(s).register(s.mux)
 	s.mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

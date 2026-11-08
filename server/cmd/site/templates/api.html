@@ -1,0 +1,132 @@
+{{template "top" .}}
+<div class="prose api">
+<h1>API</h1>
+<p class="sub">read-only JSON for the hub's players, the boards and the records</p>
+
+<div class="card"><div class="body">
+<h2>Basics</h2>
+<ul>
+<li>Every endpoint is a <code>GET</code> under <code>/api/v1/</code> and answers <code>application/json</code>. Other methods get <code>405</code>.</li>
+<li>CORS is open (<code>Access-Control-Allow-Origin: *</code>): pages on any site can call it from the browser.</li>
+<li>Answers are cached for 10 seconds per URL (<code>/api/v1/online</code>: 2 seconds), so asking more often brings nothing new.</li>
+<li>Each address can make 5 requests a second on average, in bursts of up to 20. Beyond that the answer is <code>429</code> with <code>Retry-After: 1</code>.</li>
+<li>Errors are <code>{"error": "…"}</code> with status <code>400</code> (a missing or bad parameter), <code>404</code> (no such board or player) or <code>500</code>.</li>
+<li>Times are given twice: <code>ms</code>, milliseconds as a number, and <code>time</code>, the same as text (<code>m:ss.mmm</code>). Dates (<code>when</code>) are RFC 3339 in UTC, when the witness judged the run.</li>
+<li>A <code>player</code> is a player's id: the same as in the address of their page, <code>/player?id=…</code>. Names can change and aren't unique; ids don't.</li>
+</ul>
+</div></div>
+
+<div class="card"><div class="body">
+<h2>Boards, kinds and modes</h2>
+<p>A board is one map in one mode for one kind of run: <code>map</code> + <code>kind</code> + <code>mode</code>.</p>
+<div class="scroll"><table>
+<tr><th>kind</th><th>what</th><th>modes</th></tr>
+<tr><td><code>flagrun</code></td><td>take the enemy flag and score it</td><td><code>11</code> ctf, <code>12</code> insta ctf, <code>17</code> effic ctf</td></tr>
+<tr><td><code>race</code></td><td>from the start to the finish on a race map</td><td><code>0</code> ffa or <code>1</code> coop edit, the modes races are played in</td></tr>
+<tr><td><code>campaign</code></td><td>a singleplayer campaign, all its maps in one run</td><td>negative: the singleplayer modes</td></tr>
+</table></div>
+<p>Each object that names a board has <code>map</code>, <code>kind</code>, <code>mode</code> and <code>mode_name</code> (the mode as text, e.g. <code>"effic ctf"</code>).</p>
+</div></div>
+
+<div class="card"><div class="body">
+<h2><code>GET /api/v1/online</code></h2>
+<p>Who is on the hub now. No parameters.</p>
+<div class="scroll"><table>
+<tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>online</code></td><td>bool</td><td>false while the hub hasn't been heard from for a few minutes; then the list is empty</td></tr>
+<tr><td><code>count</code></td><td>number</td><td>players with a name on the hub</td></tr>
+<tr><td><code>players[]</code></td><td>list</td><td>one per player, by name:</td></tr>
+<tr><td><code>&nbsp;&nbsp;name</code></td><td>string</td><td></td></tr>
+<tr><td><code>&nbsp;&nbsp;state</code></td><td>string</td><td><code>menu</code>, <code>playing</code> (a map, not timed) or <code>run</code> (a timed run)</td></tr>
+<tr><td><code>&nbsp;&nbsp;map</code>, <code>mode</code>, <code>kind</code></td><td>string, number, string</td><td>what they have loaded; <code>kind</code> is empty when it isn't a flagrun, race or campaign</td></tr>
+<tr><td><code>&nbsp;&nbsp;lobby</code></td><td>number</td><td>the lobby they are in, <code>0</code> for none; players with the same number play together</td></tr>
+<tr><td><code>&nbsp;&nbsp;host</code></td><td>string</td><td>the lobby's host, empty without a lobby</td></tr>
+<tr><td><code>&nbsp;&nbsp;spectating</code></td><td>string</td><td>the player they are watching, empty when not spectating</td></tr>
+<tr><td><code>&nbsp;&nbsp;away</code></td><td>string</td><td><code>dnd</code> (do not disturb), <code>afk</code> (no input for a while) or empty</td></tr>
+</table></div>
+<pre>{"online": true, "count": 1, "players": [{"name": "alice", "state": "run", "map": "forge", "mode": 17,
+  "kind": "flagrun", "lobby": 4, "host": "alice", "spectating": "", "away": ""}]}</pre>
+</div></div>
+
+<div class="card"><div class="body">
+<h2><code>GET /api/v1/boards</code></h2>
+<p>Every board with at least one witnessed run, most entries first.</p>
+<div class="scroll"><table>
+<tr><th>parameter</th><th></th></tr>
+<tr><td><code>kind</code></td><td>optional: only this kind (<code>flagrun</code>, <code>race</code>, <code>campaign</code>)</td></tr>
+<tr><td><code>mode</code></td><td>optional: only this mode number</td></tr>
+</table></div>
+<p>A list of:</p>
+<div class="scroll"><table>
+<tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>map</code>, <code>kind</code>, <code>mode</code>, <code>mode_name</code></td><td></td><td>the board</td></tr>
+<tr><td><code>entries</code></td><td>number</td><td>players on it</td></tr>
+<tr><td><code>record</code></td><td>object</td><td><code>player</code>, <code>name</code>, <code>ms</code>, <code>time</code>, <code>when</code> of the best run</td></tr>
+</table></div>
+<pre>[{"map": "forge", "kind": "flagrun", "mode": 11, "mode_name": "ctf", "entries": 3,
+  "record": {"player": "4f1c…", "name": "bob", "ms": 8650, "time": "0:08.650", "when": "2026-11-08T22:47:14Z"}}]</pre>
+</div></div>
+
+<div class="card"><div class="body">
+<h2><code>GET /api/v1/board</code></h2>
+<p>One board's leaderboard, every player's best run, fastest first.</p>
+<div class="scroll"><table>
+<tr><th>parameter</th><th></th></tr>
+<tr><td><code>map</code></td><td>required</td></tr>
+<tr><td><code>kind</code></td><td>required</td></tr>
+<tr><td><code>mode</code></td><td>required, a number</td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>map</code>, <code>kind</code>, <code>mode</code>, <code>mode_name</code></td><td></td><td>the board</td></tr>
+<tr><td><code>entries[]</code></td><td>list</td><td>fastest first:</td></tr>
+<tr><td><code>&nbsp;&nbsp;rank</code></td><td>number</td><td>equal times share a rank</td></tr>
+<tr><td><code>&nbsp;&nbsp;player</code>, <code>name</code></td><td>string</td><td></td></tr>
+<tr><td><code>&nbsp;&nbsp;ms</code>, <code>time</code>, <code>when</code></td><td></td><td>the run</td></tr>
+<tr><td><code>&nbsp;&nbsp;run</code></td><td>number</td><td>the run's id</td></tr>
+<tr><td><code>&nbsp;&nbsp;replay</code></td><td>string</td><td>where to download the signed replay, a path on this site; left out while the replay isn't public yet</td></tr>
+<tr><td><code>legacy</code></td><td>object or null</td><td>the best known time from before the witness, <b>not witnessed</b>: <code>player</code>, <code>ms</code>, <code>time</code>, <code>date</code> (as the source gives it, may be empty), <code>source</code>, <code>link</code></td></tr>
+</table></div>
+<p>A flagrun map whose board has no witnessed run yet but a legacy record answers with empty <code>entries</code>; a board with neither is <code>404</code>.</p>
+<pre>{"map": "forge", "kind": "flagrun", "mode": 11, "mode_name": "ctf",
+  "entries": [{"rank": 1, "player": "4f1c…", "name": "bob", "ms": 8650, "time": "0:08.650",
+               "when": "2026-11-08T22:47:14Z", "run": 7, "replay": "/replay?run=7"}],
+  "legacy": null}</pre>
+</div></div>
+
+<div class="card"><div class="body">
+<h2><code>GET /api/v1/records</code></h2>
+<p>Records as they were set, newest first: every time a board's best was beaten.</p>
+<div class="scroll"><table>
+<tr><th>parameter</th><th></th></tr>
+<tr><td><code>kind</code>, <code>mode</code></td><td>optional filters, as for boards</td></tr>
+<tr><td><code>limit</code></td><td>optional: how many, 50 by default, at most 500</td></tr>
+<tr><td><code>latest</code></td><td>optional: <code>1</code> keeps only each board's newest record</td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>map</code>, <code>kind</code>, <code>mode</code>, <code>mode_name</code></td><td></td><td>the board</td></tr>
+<tr><td><code>player</code>, <code>name</code>, <code>ms</code>, <code>time</code>, <code>when</code>, <code>run</code></td><td></td><td>the record run</td></tr>
+<tr><td><code>prev_ms</code></td><td>number</td><td>the record it beat, <code>-1</code> for a board's first</td></tr>
+</table></div>
+<pre>[{"map": "abbey", "kind": "flagrun", "mode": 12, "mode_name": "insta ctf", "player": "4f1c…", "name": "carol",
+  "ms": 7100, "time": "0:07.100", "prev_ms": 7400, "when": "2026-11-08T22:47:16Z", "run": 9}]</pre>
+</div></div>
+
+<div class="card"><div class="body">
+<h2><code>GET /api/v1/player</code></h2>
+<p>A player and their place on every board they are on, best rank first.</p>
+<div class="scroll"><table>
+<tr><th>parameter</th><th></th></tr>
+<tr><td><code>id</code></td><td>required: a player's id; an id merged into another answers as that one</td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>id</code>, <code>name</code></td><td>string</td><td></td></tr>
+<tr><td><code>places[]</code></td><td>list</td><td><code>map</code>, <code>kind</code>, <code>mode</code>, <code>mode_name</code>; <code>rank</code> of <code>of</code> players; their best run's <code>ms</code>, <code>time</code>, <code>when</code>, <code>run</code></td></tr>
+</table></div>
+<pre>{"id": "4f1c…", "name": "carol", "places": [{"map": "abbey", "kind": "flagrun", "mode": 12, "mode_name": "insta ctf",
+  "rank": 1, "of": 4, "ms": 7100, "time": "0:07.100", "when": "2026-11-08T22:47:16Z", "run": 9}]}</pre>
+</div></div>
+</div>
+{{template "bottom" .}}
