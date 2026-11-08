@@ -59,7 +59,7 @@ namespace game
     static bool savinglife = false;
 
     // settings and aids recorded when they were on at any tick the saved run kept
-    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "practicehelpers", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
+    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "practicevisualizers", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
     enum { NUMFEATURES = sizeof(featurenames)/sizeof(featurenames[0]), FEATUREVARS = NUMFEATURES - 4 };
     enum { F_PRACTICE = 1<<(FEATUREVARS-2), F_SLOWMOSP = 1<<(FEATUREVARS-1), F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
     enum { ASSISTS = F_GAMESPEED | F_PAUSED | F_SLOWMOSP | F_PRACTICE };
@@ -83,7 +83,7 @@ namespace game
         return inputrunaids(r) & ASSISTS || c.fixedframe;
     }
     // a frame's features (tellsframe) include an assist: changed game speed, pause, slow
-    // motion, practice helpers, or a fixed frame time
+    // motion, practice visualizers, or a fixed frame time
     bool tellsassistframe(int features) { return (features & ASSISTS) || fixedframe; }
     void tellssavinglife(bool on) { savinglife = on; }
     void tellssave() { run.saves++; life.saves++; }

@@ -418,7 +418,7 @@ namespace game
 
     MOD(VARP, hidedeadmonsters, 0, 0, 1);
 
-    // for the practice helpers
+    // for the practice visualizers
     int nummonsterslots() { return monsters.length(); }
     fpsent *monsterslot(int i, int &tag, int &maxhealth)
     {

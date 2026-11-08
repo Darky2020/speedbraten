@@ -1,5 +1,5 @@
-// Practice helpers: what the game tests the player against, and the health of monsters and
-// barrels, drawn outside edit mode. practicehelpers (an assist, off at every launch) turns them on; the
+// Practice visualizers: what the game tests the player against, and the health of monsters and
+// barrels, drawn outside edit mode. practicevisualizers (an assist, off at every launch) turns them on; the
 // practice* toggles pick which. Flags, jumppads, teleports and level triggers act when the feet
 // enter a sphere around them; a race finish cube is tested against the eye, so it is drawn one eye
 // height lower, where the body has to be. A spawn box is the player's bounding box with the eye
@@ -139,7 +139,7 @@ namespace game
 
     void renderpractice()
     {
-        if(!practicehelpers || editmode) return;
+        if(!practicevisualizers || editmode) return;
         const vector<extentity *> &ents = entities::getents();
         loopv(ents)
         {
@@ -218,7 +218,7 @@ namespace game
     void renderpracticelabels()
     {
         static int lastframe = -1;
-        if(!practicehelpers || editmode || lastframe == totalmillis || !canaddparticles()) return;
+        if(!practicevisualizers || editmode || lastframe == totalmillis || !canaddparticles()) return;
         lastframe = totalmillis;
         if(practicegroups || practicehealth) loopi(nummonsterslots())
         {

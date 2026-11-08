@@ -2220,7 +2220,7 @@ void gl_drawhud()
         glDepthMask(GL_TRUE);
         glDisable(GL_DEPTH_TEST);
     }
-    else if(practicehelpers && !hidehud && !mainmenu)
+    else if(practicevisualizers && !hidehud && !mainmenu)
     {
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);

@@ -189,7 +189,7 @@ namespace game
         }
     }
 
-    // for the practice helpers: a barrel's health, 0 for the other movables
+    // for the practice visualizers: a barrel's health, 0 for the other movables
     int nummovableslots() { return movables.length(); }
     dynent *movableslot(int i, int &health, int &maxhealth)
     {

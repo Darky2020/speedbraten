@@ -463,13 +463,13 @@ void setupmaterials(int start, int len)
 
 VARP(showmat, 0, 1, 1);
 VARP(editmatoffset, 0, 1, 1);
-VAR(practicehelpers, 0, 0, 1);
+VAR(practicevisualizers, 0, 0, 1);
 VARP(practiceclip, 0, 1, 1);
 VARP(practicenoclip, 0, 1, 1);
 VARP(practicedeath, 0, 1, 1);
 VARP(practicegameclip, 0, 1, 1);
 
-// a practice helper outside edit mode: materials that change how players move, die or take flags
+// a practice visualizer outside edit mode: materials that change how players move, die or take flags
 static inline bool triggermat(const materialsurface &m)
 {
     switch(m.material)
@@ -544,7 +544,7 @@ void sortmaterials(vector<materialsurface *> &vismats)
                 if(matvol==MAT_WATER && (m.orient==O_TOP || (refracting<0 && reflectz>worldsize))) { i += m.skip; continue; }
                 if(m.visible == MATSURF_EDIT_ONLY)
                 {
-                    if(practicehelpers && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
+                    if(practicevisualizers && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
                     else i += m.skip;
                     continue;
                 }
@@ -943,7 +943,7 @@ void rendermaterials()
         foggednotextureshader->set();
         rendermatgrid(vismats);
     }
-    else if(practicehelpers && !editmode && !drawtex) rendertriggermats(vismats);
+    else if(practicevisualizers && !editmode && !drawtex) rendertriggermats(vismats);
 
     glEnable(GL_CULL_FACE);
 }
