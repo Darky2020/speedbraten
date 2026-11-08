@@ -41,7 +41,7 @@
 </section>
 
 <section id="online" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/online</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/online</span><button type="button" class="copy" data-path="/api/v1/online">copy URL</button></h2>
 <p>Who is on the hub now, and what each player is doing.</p>
 <h3>Response</h3>
 <ul class="fields">
@@ -65,7 +65,7 @@
 </section>
 
 <section id="boards" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/boards</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/boards</span><button type="button" class="copy" data-path="/api/v1/boards">copy URL</button></h2>
 <p>Every board with at least one witnessed run, most entries first.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -92,7 +92,7 @@
 </section>
 
 <section id="board" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/board</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/board</span><button type="button" class="copy" data-path="/api/v1/board">copy URL</button></h2>
 <p>One board's leaderboard: every player's best run, fastest first, and its legacy record. A flagrun board with only a legacy record answers with no entries; a board with neither is <code>404</code>.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -129,7 +129,7 @@
 </section>
 
 <section id="records" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/records</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/records</span><button type="button" class="copy" data-path="/api/v1/records">copy URL</button></h2>
 <p>Records as they were set, newest first: every time a board's best was beaten.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -155,7 +155,7 @@
 </section>
 
 <section id="runs" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/runs</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/runs</span><button type="button" class="copy" data-path="/api/v1/runs">copy URL</button></h2>
 <p>The newest runs that count, newest first: every witnessed run that was valid, not only records and personal bests.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -181,7 +181,7 @@
 </section>
 
 <section id="players" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/players</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/players</span><button type="button" class="copy" data-path="/api/v1/players">copy URL</button></h2>
 <p>Every player with a run that counts, and their stats.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -216,7 +216,7 @@
 </section>
 
 <section id="player" class="ep">
-<h2><span class="method">GET</span><span class="path">/api/v1/player</span></h2>
+<h2><span class="method">GET</span><span class="path">/api/v1/player</span><button type="button" class="copy" data-path="/api/v1/player">copy URL</button></h2>
 <p>A player: their stats, their place on every board they are on (best rank first) and their 20 newest runs.</p>
 <h3>Parameters</h3>
 <table class="params">
@@ -272,6 +272,28 @@
   }
   window.addEventListener('scroll', mark, {passive: true});
   mark();
+
+  function copied(b) {
+    b.textContent = 'copied';
+    b.classList.add('done');
+    setTimeout(function () { b.textContent = 'copy URL'; b.classList.remove('done'); }, 1500);
+  }
+  document.querySelectorAll('button.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var url = location.origin + b.dataset.path;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(function () { copied(b); });
+        return;
+      }
+      var t = document.createElement('textarea');
+      t.value = url;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      t.remove();
+      copied(b);
+    });
+  });
 })();
 </script>
 {{template "bottom" .}}
