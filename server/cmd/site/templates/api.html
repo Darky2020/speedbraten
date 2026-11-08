@@ -26,7 +26,7 @@
 </table>
 </section>
 
-<section id="online">
+<section id="online" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/online</span></h2>
 <p>Who is on the hub now, and what each player is doing.</p>
 <h3>Response</h3>
@@ -50,7 +50,7 @@
 <pre class="json">{{jsonhl `{"online":true,"count":1,"players":[{"name":"alice","state":"run","map":"forge","mode":17,"kind":"flagrun","lobby":4,"host":"alice","spectating":"","away":""}]}`}}</pre>
 </section>
 
-<section id="boards">
+<section id="boards" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/boards</span></h2>
 <p>Every board with at least one witnessed run, most entries first.</p>
 <h3>Parameters</h3>
@@ -77,7 +77,7 @@
 <pre class="json">{{jsonhl `[{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":3,"record":{"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z","run":7,"replay":"https://speedbraten.example/replay?run=7"}}]`}}</pre>
 </section>
 
-<section id="board">
+<section id="board" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/board</span></h2>
 <p>One board's leaderboard: every player's best run, fastest first, and its legacy record. A flagrun board with only a legacy record answers with no entries; a board with neither is <code>404</code>.</p>
 <h3>Parameters</h3>
@@ -114,7 +114,7 @@
 <pre class="json">{{jsonhl `{"map":"forge","kind":"flagrun","mode":11,"mode_name":"ctf","entries":[{"rank":1,"player":"4f1c9e…","name":"bob","ms":8650,"time":"0:08.650","when":"2026-11-08T22:47:14Z","run":7,"replay":"https://speedbraten.example/replay?run=7"}],"legacy":{"player":"Rex","ms":8410,"time":"0:08.410","date":"2019-04-02","source":"flagruns.com","link":""}}`}}</pre>
 </section>
 
-<section id="records">
+<section id="records" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/records</span></h2>
 <p>Records as they were set, newest first: every time a board's best was beaten.</p>
 <h3>Parameters</h3>
@@ -140,7 +140,7 @@
 <pre class="json">{{jsonhl `[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","player":"4f1c9e…","name":"carol","ms":7100,"time":"0:07.100","prev_ms":7400,"when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]`}}</pre>
 </section>
 
-<section id="player">
+<section id="player" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/player</span></h2>
 <p>A player and their place on every board they are on, best rank first.</p>
 <h3>Parameters</h3>
