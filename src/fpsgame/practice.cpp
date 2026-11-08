@@ -21,6 +21,8 @@ namespace game
     MOD(VARP, practicegroups, 0, 1, 1);         // monsters by their group (tag)
     MOD(VARP, practicehealth, 0, 1, 1);         // damaged monsters
     MOD(VARP, practicebarrels, 0, 1, 1);        // barrels' health
+    MOD(VARP, practicexray, 0, 0, 1);           // living monsters' boxes through walls
+    MOD(VARP, practicexrayradius, 0, 1024, 100000); // how far away they show; 0: the whole map
 
     enum
     {
@@ -119,6 +121,22 @@ namespace game
         }
     }
 
+    // the boxes of living monsters within practicexrayradius, through walls: monsters stuck where
+    // nothing can reach them still show
+    static void monsterxray()
+    {
+        glDisable(GL_DEPTH_TEST);
+        loopi(nummonsterslots())
+        {
+            int tag, maxhealth;
+            fpsent *m = monsterslot(i, tag, maxhealth);
+            if(m->state != CS_ALIVE || (practicexrayradius && m->o.dist(camera1->o) > practicexrayradius)) continue;
+            color(tag ? groupcolour(tag) : 0xFF5050);
+            box(vec(m->o).sub(vec(m->radius, m->radius, m->eyeheight)), vec(m->o).add(vec(m->radius, m->radius, m->aboveeye)));
+        }
+        glEnable(GL_DEPTH_TEST);
+    }
+
     void renderpractice()
     {
         if(!practicehelpers || editmode) return;
@@ -181,6 +199,7 @@ namespace game
         {
             leveltriggers();
             if(practicegroups) monstergroups();
+            if(practicexray) monsterxray();
         }
     }
 
