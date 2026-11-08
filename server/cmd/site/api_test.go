@@ -167,3 +167,16 @@ func TestAPILimits(t *testing.T) {
 		t.Fatalf("stale cache served: %s", got)
 	}
 }
+
+func TestJSONHighlight(t *testing.T) {
+	got := string(jsonHighlight(`{"a":"<b>","n":-1.5,"ok":true,"x":null,"l":[1]}`))
+	want := "{\n  <span class=\"jk\">&#34;a&#34;</span>: <span class=\"js\">&#34;&lt;b&gt;&#34;</span>,\n  <span class=\"jk\">&#34;n&#34;</span>: <span class=\"jn\">-1.5</span>," +
+		"\n  <span class=\"jk\">&#34;ok&#34;</span>: <span class=\"jl\">true</span>,\n  <span class=\"jk\">&#34;x&#34;</span>: <span class=\"jl\">null</span>," +
+		"\n  <span class=\"jk\">&#34;l&#34;</span>: [\n    <span class=\"jn\">1</span>\n  ]\n}"
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	if got := string(jsonHighlight("not json <x>")); got != "not json &lt;x&gt;" {
+		t.Fatalf("not json: %s", got)
+	}
+}

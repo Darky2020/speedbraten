@@ -5,8 +5,11 @@ package main
 // budget, so a busy or hostile client costs little more than a cache lookup.
 
 import (
+	"bytes"
 	"encoding/json"
+	"html/template"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,4 +332,38 @@ func (a *api) player(r *http.Request) (int, any) {
 			When: p.Entry.When.UTC().Format(time.RFC3339), Run: p.Entry.Run})
 	}
 	return 200, res
+}
+
+var jsonToken = regexp.MustCompile(`"(?:[^"\\]|\\.)*"(\s*:)?|-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|\btrue\b|\bfalse\b|\bnull\b`)
+
+// jsonHighlight indents a JSON example for the API page and wraps its keys, strings, numbers and
+// literals in spans for colour; text that isn't JSON is shown as it is.
+func jsonHighlight(src string) template.HTML {
+	var b bytes.Buffer
+	if json.Indent(&b, []byte(src), "", "  ") != nil {
+		return template.HTML(template.HTMLEscapeString(src))
+	}
+	text := b.String()
+	var out strings.Builder
+	last := 0
+	for _, m := range jsonToken.FindAllStringSubmatchIndex(text, -1) {
+		out.WriteString(template.HTMLEscapeString(text[last:m[0]]))
+		tok := text[m[0]:m[1]]
+		class := "jn"
+		switch {
+		case m[2] >= 0:
+			class, tok = "jk", text[m[0]:m[2]]
+		case tok[0] == '"':
+			class = "js"
+		case tok == "true" || tok == "false" || tok == "null":
+			class = "jl"
+		}
+		out.WriteString(`<span class="` + class + `">` + template.HTMLEscapeString(tok) + `</span>`)
+		if m[2] >= 0 {
+			out.WriteString(template.HTMLEscapeString(text[m[2]:m[1]]))
+		}
+		last = m[1]
+	}
+	out.WriteString(template.HTMLEscapeString(text[last:]))
+	return template.HTML(out.String())
 }
