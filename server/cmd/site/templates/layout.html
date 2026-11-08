@@ -13,6 +13,9 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .logo span { color: var(--accent); }
 .online { margin-left: auto; color: var(--dim); font-size: 13px; white-space: nowrap; }
 .online i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 6px; vertical-align: 1px; }
+.online i.pulse { animation: pulse 0.9s ease-out; }
+@keyframes pulse { from { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } to { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); } }
+@media (prefers-reduced-motion: reduce) { .online i.pulse { animation: none; } }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tabs a { color: var(--dim); padding: 16px 12px 14px; border-bottom: 2px solid transparent; font-weight: 500; }
 .tabs a:hover { color: var(--fg); text-decoration: none; }
@@ -114,7 +117,7 @@ button:hover { border-color: var(--accent); }
       var el = bar.querySelector('.online');
       if (!o.shown) { if (el) el.remove(); return; }
       if (!el) { el = document.createElement('span'); el.className = 'online'; bar.appendChild(el); }
-      el.innerHTML = '<i></i>' + o.count + ' online';
+      el.innerHTML = '<i class="pulse"></i>' + o.count + ' online';
       if (o.names) el.title = o.names; else el.removeAttribute('title');
     }).catch(function () {});
   }
