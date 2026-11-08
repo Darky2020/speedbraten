@@ -369,6 +369,22 @@ func (s *Store) Records(n int) ([]Record, error) {
 	return out, err
 }
 
+// LatestRecords lists the newest n records, newest first, one per board: a board's earlier
+// records are left out.
+func (s *Store) LatestRecords(n int) ([]Record, error) {
+	var out []Record
+	err := s.locked(func() {
+		seen := map[Key]bool{}
+		for i := len(s.records) - 1; i >= 0 && len(out) < n; i-- {
+			if r := s.records[i]; !seen[r.Key] {
+				seen[r.Key] = true
+				out = append(out, r)
+			}
+		}
+	})
+	return out, err
+}
+
 // Listed tells whether a run is an entry on a board.
 func (s *Store) Listed(run int64) (bool, error) {
 	var ok bool

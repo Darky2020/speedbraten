@@ -161,6 +161,21 @@ func TestBoards(t *testing.T) {
 	if len(forgeRecs) != 3 || forgeRecs[0].Run != 3 || forgeRecs[0].Prev != 9500 || forgeRecs[2].Run != 1 || forgeRecs[2].Prev != -1 {
 		t.Fatalf("records %+v", forgeRecs)
 	}
+
+	// the latest records keep only each board's newest
+	latest, err := s.LatestRecords(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgeRecs = forgeRecs[:0]
+	for _, r := range latest {
+		if r.Key == forge {
+			forgeRecs = append(forgeRecs, r)
+		}
+	}
+	if len(forgeRecs) != 1 || forgeRecs[0].Run != 3 || len(latest) >= len(recs) {
+		t.Fatalf("latest records %+v of %+v", latest, recs)
+	}
 }
 
 // Equal times share a rank and are listed earliest run first; the next time's rank counts

@@ -219,7 +219,7 @@ func (s *site) home(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	records, _ := s.store.Records(homeRuns)
+	records, _ := s.store.LatestRecords(homeRuns)
 	holders, _ := s.store.TopHolders(8)
 	oldest, _ := s.store.OldestRecords(homeRuns)
 	render(w, homePage, "home.html", map[string]any{"Title": "Leaderboards", "Tab": "home", "Stats": st, "RecentRecords": records,
@@ -751,7 +751,7 @@ const (
 // addCategory adds a category page's newest records, top record holders and oldest standing records, all of the
 // boards of one kind.
 func (s *site) addCategory(data map[string]any, boards []*board.Board, kind string) {
-	all, _ := s.store.Records(100000)
+	all, _ := s.store.LatestRecords(100000)
 	var recent []board.Record
 	for _, r := range all {
 		if r.Key.Kind == kind && len(recent) < recentRuns {
