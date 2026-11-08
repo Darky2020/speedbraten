@@ -108,7 +108,7 @@ button:hover { border-color: var(--accent); }
 <main>{{end}}
 {{define "bottom"}}</main>
 <footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a></footer>
-<script>
+{{if not .Admin}}<script>
 (function () {
   var bar = document.querySelector('.bar .in');
   function update() {
@@ -124,7 +124,7 @@ button:hover { border-color: var(--accent); }
   setInterval(update, 5000);
   document.addEventListener('visibilitychange', update);
 })();
-</script>
+</script>{{end}}
 </body></html>{{end}}
 
 {{define "filters"}}<form class="filters" method="get" action="{{.Path}}">

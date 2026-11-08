@@ -303,6 +303,23 @@ func (s *Store) Online(stale time.Duration) (int, string, bool) {
 	return n, rows[0][1], true
 }
 
+// OnlineDetail is the hub's presence detail, a JSON list of what each player on it is doing;
+// false while the hub hasn't written it lately.
+func (s *Store) OnlineDetail(stale time.Duration) (string, bool) {
+	if s.hub == nil {
+		return "", false
+	}
+	rows, err := s.hub.Query("SELECT IFNULL(detail, '[]'), updated FROM presence WHERE id = 1")
+	if err != nil || len(rows) == 0 {
+		return "", false
+	}
+	updated, _ := strconv.ParseInt(rows[0][1], 10, 64)
+	if time.Since(time.Unix(updated, 0)) > stale {
+		return "", false
+	}
+	return rows[0][0], true
+}
+
 // Boards lists every board, most entries first, then by map, kind and mode.
 func (s *Store) Boards() ([]*Board, error) {
 	var out []*Board

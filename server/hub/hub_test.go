@@ -1567,6 +1567,34 @@ func TestPresence(t *testing.T) {
 	if n, names := read(); n != "1" || names != "alice" {
 		t.Fatalf("presence after bob left: %s %q", n, names)
 	}
+
+	// what each one is doing, for the site's API
+	a.status("forge", 17)
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	a.expectLobby()
+	var w writer
+	w.u(AwayDND)
+	a.send(MsgAway, w.b)
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		f.h.mu.Lock()
+		away := f.h.players[a.id].away
+		f.h.mu.Unlock()
+		if away == AwayDND {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("away never arrived")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.h.PresenceTick()
+	rows, err := f.h.st.db.Query("SELECT detail FROM presence WHERE id = 1")
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("detail %v %v", rows, err)
+	}
+	if want := `[{"name":"alice","state":"playing","map":"forge","mode":17,"kind":"flagrun","lobby":1,"host":"alice","spectating":"","away":"dnd"}]`; rows[0][0] != want {
+		t.Fatalf("detail %s", rows[0][0])
+	}
 }
 
 func (c *client) spectate(id uint64) {

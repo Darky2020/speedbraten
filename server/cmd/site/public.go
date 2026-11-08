@@ -182,6 +182,7 @@ func newSite(store *board.Store) *site {
 	s.mux.HandleFunc("/player", s.player)
 	s.mux.HandleFunc("/records", s.records)
 	s.mux.HandleFunc("/info", s.info)
+	newAPI(s).register(s.mux)
 	s.mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

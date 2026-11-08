@@ -62,6 +62,8 @@ func openStore(path string) (*store, error) {
 			return nil, err
 		}
 	}
+	// added after the table: what each player on the hub is doing, JSON
+	db.Query("ALTER TABLE presence ADD COLUMN detail TEXT NOT NULL DEFAULT '[]'")
 	return &store{db}, nil
 }
 
@@ -140,9 +142,10 @@ func (s *store) report(now int64, reporter, reported, name, reason string) error
 	return err
 }
 
-// setPresence records who is on the hub now, for the leaderboard site; names comma-separated
-func (s *store) setPresence(players int, names string, now int64) error {
-	_, err := s.db.Exec("INSERT INTO presence(id, players, names, updated) VALUES(1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET players = excluded.players, names = excluded.names, updated = excluded.updated", players, names, now)
+// setPresence records who is on the hub now, for the leaderboard site; names comma-separated,
+// detail a JSON list of what each one is doing
+func (s *store) setPresence(players int, names, detail string, now int64) error {
+	_, err := s.db.Exec("INSERT INTO presence(id, players, names, detail, updated) VALUES(1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET players = excluded.players, names = excluded.names, detail = excluded.detail, updated = excluded.updated", players, names, detail, now)
 	return err
 }
 

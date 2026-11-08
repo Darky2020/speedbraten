@@ -35,5 +35,15 @@
 <h2>Respect other players</h2>
 <p><b>Give records some room.</b> When someone sets a record, let them enjoy it. Don't rush to snipe it by a few hundredths straight away, least of all with a route you just picked up from their replay or by spectating them. Beat it later, with your own ideas.</p>
 <p><b>Be nice in chat.</b> Congratulate good runs, help newer players find their way, and keep lobbies friendly: no insults, no spam.</p>
+
+<h2>API</h2>
+<p>Everything here is also available as JSON, read-only, to any page or program (CORS is open). Answers are cached for up to 10 seconds; each address can make 5 requests a second (bursts of 20) and gets <code>429</code> beyond that. Times are in milliseconds (<code>ms</code>) and as text (<code>time</code>); <code>player</code> is a player's id, as in their page's address.</p>
+<ul>
+<li><code>/api/v1/online</code>: who is on the hub, and for each player their state, map, mode, kind, lobby and host, who they spectate, and dnd/afk.</li>
+<li><code>/api/v1/boards?kind=&amp;mode=</code>: every board (map, kind, mode), its number of entries and its record; <code>kind</code> is flagrun, race or campaign, both filters optional.</li>
+<li><code>/api/v1/board?map=&amp;kind=&amp;mode=</code>: one board's entries, with replay links once public, and its legacy record (not witnessed) if it has one.</li>
+<li><code>/api/v1/records?kind=&amp;mode=&amp;limit=&amp;latest=1</code>: records, newest first (50 by default, up to 500); <code>latest=1</code> keeps only each board's newest.</li>
+<li><code>/api/v1/player?id=</code>: a player's name and their place on each board.</li>
+</ul>
 </div>
 {{template "bottom" .}}
