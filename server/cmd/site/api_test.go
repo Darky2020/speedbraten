@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"speedbraten/server/board"
 	"speedbraten/server/sqlite"
 )
 
@@ -217,11 +218,24 @@ func TestAPIPlayersAndRuns(t *testing.T) {
 	}
 
 	var p struct {
-		Stats  struct{ Runs, Records int }
+		Stats struct {
+			Runs, Records int
+			Completion    []struct {
+				Category string
+				Done, Of int
+			}
+		}
 		Recent []struct{ Run int64 } `json:"recent_runs"`
 	}
 	if getJSON(t, s, "/api/v1/player?id=kb", &p); p.Stats.Runs != 2 || p.Stats.Records != 1 || len(p.Recent) != 2 || p.Recent[0].Run != 4 {
 		t.Fatalf("player stats %+v", p)
+	}
+	done := map[string][2]int{}
+	for _, c := range p.Stats.Completion {
+		done[c.Category] = [2]int{c.Done, c.Of}
+	}
+	if done["ectf"] != [2]int{1, len(board.FlagrunMaps)} || done["ctf"][0] != 0 || done["sp"] != [2]int{1, board.CampaignCount()} {
+		t.Fatalf("completion %+v", p.Stats.Completion)
 	}
 
 	// a record its player has since beaten is no board entry: no replay link for it

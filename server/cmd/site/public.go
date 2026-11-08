@@ -72,6 +72,7 @@ func mapURL(k board.Key) string {
 
 var funcs = template.FuncMap{
 	"runtime": board.Time,
+	"jsonhl":  jsonHighlight,
 	"gap":     func(a, b int64) string { return board.Time(a - b) },
 	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 	"ago":     ago,
@@ -576,27 +577,7 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 		mine[completionGroup(p.Key)]++
 		rows = append(rows, placeRow{Place: p, Best: best})
 	}
-	// completion: of each category's boards, how many the player has a time on
-	// flagruns and campaigns have fixed lists; races count the race boards there are
-	all, _ := s.store.Boards()
-	totals := map[string]int{"ctf": len(board.FlagrunMaps), "ictf": len(board.FlagrunMaps), "ectf": len(board.FlagrunMaps), "sp": board.CampaignCount()}
-	raceBoards := map[board.Key]bool{}
-	for _, b := range all {
-		if b.Key.Kind == "race" {
-			raceBoards[b.Key] = true
-		}
-	}
-	for _, m := range s.raceMaps() {
-		raceBoards[board.Key{Map: m, Kind: "race"}] = true
-	}
-	totals["race"] = len(raceBoards)
-	var completion []completionRow
-	for _, g := range completionGroups {
-		if totals[g.Key] == 0 {
-			continue
-		}
-		completion = append(completion, completionRow{Label: g.Label, Badge: g.Badge, Done: mine[g.Key], Of: totals[g.Key], Percent: 100 * mine[g.Key] / totals[g.Key]})
-	}
+	completion := completionRows(mine, s.completionTotals())
 	// places by category, like the site's tabs: flagruns as one row per map with a cell per mode
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Key.MapLabel() < rows[j].Key.MapLabel() })
 	var flagruns []playerFlagRow
@@ -819,6 +800,7 @@ func topHolders(boards []*board.Board, n int) []board.Holder {
 }
 
 type completionRow struct {
+	Key     string
 	Label   string
 	Badge   board.Key
 	Done    int
@@ -839,6 +821,36 @@ var completionGroups = []struct {
 }
 
 func completionGroup(k board.Key) string { return modeOf(k) }
+
+// completionTotals counts each completion category's boards: flagruns and campaigns have fixed
+// lists; races count the race boards there are and the race maps without one yet
+func (s *site) completionTotals() map[string]int {
+	totals := map[string]int{"ctf": len(board.FlagrunMaps), "ictf": len(board.FlagrunMaps), "ectf": len(board.FlagrunMaps), "sp": board.CampaignCount()}
+	all, _ := s.store.Boards()
+	raceBoards := map[board.Key]bool{}
+	for _, b := range all {
+		if b.Key.Kind == "race" {
+			raceBoards[b.Key] = true
+		}
+	}
+	for _, m := range s.raceMaps() {
+		raceBoards[board.Key{Map: m, Kind: "race"}] = true
+	}
+	totals["race"] = len(raceBoards)
+	return totals
+}
+
+// completionRows: of each category's boards, how many the player (mine, by category) has a time on
+func completionRows(mine, totals map[string]int) []completionRow {
+	var rows []completionRow
+	for _, g := range completionGroups {
+		if totals[g.Key] == 0 {
+			continue
+		}
+		rows = append(rows, completionRow{Key: g.Key, Label: g.Label, Badge: g.Badge, Done: mine[g.Key], Of: totals[g.Key], Percent: 100 * mine[g.Key] / totals[g.Key]})
+	}
+	return rows
+}
 
 type playerFlagCell struct{ Place *placeRow }
 

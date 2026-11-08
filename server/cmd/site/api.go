@@ -380,7 +380,7 @@ func (a *api) player(r *http.Request) (int, any) {
 	if all, err := a.s.store.PlayerStats(); err == nil {
 		for _, p := range all {
 			if p.Player == id {
-				res.Stats = statsOf(p)
+				res.Stats = statsOf(p, a.completionByPlayer()[id], a.s.completionTotals())
 			}
 		}
 	}
@@ -433,6 +433,38 @@ func jsonHighlight(src string) template.HTML {
 	return template.HTML(out.String())
 }
 
+type apiCompletion struct {
+	Category string `json:"category"` // race, ctf, ictf, ectf or sp
+	Label    string `json:"label"`
+	Done     int    `json:"done"` // boards they have a time on
+	Of       int    `json:"of"`
+	Percent  int    `json:"percent"`
+}
+
+func completionOf(mine, totals map[string]int) []apiCompletion {
+	out := []apiCompletion{}
+	for _, c := range completionRows(mine, totals) {
+		out = append(out, apiCompletion{Category: c.Key, Label: c.Label, Done: c.Done, Of: c.Of, Percent: c.Percent})
+	}
+	return out
+}
+
+// completionByPlayer counts each player's boards per completion category
+func (a *api) completionByPlayer() map[string]map[string]int {
+	out := map[string]map[string]int{}
+	all, _ := a.s.store.Boards()
+	for _, b := range all {
+		g := completionGroup(b.Key)
+		for _, e := range b.Entries {
+			if out[e.Install] == nil {
+				out[e.Install] = map[string]int{}
+			}
+			out[e.Install][g]++
+		}
+	}
+	return out
+}
+
 type apiStats struct {
 	Runs    int    `json:"runs"`
 	Boards  int    `json:"boards"`
@@ -443,12 +475,14 @@ type apiStats struct {
 	Bronze  int    `json:"bronze"`
 	First   string `json:"first_run"`
 	Last    string `json:"last_run"`
+	// of each category's boards, how many they have a time on
+	Completion []apiCompletion `json:"completion"`
 }
 
-func statsOf(p board.PlayerStats) apiStats {
+func statsOf(p board.PlayerStats, mine, totals map[string]int) apiStats {
 	return apiStats{Runs: p.Runs, Boards: p.Boards, Records: p.Medals[1], Podiums: p.Medals[1] + p.Medals[2] + p.Medals[3],
 		Gold: p.Medals[1], Silver: p.Medals[2], Bronze: p.Medals[3],
-		First: p.First.UTC().Format(time.RFC3339), Last: p.Last.UTC().Format(time.RFC3339)}
+		First: p.First.UTC().Format(time.RFC3339), Last: p.Last.UTC().Format(time.RFC3339), Completion: completionOf(mine, totals)}
 }
 
 func (a *api) players(r *http.Request) (int, any) {
@@ -498,11 +532,12 @@ func (a *api) players(r *http.Request) (int, any) {
 		limit = min(n, 1000)
 	}
 	list := []out{}
+	totals, mine := a.s.completionTotals(), a.completionByPlayer()
 	for _, p := range all {
 		if len(list) >= limit {
 			break
 		}
-		list = append(list, out{ID: p.Player, Name: p.Name, Registered: p.Registered, Stats: statsOf(p)})
+		list = append(list, out{ID: p.Player, Name: p.Name, Registered: p.Registered, Stats: statsOf(p, mine[p.Player], totals)})
 	}
 	return 200, list
 }

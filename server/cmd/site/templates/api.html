@@ -201,10 +201,18 @@
 <li><span class="f">podiums</span><span class="pill t-number">number</span><span class="d">top-3 places</span></li>
 <li><span class="f">gold, silver, bronze</span><span class="pill t-number">number</span><span class="d">first, second and third places</span></li>
 <li><span class="f">first_run, last_run</span><span class="pill t-string">string</span><span class="d">when their first and newest runs were judged</span></li>
+<li><span class="f">completion</span><span class="pill t-list">list</span><span class="d">per category, as on their page</span>
+<ul>
+<li><span class="f">category</span><span class="pill t-string">string</span><span class="d"><code>race</code>, <code>ctf</code>, <code>ictf</code>, <code>ectf</code> or <code>sp</code> (campaigns)</span></li>
+<li><span class="f">label</span><span class="pill t-string">string</span></li>
+<li><span class="f">done</span><span class="pill t-number">number</span><span class="d">boards of the category they have a time on</span></li>
+<li><span class="f">of</span><span class="pill t-number">number</span><span class="d">the category's boards: every flagrun map in each mode, every campaign, every race map</span></li>
+<li><span class="f">percent</span><span class="pill t-number">number</span><span class="d">rounded down</span></li>
+</ul></li>
 </ul></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `[{"id":"4f1c9e…","name":"carol","registered":true,"stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z"}}]`}}</pre>
+<pre class="json">{{jsonhl `[{"id":"4f1c9e…","name":"carol","registered":true,"stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z","completion":[{"category":"race","label":"Races","done":6,"of":24,"percent":25},{"category":"ectf","label":"effic ctf","done":30,"of":58,"percent":51}]}}]`}}</pre>
 </section>
 
 <section id="player" class="ep">
@@ -226,6 +234,14 @@
 <li><span class="f">podiums</span><span class="pill t-number">number</span><span class="d">top-3 places</span></li>
 <li><span class="f">gold, silver, bronze</span><span class="pill t-number">number</span><span class="d">first, second and third places</span></li>
 <li><span class="f">first_run, last_run</span><span class="pill t-string">string</span><span class="d">when their first and newest runs were judged</span></li>
+<li><span class="f">completion</span><span class="pill t-list">list</span><span class="d">per category, as on their page</span>
+<ul>
+<li><span class="f">category</span><span class="pill t-string">string</span><span class="d"><code>race</code>, <code>ctf</code>, <code>ictf</code>, <code>ectf</code> or <code>sp</code> (campaigns)</span></li>
+<li><span class="f">label</span><span class="pill t-string">string</span></li>
+<li><span class="f">done</span><span class="pill t-number">number</span><span class="d">boards of the category they have a time on</span></li>
+<li><span class="f">of</span><span class="pill t-number">number</span><span class="d">the category's boards: every flagrun map in each mode, every campaign, every race map</span></li>
+<li><span class="f">percent</span><span class="pill t-number">number</span><span class="d">rounded down</span></li>
+</ul></li>
 </ul></li>
 <li><span class="f">places</span><span class="pill t-list">list</span>
 <ul>
@@ -241,7 +257,7 @@
 <li><span class="f">recent_runs</span><span class="pill t-list">list</span><span class="d">their 20 newest runs, as <code>/runs</code> gives them</span></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z"},"places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}],"recent_runs":[{"map":"luna","kind":"flagrun","mode":17,"mode_name":"effic ctf","player":"4f1c9e…","name":"carol","ms":5702,"time":"0:05.702","when":"2026-11-09T09:58:13Z","run":240,"record":false}]}`}}</pre>
+<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z","completion":[{"category":"race","label":"Races","done":6,"of":24,"percent":25},{"category":"ectf","label":"effic ctf","done":30,"of":58,"percent":51}]},"places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}],"recent_runs":[{"map":"luna","kind":"flagrun","mode":17,"mode_name":"effic ctf","player":"4f1c9e…","name":"carol","ms":5702,"time":"0:05.702","when":"2026-11-09T09:58:13Z","run":240,"record":false}]}`}}</pre>
 </section>
 </div>
 </div>
