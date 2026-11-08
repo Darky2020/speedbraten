@@ -289,8 +289,14 @@ func TestOnline(t *testing.T) {
 	if _, body := get(t, s, "/flagruns"); !strings.Contains(body, `<span class="online" title="alice, bob"><i></i>2 online</span>`) {
 		t.Fatal("no online count with a fresh presence")
 	}
+	if code, body := get(t, s, "/online"); code != 200 || strings.TrimSpace(body) != `{"shown":true,"count":2,"names":"alice, bob"}` {
+		t.Fatalf("online endpoint %d %s", code, body)
+	}
 	h.Exec("UPDATE presence SET updated = ?", time.Now().Add(-10*time.Minute).Unix())
 	if _, body := get(t, s, "/"); strings.Contains(body, `class="online"`) {
 		t.Fatal("online shown from a stale presence")
+	}
+	if _, body := get(t, s, "/online"); !strings.Contains(body, `"shown":false`) {
+		t.Fatalf("online endpoint shown from a stale presence: %s", body)
 	}
 }

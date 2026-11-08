@@ -192,7 +192,7 @@ func main() {
 	go func() {
 		for {
 			h.PresenceTick()
-			time.Sleep(15 * time.Second)
+			time.Sleep(2 * time.Second)
 		}
 	}()
 	if cfg.Feed != nil {

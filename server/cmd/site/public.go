@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -109,9 +110,9 @@ var funcs = template.FuncMap{
 // onlineNow is the hub's player count for the page header; Shown is false while the hub hasn't
 // said lately
 type onlineNow struct {
-	Shown bool
-	Count int
-	Names string
+	Shown bool   `json:"shown"`
+	Count int    `json:"count"`
+	Names string `json:"names"`
 }
 
 // siteOnline answers the templates' online; set by newSite
@@ -181,6 +182,11 @@ func newSite(store *board.Store) *site {
 	s.mux.HandleFunc("/player", s.player)
 	s.mux.HandleFunc("/records", s.records)
 	s.mux.HandleFunc("/info", s.info)
+	s.mux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(siteOnline())
+	})
 	s.mux.HandleFunc("/replay", s.replay)
 	s.mux.HandleFunc("/mapimg/", s.mapImage)
 	return s

@@ -105,6 +105,23 @@ button:hover { border-color: var(--accent); }
 <main>{{end}}
 {{define "bottom"}}</main>
 <footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a></footer>
+<script>
+(function () {
+  var bar = document.querySelector('.bar .in');
+  function update() {
+    if (document.hidden) return;
+    fetch('/online', {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (o) {
+      var el = bar.querySelector('.online');
+      if (!o.shown) { if (el) el.remove(); return; }
+      if (!el) { el = document.createElement('span'); el.className = 'online'; bar.appendChild(el); }
+      el.innerHTML = '<i></i>' + o.count + ' online';
+      if (o.names) el.title = o.names; else el.removeAttribute('title');
+    }).catch(function () {});
+  }
+  setInterval(update, 5000);
+  document.addEventListener('visibilitychange', update);
+})();
+</script>
 </body></html>{{end}}
 
 {{define "filters"}}<form class="filters" method="get" action="{{.Path}}">
