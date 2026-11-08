@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.15
+
+- Practice visualizers (an assist): triggers, clip, finishes, spawns, monster groups and health.
+- Monsters through walls within a set distance, to find stuck ones.
+- Spectating someone shows "waiting" while they're in a menu, replay or demo.
+- Spectating ends cleanly when you play, leave, join a server or disconnect.
+- After spectating, you get your lobby back, so you see who spectates you.
+- Watching a legacy record demo while spectating resumes spectating after.
+- Races in ffa and coop edit share one board per map.
+
 ## v0.3.14
 
 - TAB marks lobby players who are in do not disturb (dnd) or away for 30 s (afk).
