@@ -126,6 +126,8 @@ extern bool racegoal(const extentity &e, float &r);
 extern int nummonsterslots();
 extern fpsent *monsterslot(int i, int &tag, int &maxhealth);
 extern void renderpracticelabels();
+extern int nummovableslots();
+extern dynent *movableslot(int i, int &health, int &maxhealth);
 extern bool flagrunrules();
 extern int flagrunminimap;
 extern bool racerules();

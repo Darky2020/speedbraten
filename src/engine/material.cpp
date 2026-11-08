@@ -465,11 +465,21 @@ VARP(showmat, 0, 1, 1);
 VARP(editmatoffset, 0, 1, 1);
 VAR(practicehelpers, 0, 0, 1);
 VARP(practiceclip, 0, 1, 1);
+VARP(practicenoclip, 0, 1, 1);
+VARP(practicedeath, 0, 1, 1);
+VARP(practicegameclip, 0, 1, 1);
 
-// a practice helper outside edit mode: materials that change how players move or die
+// a practice helper outside edit mode: materials that change how players move, die or take flags
 static inline bool triggermat(const materialsurface &m)
 {
-    return m.material == MAT_CLIP || m.material == MAT_NOCLIP || m.material == MAT_DEATH;
+    switch(m.material)
+    {
+        case MAT_CLIP: return practiceclip != 0;
+        case MAT_NOCLIP: return practicenoclip != 0;
+        case MAT_DEATH: return practicedeath != 0;
+        case MAT_GAMECLIP: return practicegameclip != 0;
+        default: return false;
+    }
 }
 
 static int sortdim[3];
@@ -534,7 +544,7 @@ void sortmaterials(vector<materialsurface *> &vismats)
                 if(matvol==MAT_WATER && (m.orient==O_TOP || (refracting<0 && reflectz>worldsize))) { i += m.skip; continue; }
                 if(m.visible == MATSURF_EDIT_ONLY)
                 {
-                    if(practicehelpers && practiceclip && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
+                    if(practicehelpers && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
                     else i += m.skip;
                     continue;
                 }
@@ -603,6 +613,7 @@ static void rendertriggermats(const vector<materialsurface *> &vismats)
                 case MAT_CLIP:   color = bvec4(  0, 255, 255, 255); break; // red
                 case MAT_NOCLIP: color = bvec4(255,   0, 255, 255); break; // green
                 case MAT_DEATH:  color = bvec4(192, 192, 192, 255); break; // black
+                case MAT_GAMECLIP: color = bvec4(0, 0, 255, 255); break; // yellow
             }
             lastmat = m.material;
         }
@@ -932,7 +943,7 @@ void rendermaterials()
         foggednotextureshader->set();
         rendermatgrid(vismats);
     }
-    else if(practicehelpers && practiceclip && !editmode && !drawtex) rendertriggermats(vismats);
+    else if(practicehelpers && !editmode && !drawtex) rendertriggermats(vismats);
 
     glEnable(GL_CULL_FACE);
 }

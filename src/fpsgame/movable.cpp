@@ -17,7 +17,7 @@ namespace game
 
     struct movable : dynent
     {
-        int etype, mapmodel, health, weight, exploding, tag, dir;
+        int etype, mapmodel, health, maxhealth, weight, exploding, tag, dir;
         physent *stacked;
         vec stackpos;
 
@@ -25,6 +25,7 @@ namespace game
             etype(e.type),
             mapmodel(e.attr2),
             health(e.type==BARREL ? (e.attr4 ? e.attr4 : BARRELHEALTH) : 0), 
+            maxhealth(health),
             weight(e.type==PLATFORM || e.type==ELEVATOR ? PLATFORMWEIGHT : (e.attr3 ? e.attr3 : (e.type==BARREL ? BARRELWEIGHT : BOXWEIGHT))), 
             exploding(0),
             tag(e.type==PLATFORM || e.type==ELEVATOR ? e.attr3 : 0),
@@ -186,6 +187,16 @@ namespace game
                 moveplayer(m, 1, true);
             }
         }
+    }
+
+    // for the practice helpers: a barrel's health, 0 for the other movables
+    int nummovableslots() { return movables.length(); }
+    dynent *movableslot(int i, int &health, int &maxhealth)
+    {
+        movable &m = *movables[i];
+        health = m.etype == BARREL ? m.health : 0;
+        maxhealth = m.etype == BARREL ? m.maxhealth : 0;
+        return &m;
     }
 
     void rendermovables()

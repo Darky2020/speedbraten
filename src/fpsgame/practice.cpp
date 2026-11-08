@@ -1,26 +1,31 @@
-// Practice helpers: what the game tests the player against, and the monsters' groups and health,
-// drawn outside edit mode. practicehelpers (an assist, off at every launch) turns them on; the
+// Practice helpers: what the game tests the player against, and the health of monsters and
+// barrels, drawn outside edit mode. practicehelpers (an assist, off at every launch) turns them on; the
 // practice* toggles pick which. Flags, jumppads, teleports and level triggers act when the feet
 // enter a sphere around them; a race finish cube is tested against the eye, so it is drawn one eye
-// height lower, where the body has to be. The engine draws clip, noclip and death material
-// (practiceclip).
+// height lower, where the body has to be. A spawn box is the player's bounding box with the eye
+// on the spawn point, where spawning puts it. The engine draws the clip, noclip, death and
+// gameclip material (practiceclip and the like).
 
 #include "game.h"
 #include "sbcompat.h"
 
 namespace game
 {
-    MOD(VARP, practicepads, 0, 1, 1);     // jumppads and teleports
-    MOD(VARP, practiceflags, 0, 1, 1);    // flag pickup spheres
-    MOD(VARP, practicefinish, 0, 1, 1);   // race finish cubes and the triggers that end a campaign map
-    MOD(VARP, practicetriggers, 0, 1, 1); // the other level triggers
-    MOD(VARP, practicegroups, 0, 1, 1);   // monsters by their group (tag)
-    MOD(VARP, practicehealth, 0, 1, 1);   // health bars on damaged monsters
+    MOD(VARP, practicejumppads, 0, 1, 1);
+    MOD(VARP, practiceteleports, 0, 1, 1);
+    MOD(VARP, practiceflags, 0, 1, 1);
+    MOD(VARP, practiceracefinish, 0, 1, 1);
+    MOD(VARP, practicecampaignfinish, 0, 1, 1); // the triggers that end or change a campaign map
+    MOD(VARP, practicetriggers, 0, 1, 1);       // the other level triggers
+    MOD(VARP, practicespawns, 0, 1, 1);
+    MOD(VARP, practicegroups, 0, 1, 1);         // monsters by their group (tag)
+    MOD(VARP, practicehealth, 0, 1, 1);         // damaged monsters
+    MOD(VARP, practicebarrels, 0, 1, 1);        // barrels' health
 
     enum
     {
         COL_PADS = 0x40C0FF, COL_TELEPORT = 0xC060FF, COL_FLAG = 0xFFC040, COL_FINISH = 0x40FF80,
-        COL_ARMED = 0xFF8040, COL_LOCKED = 0xC04040, COL_SPENT = 0x707070
+        COL_ARMED = 0xFF8040, COL_LOCKED = 0xC04040, COL_SPENT = 0x707070, COL_SPAWN = 0xE0E0E0
     };
     static const int groupcolours[] = { 0xFF4040, 0x40C0FF, 0xFFD040, 0x60FF60, 0xFF60FF, 0xFF9030, 0x40FFE0, 0xB080FF };
     static int groupcolour(int tag) { return groupcolours[(tag - 1) % (sizeof(groupcolours)/sizeof(groupcolours[0]))]; }
@@ -95,7 +100,7 @@ namespace game
             bool locked, endsp;
             if(!entities::leveltrigger(e, reach, locked, endsp)) continue;
             bool exits = triggerexits(e, endsp);
-            if(exits ? !practicefinish : !practicetriggers) continue;
+            if(exits ? !practicecampaignfinish : !practicetriggers) continue;
             bool spent = e.triggerstate == TRIGGERED || e.triggerstate == TRIGGER_DISAPPEARED;
             color(exits ? COL_FINISH : spent ? COL_SPENT : locked ? COL_LOCKED : COL_ARMED);
             sphere(e.o, reach + player1->radius);
@@ -122,27 +127,42 @@ namespace game
         {
             const extentity &e = *ents[i];
             float r;
-            if(practicepads) switch(e.type)
+            switch(e.type)
             {
                 case JUMPPAD:
+                    if(!practicejumppads) break;
                     color(COL_PADS);
                     sphere(e.o, 12);
                     arrow(e.o, vec((int)(char)e.attr3*10.0f, (int)(char)e.attr2*10.0f, e.attr1*12.5f).normalize(), 24);
                     break;
                 case TELEPORT:
+                    if(!practiceteleports) break;
                     color(COL_TELEPORT);
                     sphere(e.o, 16);
                     break;
                 case TELEDEST:
                 {
+                    if(!practiceteleports) break;
                     color(COL_TELEPORT);
                     vec dir;
                     vecfromyawpitch(e.attr1, 0, 1, 0, dir);
                     arrow(e.o, dir, 16);
                     break;
                 }
+                case PLAYERSTART:
+                case RESPAWNPOINT:
+                {
+                    if(!practicespawns || (e.type == PLAYERSTART && e.attr2 < 0)) break;
+                    const fpsent &p = *player1;
+                    color(COL_SPAWN);
+                    box(vec(e.o).sub(vec(p.radius, p.radius, p.eyeheight)), vec(e.o).add(vec(p.radius, p.radius, p.aboveeye)));
+                    vec dir;
+                    vecfromyawpitch(e.attr1, 0, 1, 0, dir);
+                    arrow(e.o, dir, 8);
+                    break;
+                }
             }
-            if(practicefinish && racerules() && racegoal(e, r))
+            if(practiceracefinish && racerules() && racegoal(e, r))
             {
                 color(COL_FINISH);
                 vec c(e.o);
@@ -164,29 +184,43 @@ namespace game
         }
     }
 
-    // the monsters' group numbers and health bars, as particles of the frame being drawn
+    // a health bar with the number above it; returns how high the two reach above o
+    static float healthlabel(const vec &o, int health, int maxhealth)
+    {
+        float fill = clamp(float(health)/maxhealth, 0.0f, 1.0f);
+        int c = fill <= 0.25f ? 0xFF4040 : fill <= 0.5f ? 0xFF8000 : 0x40FF40;
+        particle_meter(vec(o).add(vec(0, 0, 1)), fill, PART_METER, 1, c, 0, 2.0f);
+        defformatstring(num, "%d", health);
+        particle_textcopy(vec(o).add(vec(0, 0, 3.5f)), num, PART_TEXT, 1, 0xFFFFFF, 2.0f);
+        return 6;
+    }
+
+    // monsters' group numbers and health, barrels' health, as particles of the frame being drawn
     void renderpracticelabels()
     {
         static int lastframe = -1;
-        if(!practicehelpers || editmode || !m_sp || lastframe == totalmillis || !canaddparticles()) return;
+        if(!practicehelpers || editmode || lastframe == totalmillis || !canaddparticles()) return;
         lastframe = totalmillis;
-        loopi(nummonsterslots())
+        if(practicegroups || practicehealth) loopi(nummonsterslots())
         {
             int tag, maxhealth;
             fpsent *m = monsterslot(i, tag, maxhealth);
             if(m->state != CS_ALIVE) continue;
             vec above = m->abovehead();
-            if(practicehealth && m->health < maxhealth && maxhealth > 0)
-            {
-                float fill = clamp(float(m->health)/maxhealth, 0.0f, 1.0f);
-                int c = fill <= 0.25f ? 0xFF4040 : fill <= 0.5f ? 0xFF8000 : 0x40FF40;
-                particle_meter(vec(above).add(vec(0, 0, 1)), fill, PART_METER, 1, c, 0, 2.0f);
-            }
+            float up = 0;
+            if(practicehealth && m->health < maxhealth && maxhealth > 0) up = healthlabel(above, m->health, maxhealth);
             if(practicegroups && tag)
             {
                 defformatstring(label, "%d", tag);
-                particle_textcopy(vec(above).add(vec(0, 0, 3.5f)), label, PART_TEXT, 1, groupcolour(tag), 2.5f);
+                particle_textcopy(vec(above).add(vec(0, 0, up + 3.5f)), label, PART_TEXT, 1, groupcolour(tag), 2.5f);
             }
+        }
+        if(practicebarrels) loopi(nummovableslots())
+        {
+            int health, maxhealth;
+            dynent *m = movableslot(i, health, maxhealth);
+            if(m->state != CS_ALIVE || maxhealth <= 0) continue;
+            healthlabel(vec(m->o).add(vec(0, 0, m->aboveeye + 1)), health, maxhealth);
         }
     }
 }
