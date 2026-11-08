@@ -13,6 +13,7 @@ namespace game
 
     static uint spectarget = 0, specrun = 0;
     static bool specstarted = false, specchained = false;
+    static bool specwaiting = false; // the spectated player stopped playing; the next run comes on its own
     static int specbytes = 0, specparsed = 0, specknown = 0;
     // A new view on the map being played that starts from a saved state replaces the playing
     // one in place once that one is played out, up to oldknown, without a map load.
@@ -29,6 +30,16 @@ namespace game
     bool spectating() { return spectarget != 0; }
     uint spectatingid() { return spectarget; }
     const char *spectatingname() { return specname; }
+    // before the spectated player's first run, and while they aren't playing one
+    bool spectatewaiting() { return spectarget && (specwaiting || !specrun); }
+    void spectaterename(const char *name) { copystring(specname, name); }
+
+    void spectatewait()
+    {
+        if(!spectarget || specwaiting) return;
+        specwaiting = true;
+        conoutf("\f2%s stopped playing: waiting for their next run", specname);
+    }
 
     // the tick playback may run up to: the file's known tick, or while a new view waits to replace
     // the playing one, where the new view starts (a gap or a rewind otherwise) unless the old one
@@ -70,7 +81,7 @@ namespace game
         spectarget = target;
         copystring(specname, name);
         specrun = 0;
-        specstarted = false;
+        specstarted = specwaiting = false;
     }
 
     // a new run of the spectated player: the file starts over
@@ -86,6 +97,7 @@ namespace game
         specswitch = same;
         switchtick = -1;
         specrun = run;
+        specwaiting = false;
         specbytes = specparsed = specknown = 0;
         specchained = chained && specstarted && inputreplayactive();
         specstarted = specswitch;
@@ -109,7 +121,7 @@ namespace game
     static void spectatefinish(bool reload)
     {
         spectarget = specrun = 0;
-        specstarted = specswitch = false;
+        specstarted = specswitch = specwaiting = false;
         specname[0] = '\0';
         // a fresh game on the map that was being watched, else back to the player's own map
         if(specmap[0]) { copystring(returnmap, specmap); returnmode = specmode; copystring(returnkind, speckind); }

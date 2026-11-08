@@ -352,6 +352,9 @@ namespace game
     extern bool spectating();
     extern uint spectatingid();
     extern const char *spectatingname();
+    extern bool spectatewaiting();
+    extern void spectatewait();
+    extern void spectaterename(const char *name);
     extern bool spectatehold();
     extern float spectatebehind();
     extern void spectatebegin(uint target, const char *name, const char *map, int mode, const char *kind);

@@ -31,6 +31,7 @@ const (
 	MsgLegacy       = 20
 	MsgAway         = 21
 	MsgBoardSummary = 22
+	MsgViewEnd      = 23
 
 	MsgWelcome          = 101
 	MsgWitness          = 102
@@ -56,6 +57,7 @@ const (
 	MsgRelease          = 122
 	MsgLegacyData       = 123
 	MsgBoardSummaryData = 124
+	MsgSpecWait         = 125
 
 	StateMenu    = 0
 	StatePlaying = 1

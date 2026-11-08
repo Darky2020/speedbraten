@@ -664,6 +664,7 @@ namespace game
 
     void inputdisconnect()
     {
+        hubspectateleave();
         saveunfinishedrun();
         witnessstop("disconnected");
         restoresettings();

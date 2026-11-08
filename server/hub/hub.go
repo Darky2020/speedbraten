@@ -601,6 +601,11 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		h.startSpectating(p, id)
 	case MsgView:
 		return h.viewStart(p, &r)
+	case MsgViewEnd:
+		if err := r.done(); err != nil {
+			return err
+		}
+		h.viewEnd(p)
 	case MsgViewData:
 		return h.viewData(p, &r)
 	case MsgRunTime:
@@ -635,7 +640,7 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		if err := r.done(); err != nil {
 			return err
 		}
-		if p.lobby == nil || p.name == "" {
+		if p.lobby == nil || p.name == "" || p.spec != nil {
 			return nil
 		}
 		h.finished(p, mapname, mode, kind, ms)
@@ -718,7 +723,7 @@ func (l *lobby) everyone() []*player {
 // relayPos passes a position sample on to the other lobby members on the same map and mode.
 // Samples over the rate, malformed ones and ones from outside a lobby are dropped.
 func (h *Hub) relayPos(p *player, msg []byte) {
-	if p.lobby == nil || p.name == "" || len(msg) > 48 || !p.pos.take(h.cfg.Now(), PosRate, PosBurst) {
+	if p.lobby == nil || p.name == "" || p.spec != nil || len(msg) > 48 || !p.pos.take(h.cfg.Now(), PosRate, PosBurst) {
 		return
 	}
 	r := reader{b: msg}

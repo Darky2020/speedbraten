@@ -74,6 +74,8 @@ func (h *Hub) startSpectating(p *player, id uint64) {
 	case len(h.spectatorsOf(q)) >= MaxSpectators:
 		h.notice(p, q.name+" has too many spectators")
 	default:
+		// a spectator's own spectators lose what they watched, as when it leaves its lobby
+		h.endSpectators(p, p.name+" is spectating "+q.name)
 		p.spec = &spectate{target: q}
 		h.watch(p)
 		if q.view != nil {
@@ -103,7 +105,9 @@ func (h *Hub) watch(p *player) {
 		h.broadcast(MsgLobby, lobbyMsg(l))
 		h.statsTo(p, l)
 	}
-	h.broadcast(MsgPlayer, h.playerMsg(p))
+	if p.name != "" {
+		h.broadcast(MsgPlayer, h.playerMsg(p))
+	}
 }
 
 // endWatching tells p its spectating is over and stops it.
@@ -144,6 +148,20 @@ func (h *Hub) viewStart(p *player, r *reader) error {
 		h.specRun(s, p)
 	}
 	return nil
+}
+
+// viewEnd: p stopped playing a run (the menu, a replay or a demo); its spectators wait for the next
+func (h *Hub) viewEnd(p *player) {
+	if p.view == nil {
+		return
+	}
+	p.view = nil
+	for _, s := range h.spectatorsOf(p) {
+		s.spec.view = 0
+		var w writer
+		w.u(p.id)
+		h.send(s, MsgSpecWait, w.b)
+	}
 }
 
 func (h *Hub) viewData(p *player, r *reader) error {

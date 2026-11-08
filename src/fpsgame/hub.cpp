@@ -18,7 +18,7 @@ namespace game
     VARP(hubport, 1, HUBPORT, 65535);
     SVARP(hubkey, ""); // the hub's channel public key, 64 hex digits
     SVARP(hubkeyfor, ""); // the "host:port" hubkey was learned from
-    enum { HUBRETRY = 10000, FOLLOWDELAY = 1500, POSINTERVAL = 50 };
+    enum { HUBRETRY = 10000, FOLLOWDELAY = 1500, POSINTERVAL = 50, LOBBYMOVEMILLIS = 1000, VIEWENDMILLIS = 2000 };
 
     struct hubplayer
     {
@@ -80,6 +80,8 @@ namespace game
     static uchar hubnewkey[32];
 
     static bool autolobbydue = true;
+    // the lobby that was being watched when spectating ended with a map load, to rejoin on its map
+    static uint rejoinlobby = 0;
     static uint playalonglobby = 0;
     static bool playalongreload = false; // load the lobby's map even if it is the one being replayed
     // a host map change waiting for the follower's run to end, and when a run last ran
@@ -91,7 +93,10 @@ namespace game
     static hublobby *findlobby(uint id) { loopv(hublobbies) if(hublobbies[i].id == id) return &hublobbies[i]; return NULL; }
     static bool hasspec(const hublobby &l, uint id) { loopv(l.specs) if(l.specs[i] == id) return true; return false; }
     // the lobby the player is in, as a member or as a spectator of one
+    // the lobby one plays in or watches as a spectator
     static hublobby *mylobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid) || hasspec(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
+    // the lobby one plays in; the listing of one only watched can lag behind the end of spectating
+    static hublobby *memberlobby() { loopv(hublobbies) if(hasmember(hublobbies[i], hubmyid)) return &hublobbies[i]; return NULL; }
     static const char *playername(uint id) { hubplayer *p = findplayer(id); return p ? p->name : "?"; }
 
     // a time difference as "+0.518" or "-1:02.300"
@@ -187,8 +192,10 @@ namespace game
     static void leavelegacydemo()
     {
         legacydemoon = false;
+        uint spectated = spectatepausedtarget();
         if(legacyreturnmap[0]) changemap(legacyreturnmap, legacyreturnmode);
         else execute("disconnect");
+        hubspectateresume(spectated);
     }
 
     // whether a demo player's name is the record holder's: the same ignoring case, else one that
@@ -254,6 +261,7 @@ namespace game
         if(multiplayer(false)) { conoutf(CON_ERROR, "leave the server to watch the demo"); return; }
         if(!legacydemoactive())
         {
+            spectatepause();
             copystring(legacyreturnmap, connected && !m_demo ? getclientmap() : "");
             legacyreturnmode = gamemode;
         }
@@ -624,6 +632,8 @@ namespace game
         hubsentaway = -1;
         hubwelcomed = hublisted = false;
         autolobbydue = true;
+        rejoinlobby = 0;
+        spectatepausedtarget();
         playalonglobby = 0;
         followpending = false;
         lobbyghostsclear();
@@ -749,8 +759,8 @@ namespace game
     static void sendpos()
     {
         static int lastsent = 0;
-        if(totalmillis - lastsent < POSINTERVAL || remote || inputreplayactive() || player1->state != CS_ALIVE || !runkind()[0]) return;
-        hublobby *l = mylobby();
+        if(totalmillis - lastsent < POSINTERVAL || remote || spectating() || inputreplayactive() || player1->state != CS_ALIVE || !runkind()[0]) return;
+        hublobby *l = memberlobby();
         if(!l || l->members.length() < 2) return;
         lastsent = totalmillis;
         ghostsample g;
@@ -775,9 +785,21 @@ namespace game
     {
         if(!autolobbydue || !hubmyname[0] || inputreplayactive() || spectating()) return;
         autolobbydue = false;
-        hublobby *l = mylobby();
+        hublobby *l = memberlobby();
         const char *kind = runkind();
-        if(!kind[0]) { if(l) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
+        uint rejoin = rejoinlobby;
+        rejoinlobby = 0;
+        // a demo or the menu is a pause: the lobby stays, its spectators wait
+        if(!kind[0]) { if(l && clientmap[0] && !m_demo && !demoplayback) hubsend(HM_LOBBYLEAVE, NULL, 0); return; }
+        hublobby *watched = !l && rejoin ? findlobby(rejoin) : NULL;
+        if(watched && onlobbymap(*watched) && !strcmp(watched->kind, kind))
+        {
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(watched->id);
+            hubsend(HM_LOBBYJOIN, p.getbuf(), p.length());
+            return;
+        }
         bool same = l && onlobbymap(*l) && (l->host != hubmyid || !strcmp(l->kind, kind));
         if(same) return;
         if(l && l->host == hubmyid) mapmessage(HM_LOBBYMAP, runmap(), runmode());
@@ -803,13 +825,27 @@ namespace game
         bool running = false;
         runtimerticks(running);
         if(running) lastrunning = totalmillis;
-        if(!followpending || inputreplayactive()) return;
-        hublobby *l = mylobby();
+        if(!followpending || inputreplayactive() || spectating()) return;
+        hublobby *l = memberlobby();
         if(!l || l->host == hubmyid || !l->map[0] || remote || onlobbymap(*l)) { followpending = false; return; }
         if(running || totalmillis - lastrunning < FOLLOWDELAY) return;
         followpending = false;
         conoutf("\f2following %s to %s (%s)", playername(l->host), runlabel(l->map), kindormode(l->kind, l->mode));
         loadlobbymap(*l);
+    }
+
+    // tells the hub when the player has stopped playing runs for a while (the menu, a replay, a
+    // demo), so that its spectators wait instead of watching the last one; map loads stop the view
+    // only briefly
+    static void sendviewend()
+    {
+        static bool sent = true;
+        static int stoppedat = 0;
+        if(hubviewing() && hubstreaming()) { sent = false; stoppedat = 0; return; }
+        if(sent) return;
+        if(!stoppedat) { stoppedat = totalmillis; return; }
+        if(totalmillis - stoppedat < VIEWENDMILLIS) return;
+        if(hubsend(HM_VIEWEND, NULL, 0)) sent = true;
     }
 
     // the run timer for the lobby's scoreboard
@@ -997,6 +1033,7 @@ namespace game
                         hubplayers.add(q);
                         if(hublisted && q.id != hubmyid && q.name[0]) conoutf(quiettype(CON_INFO), "\f1[hub] \f0%s\f2 joined the hub", q.name);
                     }
+                    if(q.id == spectatingid() && q.name[0]) spectaterename(q.name);
                     break;
                 }
                 case HM_GONE:
@@ -1103,6 +1140,12 @@ namespace game
                     uint run = uint(r.var());
                     int offset = int(r.var());
                     if(r.ok) spectatedata(run, offset, r.p, r.left());
+                    break;
+                }
+                case HM_SPECWAIT:
+                {
+                    uint target = uint(r.var());
+                    if(r.ok && target == spectatingid()) spectatewait();
                     break;
                 }
                 case HM_SPECEND:
@@ -1415,6 +1458,8 @@ namespace game
                 copystring(hubaskedname, player1->name);
                 hubsendtext(HM_SETNAME, player1->name);
             }
+            if(spectating() && remote) hubspectateleave();
+            sendviewend();
             sendstatus();
             sendaway();
             askthumbs();
@@ -1700,7 +1745,7 @@ namespace game
     void hubrunfinished(int runtime)
     {
         notesessionbest(max(runtime, 0));
-        if(!hubready() || !mylobby() || inputreplayactive()) return;
+        if(!hubready() || !memberlobby() || spectating() || inputreplayactive()) return;
         vector<uchar> p;
         sbr2::byteswriter w(p);
         puttext(w, runmap());
@@ -1957,17 +2002,19 @@ namespace game
         conoutf("downloading %s's legacy record..", b.legacyname);
     });
 
-    ICOMMAND(hubmylobby, "", (), { hublobby *l = mylobby(); intret(l ? int(l->id) : 0); });
-    ICOMMAND(hubishost, "", (), { hublobby *l = mylobby(); intret(l && l->host == hubmyid ? 1 : 0); });
+    ICOMMAND(hubmylobby, "", (), { hublobby *l = memberlobby(); intret(l ? int(l->id) : 0); });
+    ICOMMAND(hubishost, "", (), { hublobby *l = memberlobby(); intret(l && l->host == hubmyid ? 1 : 0); });
 
     ICOMMAND(hubcreatelobby, "", (),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        if(spectating()) { conoutf(CON_ERROR, "stop spectating first"); return; }
         mapmessage(HM_LOBBYCREATE, runmap(), clientmap[0] ? runmode() : 0);
     });
     ICOMMAND(hubjoin, "i", (int *id),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        if(spectating()) { conoutf(CON_ERROR, "stop spectating first"); return; }
         vector<uchar> p;
         sbr2::byteswriter w(p);
         w.var(uint(*id));
@@ -1976,6 +2023,7 @@ namespace game
     static void spectateplayer(const hubplayer &p)
     {
         spectatebegin(p.id, p.name, clientmap, gamemode, runkind());
+        followpending = false;
         vector<uchar> b;
         sbr2::byteswriter w(b);
         w.var(p.id);
@@ -2007,10 +2055,15 @@ namespace game
     // left it, or started spectating someone), another player of that lobby is watched
     static void spectatefollowup()
     {
-        if(!spectating()) { speclobby = 0; return; }
+        static int outsince = 0;
+        if(!spectating()) { speclobby = 0; outsince = 0; return; }
         uint target = spectatingid();
-        loopv(hublobbies) if(hasmember(hublobbies[i], target)) { speclobby = hublobbies[i].id; return; }
+        loopv(hublobbies) if(hasmember(hublobbies[i], target)) { speclobby = hublobbies[i].id; outsince = 0; return; }
         if(!speclobby) return;
+        // a move between lobbies arrives as a leave, then a join
+        if(!outsince) outsince = totalmillis;
+        if(totalmillis - outsince < LOBBYMOVEMILLIS) return;
+        outsince = 0;
         hubplayer *p = findplayer(target);
         defformatstring(why, "%s stopped playing", p ? p->name : "the player");
         if(spectateanother(why)) return;
@@ -2081,12 +2134,14 @@ namespace game
     {
         if(!spectating()) return;
         conoutf("\f2stopped spectating %s", spectatingname());
+        rejoinlobby = speclobby;
         sendstopspectate();
         spectatequit();
         autolobbydue = true;
     }
     ICOMMAND(hubspectating, "", (), result(spectatingname()));
     ICOMMAND(hubspectatebehind, "", (), { defformatstring(s, "%.1f", spectatebehind()); result(s); });
+    ICOMMAND(hubspectatewaiting, "", (), intret(spectatewaiting() ? 1 : 0));
 
     // join the lobby the player is in and load its map
     ICOMMAND(hubplayalong, "i", (int *id),
@@ -2096,7 +2151,8 @@ namespace game
         hubplayer *p = findplayer(uint(*id));
         if(!p || !p->lobby) { conoutf(CON_ERROR, "that player isn't playing a map"); return; }
         playalonglobby = p->lobby;
-        if(spectating()) { spectatequit(); playalongreload = true; }
+        // back on one's own map first: the join may be refused
+        if(spectating()) { sendstopspectate(); spectatestop(); playalongreload = true; }
         vector<uchar> b;
         sbr2::byteswriter w(b);
         w.var(p->lobby);
@@ -2105,8 +2161,8 @@ namespace game
     ICOMMAND(hubleave, "", (),
     {
         if(!hubready()) return;
-        hubsend(HM_LOBBYLEAVE, NULL, 0);
-        if(spectating()) { spectatestop(); autolobbydue = true; }
+        if(spectating()) { sendstopspectate(); spectatestop(); autolobbydue = true; }
+        else hubsend(HM_LOBBYLEAVE, NULL, 0);
     });
     // the host: make the map being played the lobby's map
     ICOMMAND(hubsetlobbymap, "", (),

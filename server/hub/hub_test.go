@@ -1568,3 +1568,98 @@ func TestPresence(t *testing.T) {
 		t.Fatalf("presence after bob left: %s %q", n, names)
 	}
 }
+
+func (c *client) spectate(id uint64) {
+	var w writer
+	w.u(id)
+	c.send(MsgSpectate, w.b)
+}
+
+// A spectator plays nothing for the lobby it watches: no position samples, no finishes.
+func TestSpectatorQuiet(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	a.status("forge", 17)
+	b.status("forge", 17)
+	a.mapmsg(MsgLobbyCreate, "forge", 17)
+	b.expectLobby()
+	b.spectate(a.id)
+	a.waitLobby(func(l lobbyinfo) bool { return len(l.specs) == 1 })
+	var w writer
+	for _, v := range []uint64{100, 200, 300, 4000, 5000, 9} {
+		w.u(v)
+	}
+	b.send(MsgPos, w.b)
+	if _, ok := a.next(MsgPosFrom, 200*time.Millisecond); ok {
+		t.Fatal("a spectator's position reached the lobby")
+	}
+	w = writer{}
+	w.str("forge")
+	w.s(17)
+	w.str("flagrun")
+	w.u(12345)
+	b.send(MsgFinish, w.b)
+	if _, ok := a.next(MsgFinished, 200*time.Millisecond); ok {
+		t.Fatal("a spectator's finish reached the lobby")
+	}
+}
+
+// A player who stops playing ends its view: its spectators wait for the next one, and a new
+// spectator isn't handed the old one.
+func TestViewEnd(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	c := f.connect(newKey(), "3.3.3.3", "carol")
+	a.view(1, "forge")
+	a.viewData(1, 0, []byte("run"))
+	b.spectate(a.id)
+	b.expect(MsgSpecRun)
+	b.expect(MsgSpecData)
+	a.send(MsgViewEnd, nil)
+	if m := b.expect(MsgSpecWait); m.r.u() != a.id {
+		t.Fatal("specwait for another player")
+	}
+	c.spectate(a.id)
+	if _, ok := c.next(MsgSpecRun, 200*time.Millisecond); ok {
+		t.Fatal("a new spectator got the ended view")
+	}
+	a.view(2, "forge")
+	for _, x := range []*client{b, c} {
+		if m := x.expect(MsgSpecRun); m.r.u() != a.id || m.r.u() != 2 {
+			t.Fatal("no new view after the wait")
+		}
+	}
+}
+
+// Spectating someone hands one's own spectators on as one's leaving would: no chains, no cycles.
+func TestSpectateChain(t *testing.T) {
+	f := newFixture(t)
+	a := f.connect(newKey(), "1.1.1.1", "alice")
+	b := f.connect(newKey(), "2.2.2.2", "bob")
+	c := f.connect(newKey(), "3.3.3.3", "carol")
+	b.spectate(a.id)
+	a.spectate(c.id)
+	if m := b.expect(MsgSpecEnd); m.r.u() != a.id || m.r.str(100) != "alice is spectating carol" {
+		t.Fatal("bob wasn't told alice went on to spectate")
+	}
+	f.h.mu.Lock()
+	bspec := f.h.players[b.id].spec
+	f.h.mu.Unlock()
+	if bspec != nil {
+		t.Fatal("bob still spectates alice")
+	}
+
+	// carol, watched by alice, spectating alice: alice is let go first, so the two never watch each other
+	c.spectate(a.id)
+	if m := a.expect(MsgSpecEnd); m.r.u() != c.id {
+		t.Fatal("alice wasn't let go")
+	}
+	f.h.mu.Lock()
+	aspec, cspec := f.h.players[a.id].spec, f.h.players[c.id].spec
+	f.h.mu.Unlock()
+	if aspec != nil || cspec == nil || cspec.target.id != a.id {
+		t.Fatal("a spectating cycle")
+	}
+}
