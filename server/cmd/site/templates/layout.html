@@ -70,7 +70,16 @@ h2.section { font-size: 18px; margin: 8px 0 12px; }
 .prose h2 { font-size: 18px; margin: 26px 0 8px; }
 .prose pre { background: var(--head); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.45; }
 .prose .card .body > h2:first-child { margin-top: 0; }
-.apidoc { max-width: 900px; margin: 0 auto; }
+.apiwrap { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 36px; align-items: start; }
+.apinav { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; padding-top: 8px; }
+.apinav .navhead { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin: 14px 0 4px 10px; }
+.apinav .navhead:first-child { margin-top: 0; }
+.apinav a { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: var(--dim); font-size: 14px; border-left: 2px solid transparent; }
+.apinav a:hover { background: var(--card); color: var(--fg); text-decoration: none; }
+.apinav a.on { background: var(--card); color: var(--fg); border-left-color: var(--accent); font-weight: 600; }
+.apinav .m { background: #dcfce7; color: #15803d; border-radius: 4px; padding: 0 5px; font: 700 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.apidoc { max-width: 900px; }
+@media (max-width: 860px) { .apiwrap { display: block; } .apinav { display: none; } }
 .apidoc h1 { font-size: 28px; }
 .apidoc h2 { font-size: 19px; margin: 40px 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .apidoc h3 { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 22px 0 8px; }
@@ -83,7 +92,8 @@ h2.section { font-size: 18px; margin: 8px 0 12px; }
 .facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 6px; }
 .fact { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--dim); }
 .fact b { color: var(--fg); font-weight: 600; }
-.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+.toc { display: none; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+@media (max-width: 860px) { .toc { display: flex; } }
 .toc a { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 5px 10px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); }
 .toc a:hover { border-color: var(--accent); text-decoration: none; }
 .method { background: #16a34a; color: #fff; border-radius: 5px; padding: 2px 8px; font: 700 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; }

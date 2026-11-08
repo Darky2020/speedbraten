@@ -1,4 +1,16 @@
 {{template "top" .}}
+<div class="apiwrap">
+<nav class="apinav">
+<div class="navhead">API</div>
+<a href="#conventions">Conventions</a>
+<a href="#kinds">Kinds and modes</a>
+<div class="navhead">Endpoints</div>
+<a href="#online"><span class="m">GET</span>/online</a>
+<a href="#boards"><span class="m">GET</span>/boards</a>
+<a href="#board"><span class="m">GET</span>/board</a>
+<a href="#records"><span class="m">GET</span>/records</a>
+<a href="#player"><span class="m">GET</span>/player</a>
+</nav>
 <div class="apidoc">
 <h1>API</h1>
 <p class="sub">Read-only JSON for the hub's players, the boards and the records.</p>
@@ -11,13 +23,13 @@
 </div>
 <div class="toc"><a href="#online">/online</a><a href="#boards">/boards</a><a href="#board">/board</a><a href="#records">/records</a><a href="#player">/player</a></div>
 
-<section>
+<section id="conventions">
 <h2>Conventions</h2>
 <p>Runs whose replay is public carry <code>replay</code>, the URL to download the signed replay (a <code>.sbr</code> file to open in the client's replay browser or race as a ghost); it is absent while a new record's replay is still held back.</p>
 <p>Times come as <code>ms</code> (a number of milliseconds) and <code>time</code> (the same as <code>m:ss.mmm</code>). Dates (<code>when</code>) are RFC 3339 in UTC: when the witness judged the run.</p>
 <p>A <code>player</code> is a player's id, the same as in the address of their page (<code>/player?id=…</code>). Names can change and aren't unique; ids don't.</p>
 <p>Errors are <code>{"error": "…"}</code> with <code>400</code> for a missing or bad parameter, <code>404</code> for no such board or player, <code>405</code> for a method other than GET, <code>429</code> past the rate limit (with <code>Retry-After: 1</code>) and <code>500</code>.</p>
-<h3>Kinds and modes</h3>
+<h3 id="kinds">Kinds and modes</h3>
 <p>A board is one map in one mode for one kind of run. Objects that name a board carry <code>map</code>, <code>kind</code>, <code>mode</code> and <code>mode_name</code> (the mode as text).</p>
 <table class="params kinds">
 <tr><td><code>flagrun</code></td><td>take the enemy flag and score it: <code>11</code> ctf, <code>12</code> insta ctf, <code>17</code> effic ctf</td></tr>
@@ -167,4 +179,18 @@
 <pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]}`}}</pre>
 </section>
 </div>
+</div>
+<script>
+(function () {
+  var links = document.querySelectorAll('.apinav a');
+  var targets = Array.prototype.map.call(links, function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+  function mark() {
+    var current = 0;
+    targets.forEach(function (t, i) { if (t && t.getBoundingClientRect().top < 120) current = i; });
+    links.forEach(function (a, i) { a.classList.toggle('on', i === current); });
+  }
+  window.addEventListener('scroll', mark, {passive: true});
+  mark();
+})();
+</script>
 {{template "bottom" .}}
