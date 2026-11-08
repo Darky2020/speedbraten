@@ -683,6 +683,7 @@ namespace entities
     extern void preloadentities();
     extern void renderentities();
     extern void resettriggers();
+    extern bool leveltrigger(const extentity &e, float &reach, bool &locked, bool &endsp);
     extern void checktriggers();
     extern void checkitems(fpsent *d);
     extern void checkquad(int time, fpsent *d);

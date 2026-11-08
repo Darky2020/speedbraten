@@ -43,6 +43,7 @@ fpsgame/speedometer.cpp
 fpsgame/splits.cpp
 fpsgame/stats.cpp
 fpsgame/tells.cpp
+fpsgame/practice.cpp
 shared/detmath.h
 shared/hubproto.h
 shared/noise.cpp

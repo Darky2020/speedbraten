@@ -418,8 +418,19 @@ namespace game
 
     MOD(VARP, hidedeadmonsters, 0, 0, 1);
 
+    // for the practice helpers
+    int nummonsterslots() { return monsters.length(); }
+    fpsent *monsterslot(int i, int &tag, int &maxhealth)
+    {
+        monster &m = *monsters[i];
+        tag = m.tag;
+        maxhealth = monstertypes[m.mtype].health;
+        return &m;
+    }
+
     void rendermonsters()
     {
+        renderpracticelabels();
         loopv(monsters)
         {
             monster &m = *monsters[i];

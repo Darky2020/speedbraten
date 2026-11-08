@@ -2220,6 +2220,15 @@ void gl_drawhud()
         glDepthMask(GL_TRUE);
         glDisable(GL_DEPTH_TEST);
     }
+    else if(practicehelpers && !hidehud && !mainmenu)
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        notextureshader->set();
+        game::renderpractice();
+        glDepthMask(GL_TRUE);
+        glDisable(GL_DEPTH_TEST);
+    }
 
     gettextres(w, h);
 

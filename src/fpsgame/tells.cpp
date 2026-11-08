@@ -59,9 +59,10 @@ namespace game
     static bool savinglife = false;
 
     // settings and aids recorded when they were on at any tick the saved run kept
-    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
+    static const char * const featurenames[] = { "ghost", "ghostdiff", "speedometer", "splithud", "splitshowzones", "runtimer", "thirdperson", "fullbright", "wireframe", "outline", "practicehelpers", "slowmosp", "customspawn", "racestart", "gamespeed", "paused" };
     enum { NUMFEATURES = sizeof(featurenames)/sizeof(featurenames[0]), FEATUREVARS = NUMFEATURES - 4 };
-    enum { F_SLOWMOSP = 1<<(FEATUREVARS-1), F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
+    enum { F_PRACTICE = 1<<(FEATUREVARS-2), F_SLOWMOSP = 1<<(FEATUREVARS-1), F_CUSTOMSPAWN = 1<<FEATUREVARS, F_RACESTART = 1<<(FEATUREVARS+1), F_GAMESPEED = 1<<(FEATUREVARS+2), F_PAUSED = 1<<(FEATUREVARS+3) };
+    enum { ASSISTS = F_GAMESPEED | F_PAUSED | F_SLOWMOSP | F_PRACTICE };
     extern int fixedgameseed;
     static bool lastfocus = true, lastminimized = false;
 
@@ -79,11 +80,11 @@ namespace game
     bool tellsassisted(const inputrun &r)
     {
         const tellcounters &c = savinglife ? life : run;
-        return inputrunaids(r) & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP) || c.fixedframe;
+        return inputrunaids(r) & ASSISTS || c.fixedframe;
     }
     // a frame's features (tellsframe) include an assist: changed game speed, pause, slow
-    // motion, or a fixed frame time
-    bool tellsassistframe(int features) { return (features & (F_GAMESPEED | F_PAUSED | F_SLOWMOSP)) || fixedframe; }
+    // motion, practice helpers, or a fixed frame time
+    bool tellsassistframe(int features) { return (features & ASSISTS) || fixedframe; }
     void tellssavinglife(bool on) { savinglife = on; }
     void tellssave() { run.saves++; life.saves++; }
     void tellsload() { run.loads++; life.loads++; }

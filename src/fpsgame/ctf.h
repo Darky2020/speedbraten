@@ -1322,6 +1322,18 @@ bool flagspawnloc(bool own, vec &loc)
     }
     return false;
 }
+// where each flag that is not carried can be touched; returns the touch radius around them
+float flagtouchlocs(vector<vec> &locs)
+{
+    if(!m_ctf) return 0;
+    loopv(ctfmode.flags)
+    {
+        const ctfclientmode::flag &f = ctfmode.flags[i];
+        if(f.owner || (f.droptime && f.droploc.x<0)) continue;
+        locs.add(f.droptime ? f.droploc : f.spawnloc);
+    }
+    return ctfclientmode::FLAGRADIUS;
+}
 ICOMMAND(dropflag, "", (), { if(!deferinput(INPUT_COMMAND, 0, "dropflag")) ctfmode.trydropflag(); });
 ICOMMAND(hasflag,  "i", (int *cn), intret(ctfmode.hasflag(getclient(*cn))));
 

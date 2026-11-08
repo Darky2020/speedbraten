@@ -463,6 +463,14 @@ void setupmaterials(int start, int len)
 
 VARP(showmat, 0, 1, 1);
 VARP(editmatoffset, 0, 1, 1);
+VAR(practicehelpers, 0, 0, 1);
+VARP(practiceclip, 0, 1, 1);
+
+// a practice helper outside edit mode: materials that change how players move or die
+static inline bool triggermat(const materialsurface &m)
+{
+    return m.material == MAT_CLIP || m.material == MAT_NOCLIP || m.material == MAT_DEATH;
+}
 
 static int sortdim[3];
 static ivec sortorigin;
@@ -524,7 +532,12 @@ void sortmaterials(vector<materialsurface *> &vismats)
             {
                 int matvol = m.material&MATF_VOLUME;
                 if(matvol==MAT_WATER && (m.orient==O_TOP || (refracting<0 && reflectz>worldsize))) { i += m.skip; continue; }
-                if(m.visible == MATSURF_EDIT_ONLY) { i += m.skip; continue; }
+                if(m.visible == MATSURF_EDIT_ONLY)
+                {
+                    if(practicehelpers && practiceclip && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
+                    else i += m.skip;
+                    continue;
+                }
                 if(glaring && matvol!=MAT_LAVA) { i += m.skip; continue; }
             }
             else if(glaring) continue;
@@ -565,6 +578,42 @@ void rendermatgrid(vector<materialsurface *> &vismats)
     xtraverts += gle::end();
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     disablepolygonoffset(GL_POLYGON_OFFSET_LINE);
+}
+
+static void rendertriggermats(const vector<materialsurface *> &vismats)
+{
+    vector<materialsurface *> mats;
+    loopv(vismats) if(triggermat(*vismats[i])) mats.add(vismats[i]);
+    if(mats.empty()) return;
+    foggednotextureshader->set();
+    zerofogcolor();
+    glDepthMask(GL_FALSE);
+    enablepolygonoffset(GL_POLYGON_OFFSET_FILL);
+    glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+    glEnable(GL_BLEND);
+    int lastmat = -1;
+    bvec4 color(0, 0, 0, 0);
+    loopv(mats)
+    {
+        const materialsurface &m = *mats[i];
+        if(m.material != lastmat)
+        {
+            switch(m.material)
+            {
+                case MAT_CLIP:   color = bvec4(  0, 255, 255, 255); break; // red
+                case MAT_NOCLIP: color = bvec4(255,   0, 255, 255); break; // green
+                case MAT_DEATH:  color = bvec4(192, 192, 192, 255); break; // black
+            }
+            lastmat = m.material;
+        }
+        drawmaterial(m, 0.0f, color);
+    }
+    xtraverts += gle::end();
+    glDisable(GL_BLEND);
+    disablepolygonoffset(GL_POLYGON_OFFSET_FILL);
+    glDepthMask(GL_TRUE);
+    resetfogcolor();
+    rendermatgrid(mats);
 }
 
 #define GLASSVARS(name) \
@@ -883,6 +932,7 @@ void rendermaterials()
         foggednotextureshader->set();
         rendermatgrid(vismats);
     }
+    else if(practicehelpers && practiceclip && !editmode && !drawtex) rendertriggermats(vismats);
 
     glEnable(GL_CULL_FACE);
 }

@@ -10,6 +10,7 @@ extern bool mapguiontop();
 enum { INPUTSRC_OTHER = 0, INPUTSRC_KEY, INPUTSRC_MOUSE, INPUTSRC_CONSOLE, INPUTSRC_MENU, INPUTSRC_HARNESS, INPUTSRC_RECORDER, INPUTSRC_MAP };
 extern int inputsource;
 extern int fixedframe;
+extern int practicehelpers;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);

@@ -121,6 +121,11 @@ extern void hudeditarea(const char *name, float x0, float y0, float x1, float y1
 extern void drawhudedit(int w, int h);
 extern bool flagheldby(int flag, fpsent *d);
 extern bool flagspawnloc(bool own, vec &loc);
+extern float flagtouchlocs(vector<vec> &locs);
+extern bool racegoal(const extentity &e, float &r);
+extern int nummonsterslots();
+extern fpsent *monsterslot(int i, int &tag, int &maxhealth);
+extern void renderpracticelabels();
 extern bool flagrunrules();
 extern int flagrunminimap;
 extern bool racerules();

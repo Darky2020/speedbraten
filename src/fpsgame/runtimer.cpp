@@ -162,14 +162,21 @@ namespace game
     // has to be strictly inside it at least 3 s after spawning.
     enum { RACEGOALSIZE = 24, RACEGOALMINTICKS = 3000/SIMTICK };
 
+    bool racegoal(const extentity &e, float &r)
+    {
+        if((e.type != FLAG && e.type != PLAYERSTART) || e.attr2 >= 0) return false;
+        r = e.attr3 > 0 ? e.attr3 : RACEGOALSIZE;
+        return true;
+    }
+
     static bool inracegoal(const vec &eye)
     {
         const vector<extentity *> &ents = entities::getents();
         loopv(ents)
         {
             const extentity &e = *ents[i];
-            if((e.type != FLAG && e.type != PLAYERSTART) || e.attr2 >= 0) continue;
-            float r = e.attr3 > 0 ? e.attr3 : RACEGOALSIZE;
+            float r;
+            if(!racegoal(e, r)) continue;
             if(fabs(eye.x - e.o.x) < r && fabs(eye.y - e.o.y) < r && fabs(eye.z - e.o.z) < r) return true;
         }
         return false;

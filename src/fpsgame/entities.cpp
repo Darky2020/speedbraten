@@ -466,6 +466,17 @@ namespace entities
     #define validtrigger(type) (triggertypes[(type) & (NUMTRIGGERTYPES-1)]>=0)
     #define checktriggertype(type, flag) (triggertypes[(type) & (NUMTRIGGERTYPES-1)] & (flag))
 
+    // a level trigger's reach (from its centre to the player's feet, less the player's radius), whether
+    // it is locked and whether it ends the map; false for any other entity
+    bool leveltrigger(const extentity &e, float &reach, bool &locked, bool &endsp)
+    {
+        if(e.type != ET_MAPMODEL || !validtrigger(e.attr3)) return false;
+        reach = checktriggertype(e.attr3, TRIG_COLLIDE) ? 20 : 12;
+        locked = checktriggertype(e.attr3, TRIG_LOCKED) != 0;
+        endsp = checktriggertype(e.attr3, TRIG_ENDSP) != 0;
+        return true;
+    }
+
     static inline void cleartriggerflags(extentity &e)
     {
         e.flags &= ~(EF_ANIM | EF_NOVIS | EF_NOSHADOW | EF_NOCOLLIDE);

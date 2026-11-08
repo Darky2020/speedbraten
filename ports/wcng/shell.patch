@@ -1004,6 +1004,89 @@
          framebenchmark(); //NEW
      }
  
+--- a/engine/material.cpp
++++ b/engine/material.cpp
+@@ -463,7 +463,15 @@
+ 
+ VARP(showmat, 0, 1, 1);
+ VARP(editmatoffset, 0, 1, 1);
++VAR(practicehelpers, 0, 0, 1);
++VARP(practiceclip, 0, 1, 1);
+ 
++// a practice helper outside edit mode: materials that change how players move or die
++static inline bool triggermat(const materialsurface &m)
++{
++    return m.material == MAT_CLIP || m.material == MAT_NOCLIP || m.material == MAT_DEATH;
++}
++
+ static int sortdim[3];
+ static ivec sortorigin;
+ static bool sortedit;
+@@ -524,7 +532,12 @@
+             {
+                 int matvol = m.material&MATF_VOLUME;
+                 if(matvol==MAT_WATER && (m.orient==O_TOP || (refracting<0 && reflectz>worldsize))) { i += m.skip; continue; }
+-                if(m.visible == MATSURF_EDIT_ONLY) { i += m.skip; continue; }
++                if(m.visible == MATSURF_EDIT_ONLY)
++                {
++                    if(practicehelpers && practiceclip && triggermat(m) && !reflecting && !refracting && !glaring) vismats.add(&m);
++                    else i += m.skip;
++                    continue;
++                }
+                 if(glaring && matvol!=MAT_LAVA) { i += m.skip; continue; }
+             }
+             else if(glaring) continue;
+@@ -565,6 +578,42 @@
+     xtraverts += gle::end();
+     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+     disablepolygonoffset(GL_POLYGON_OFFSET_LINE);
++}
++
++static void rendertriggermats(const vector<materialsurface *> &vismats)
++{
++    vector<materialsurface *> mats;
++    loopv(vismats) if(triggermat(*vismats[i])) mats.add(vismats[i]);
++    if(mats.empty()) return;
++    foggednotextureshader->set();
++    zerofogcolor();
++    glDepthMask(GL_FALSE);
++    enablepolygonoffset(GL_POLYGON_OFFSET_FILL);
++    glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
++    glEnable(GL_BLEND);
++    int lastmat = -1;
++    bvec4 color(0, 0, 0, 0);
++    loopv(mats)
++    {
++        const materialsurface &m = *mats[i];
++        if(m.material != lastmat)
++        {
++            switch(m.material)
++            {
++                case MAT_CLIP:   color = bvec4(  0, 255, 255, 255); break; // red
++                case MAT_NOCLIP: color = bvec4(255,   0, 255, 255); break; // green
++                case MAT_DEATH:  color = bvec4(192, 192, 192, 255); break; // black
++            }
++            lastmat = m.material;
++        }
++        drawmaterial(m, 0.0f, color);
++    }
++    xtraverts += gle::end();
++    glDisable(GL_BLEND);
++    disablepolygonoffset(GL_POLYGON_OFFSET_FILL);
++    glDepthMask(GL_TRUE);
++    resetfogcolor();
++    rendermatgrid(mats);
+ }
+ 
+ #define GLASSVARS(name) \
+@@ -883,6 +932,7 @@
+         foggednotextureshader->set();
+         rendermatgrid(vismats);
+     }
++    else if(practicehelpers && practiceclip && !editmode && !drawtex) rendertriggermats(vismats);
+ 
+     glEnable(GL_CULL_FACE);
+ }
 --- a/engine/menus.cpp
 +++ b/engine/menus.cpp
 @@ -16,10 +16,10 @@
@@ -1261,7 +1344,23 @@
          damagedirs[i] = scale > 0 ? (pow(logscale, scale) - 1) / (logscale - 1) : 0;
      }
      if(dirs) gle::end();
-@@ -2248,6 +2256,7 @@
+@@ -2205,6 +2213,15 @@
+         glDepthMask(GL_TRUE);
+         glDisable(GL_DEPTH_TEST);
+     }
++    else if(practicehelpers && !hidehud && !mainmenu)
++    {
++        glEnable(GL_DEPTH_TEST);
++        glDepthMask(GL_FALSE);
++        notextureshader->set();
++        game::renderpractice();
++        glDepthMask(GL_TRUE);
++        glDisable(GL_DEPTH_TEST);
++    }
+ 
+     gettextres(w, h);
+ 
+@@ -2248,6 +2265,7 @@
      hudshader->set();
  
      int conw = int(w/conscale), conh = int(h/conscale), abovehud = conh - FONTH, limitgui = abovehud;
@@ -1269,7 +1368,7 @@
      if(!hidehud && !mainmenu)
      {
          if(!hidestats)
-@@ -2368,6 +2377,7 @@
+@@ -2368,6 +2386,7 @@
          {
              glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
              game::gameplayhud(w, h);
@@ -1277,19 +1376,19 @@
              limitgui = abovehud = min(abovehud, int(conh*game::abovegameplayhud(w, h)));
          }
  
-@@ -2391,6 +2401,12 @@
-     extern int fullconsole;
+@@ -2392,6 +2411,12 @@
      if(!hidehud || fullconsole) renderconsole(conw, conh, abovehud - FONTH/2);
      pophudmatrix();
-+
+ 
 +    if(gamehud)
 +    {
 +        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 +        game::runhud(w, h);
 +    }
- 
++
      drawcrosshair(w, h);
      gamemod::renderplayerdisplay(w, h, FONTH, w, h); //NEW
+     gamemod::renderhwdisplay(w, h, FONTH, w, h); //NEW
 --- a/engine/renderparticles.cpp
 +++ b/engine/renderparticles.cpp
 @@ -711,7 +711,7 @@
@@ -2207,7 +2306,7 @@
          return m_efficiency || !m_protect ? d->respawnwait(RESPAWNSECS, delay) : 0;
      }
  
-@@ -1298,7 +1320,21 @@
+@@ -1298,7 +1320,33 @@
  };
  
  extern ctfclientmode ctfmode;
@@ -2225,6 +2324,18 @@
 +        return true;
 +    }
 +    return false;
++}
++// where each flag that is not carried can be touched; returns the touch radius around them
++float flagtouchlocs(vector<vec> &locs)
++{
++    if(!m_ctf) return 0;
++    loopv(ctfmode.flags)
++    {
++        const ctfclientmode::flag &f = ctfmode.flags[i];
++        if(f.owner || (f.droptime && f.droploc.x<0)) continue;
++        locs.add(f.droptime ? f.droploc : f.spawnloc);
++    }
++    return ctfclientmode::FLAGRADIUS;
 +}
 +ICOMMAND(dropflag, "", (), { if(!deferinput(INPUT_COMMAND, 0, "dropflag")) ctfmode.trydropflag(); });
  
@@ -2293,6 +2404,24 @@
      void spawnitems(bool force)
      {
          if(m_noitems) return;
+@@ -454,6 +471,17 @@
+ 
+     #define validtrigger(type) (triggertypes[(type) & (NUMTRIGGERTYPES-1)]>=0)
+     #define checktriggertype(type, flag) (triggertypes[(type) & (NUMTRIGGERTYPES-1)] & (flag))
++
++    // a level trigger's reach (from its centre to the player's feet, less the player's radius), whether
++    // it is locked and whether it ends the map; false for any other entity
++    bool leveltrigger(const extentity &e, float &reach, bool &locked, bool &endsp)
++    {
++        if(e.type != ET_MAPMODEL || !validtrigger(e.attr3)) return false;
++        reach = checktriggertype(e.attr3, TRIG_COLLIDE) ? 20 : 12;
++        locked = checktriggertype(e.attr3, TRIG_LOCKED) != 0;
++        endsp = checktriggertype(e.attr3, TRIG_ENDSP) != 0;
++        return true;
++    }
+ 
+     static inline void cleartriggerflags(extentity &e)
+     {
 --- a/fpsgame/fps.cpp
 +++ b/fpsgame/fps.cpp
 @@ -1,5 +1,7 @@
@@ -2665,7 +2794,12 @@
      }
  
      void stopattacksound()
-@@ -700,6 +705,7 @@
+@@ -696,10 +701,12 @@
+     extern void preloadentities();
+     extern void renderentities();
+     extern void resettriggers();
++    extern bool leveltrigger(const extentity &e, float &reach, bool &locked, bool &endsp);
+     extern void checktriggers();
      extern void checkitems(fpsent *d);
      extern void checkquad(int time, fpsent *d);
      extern void resetspawns();
@@ -2673,16 +2807,16 @@
      extern void spawnitems(bool force = false);
      extern void putitems(packetbuf &p);
      extern void setspawn(int i, bool on);
-@@ -710,6 +716,8 @@
- 
+@@ -711,6 +718,8 @@
      extern void repammo(fpsent *d, int type, bool local = true);
  }
-+
-+#include "dethasher.h"
  
++#include "dethasher.h"
++
  namespace game
  {
-@@ -796,6 +804,7 @@
+     struct clientmode
+@@ -796,6 +805,7 @@
      extern time_t gametimestamp; //NEW
      extern int mapstart; //NEW
      extern bool connected, remote, demoplayback;
@@ -2690,7 +2824,7 @@
      extern ENetAddress demoserver; //NEW
      extern string servdesc;
      extern vector<uchar> messages;
-@@ -811,6 +820,9 @@
+@@ -811,6 +821,9 @@
      extern void sendmapinfo();
      extern void stopdemo();
      extern void changemap(const char *name, int mode);
@@ -2700,7 +2834,7 @@
      extern void forceintermission();
      extern void c2sinfo(bool force = false);
      extern void sendposition(fpsent *d, bool reliable = false);
-@@ -821,9 +833,12 @@
+@@ -821,9 +834,12 @@
      extern vector<monster *> monsters;
  
      extern void clearmonsters();
@@ -2713,7 +2847,7 @@
      extern void rendermonsters();
      extern void suicidemonster(monster *m);
      extern void hitmonster(int damage, monster *m, fpsent *at, const vec &vel, int gun);
-@@ -836,8 +851,10 @@
+@@ -836,8 +852,10 @@
      extern vector<movable *> movables;
  
      extern void clearmovables();
@@ -2724,7 +2858,7 @@
      extern void rendermovables();
      extern void suicidemovable(movable *m);
      extern void hitmovable(int damage, movable *m, fpsent *at, const vec &vel, int gun);
-@@ -854,16 +871,19 @@
+@@ -854,16 +872,19 @@
      extern bool intersect(dynent *d, const vec &from, const vec &to, float &dist = intersectdist);
      extern dynent *intersectclosest(const vec &from, const vec &to, fpsent *at, float &dist = intersectdist);
      extern void clearbouncers();
@@ -2744,7 +2878,7 @@
      extern void gunselect(int gun, fpsent *d);
      extern void weaponswitch(fpsent *d);
      extern void avoidweapons(ai::avoidset &obstacles, float radius);
-@@ -895,6 +915,7 @@
+@@ -895,6 +916,7 @@
      extern void moveragdolls();
      extern void changedplayermodel();
      extern const playermodelinfo &getplayermodelinfo(fpsent *d);
@@ -2752,7 +2886,7 @@
      extern int chooserandomplayermodel(int seed);
      extern void swayhudgun(int curtime);
      extern vec hudgunorigin(int gun, const vec &from, const vec &to, fpsent *d);
-@@ -910,6 +931,14 @@
+@@ -910,6 +932,14 @@
      extern const char *getdemofile(const char *file, bool init);
      extern void forcemap(const char *map, int mode);
      extern void forcepaused(bool paused);
@@ -2767,7 +2901,7 @@
      extern void forcegamespeed(int speed);
      extern void hashpassword(int cn, int sessionid, const char *pwd, char *result, int maxlen = MAXSTRLEN);
      extern int msgsizelookup(int msg);
-@@ -917,5 +946,7 @@
+@@ -917,5 +947,7 @@
      extern bool delayspawn(int type);
  }
  
@@ -3843,7 +3977,7 @@
      extern const char *autoexec();
      extern const char *wcautoexec(); //NEW
      extern const char *wcconfig(); //NEW
-@@ -79,16 +91,32 @@
+@@ -79,16 +91,33 @@
      extern void preload();
      extern float abovegameplayhud(int w, int h);
      extern void gameplayhud(int w, int h);
@@ -3870,6 +4004,7 @@
 +    extern bool hudeditmove(int dx, int dy);
 +    // a hub player's run is being spectated: the spectator binds apply
 +    extern bool spectating();
++    extern void renderpractice();
 +    extern void tellsharness(); // a harness command changed the game: marks the run's provenance
 +    extern void begintick();
 +    extern void enddisplay();
