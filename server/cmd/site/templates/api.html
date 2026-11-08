@@ -9,6 +9,8 @@
 <a href="#boards"><span class="m">GET</span>/boards</a>
 <a href="#board"><span class="m">GET</span>/board</a>
 <a href="#records"><span class="m">GET</span>/records</a>
+<a href="#runs"><span class="m">GET</span>/runs</a>
+<a href="#players"><span class="m">GET</span>/players</a>
 <a href="#player"><span class="m">GET</span>/player</a>
 </nav>
 <div class="apidoc">
@@ -21,7 +23,7 @@
 <span class="fact">cached <b>10 s</b> per URL, online <b>2 s</b></span>
 <span class="fact"><b>5 req/s</b> per address, bursts of <b>20</b></span>
 </div>
-<div class="toc"><a href="#online">/online</a><a href="#boards">/boards</a><a href="#board">/board</a><a href="#records">/records</a><a href="#player">/player</a></div>
+<div class="toc"><a href="#online">/online</a><a href="#boards">/boards</a><a href="#board">/board</a><a href="#records">/records</a><a href="#runs">/runs</a><a href="#players">/players</a><a href="#player">/player</a></div>
 
 <section id="conventions">
 <h2>Conventions</h2>
@@ -152,9 +154,62 @@
 <pre class="json">{{jsonhl `[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","player":"4f1c9e…","name":"carol","ms":7100,"time":"0:07.100","prev_ms":7400,"when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]`}}</pre>
 </section>
 
+<section id="runs" class="ep">
+<h2><span class="method">GET</span><span class="path">/api/v1/runs</span></h2>
+<p>The newest runs that count, newest first: every witnessed run that was valid, not only records and personal bests.</p>
+<h3>Parameters</h3>
+<table class="params">
+<tr><td><code>kind</code> <span class="pill opt">optional</span></td><td>only this kind</td></tr>
+<tr><td><code>mode</code> <span class="pill opt">optional</span></td><td>only this mode number</td></tr>
+<tr><td><code>player</code> <span class="pill opt">optional</span></td><td>only this player's runs (an id)</td></tr>
+<tr><td><code>limit</code> <span class="pill opt">optional</span></td><td>how many: 50 by default, at most 500</td></tr>
+</table>
+<h3>Response: a list of</h3>
+<ul class="fields">
+<li><span class="f">map, kind, mode, mode_name</span><span class="d">the board</span></li>
+<li><span class="f">player</span><span class="pill t-string">string</span></li>
+<li><span class="f">name</span><span class="pill t-string">string</span></li>
+<li><span class="f">ms</span><span class="pill t-number">number</span></li>
+<li><span class="f">time</span><span class="pill t-string">string</span></li>
+<li><span class="f">when</span><span class="pill t-string">string</span></li>
+<li><span class="f">run</span><span class="pill t-number">number</span></li>
+<li><span class="f">record</span><span class="pill t-bool">bool</span><span class="d">it was the board's best when it was judged</span></li>
+<li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL while the run is a board entry and public</span></li>
+</ul>
+<h3>Example</h3>
+<pre class="json">{{jsonhl `[{"map":"forge","kind":"flagrun","mode":17,"mode_name":"effic ctf","player":"4f1c9e…","name":"bob","ms":9120,"time":"0:09.120","when":"2026-11-09T10:02:41Z","run":231,"record":false}]`}}</pre>
+</section>
+
+<section id="players" class="ep">
+<h2><span class="method">GET</span><span class="path">/api/v1/players</span></h2>
+<p>Every player with a run that counts, and their stats.</p>
+<h3>Parameters</h3>
+<table class="params">
+<tr><td><code>sort</code> <span class="pill opt">optional</span></td><td><code>records</code> (default: most records, then seconds, thirds and boards), <code>runs</code>, <code>recent</code> (newest run first) or <code>name</code></td></tr>
+<tr><td><code>limit</code> <span class="pill opt">optional</span></td><td>how many: 100 by default, at most 1000</td></tr>
+</table>
+<h3>Response: a list of</h3>
+<ul class="fields">
+<li><span class="f">id</span><span class="pill t-string">string</span></li>
+<li><span class="f">name</span><span class="pill t-string">string</span></li>
+<li><span class="f">registered</span><span class="pill t-bool">bool</span><span class="d">the name is their hub name or was picked for them, not just the one in their replays</span></li>
+<li><span class="f">stats</span><span class="pill t-object">object</span>
+<ul>
+<li><span class="f">runs</span><span class="pill t-number">number</span><span class="d">runs that count</span></li>
+<li><span class="f">boards</span><span class="pill t-number">number</span><span class="d">boards they have a time on</span></li>
+<li><span class="f">records</span><span class="pill t-number">number</span><span class="d">boards they hold the record on</span></li>
+<li><span class="f">podiums</span><span class="pill t-number">number</span><span class="d">top-3 places</span></li>
+<li><span class="f">gold, silver, bronze</span><span class="pill t-number">number</span><span class="d">first, second and third places</span></li>
+<li><span class="f">first_run, last_run</span><span class="pill t-string">string</span><span class="d">when their first and newest runs were judged</span></li>
+</ul></li>
+</ul>
+<h3>Example</h3>
+<pre class="json">{{jsonhl `[{"id":"4f1c9e…","name":"carol","registered":true,"stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z"}}]`}}</pre>
+</section>
+
 <section id="player" class="ep">
 <h2><span class="method">GET</span><span class="path">/api/v1/player</span></h2>
-<p>A player and their place on every board they are on, best rank first.</p>
+<p>A player: their stats, their place on every board they are on (best rank first) and their 20 newest runs.</p>
 <h3>Parameters</h3>
 <table class="params">
 <tr><td><code>id</code> <span class="pill req">required</span></td><td>the player's id; an id merged into another answers as that one</td></tr>
@@ -163,6 +218,15 @@
 <ul class="fields">
 <li><span class="f">id</span><span class="pill t-string">string</span></li>
 <li><span class="f">name</span><span class="pill t-string">string</span></li>
+<li><span class="f">stats</span><span class="pill t-object">object</span>
+<ul>
+<li><span class="f">runs</span><span class="pill t-number">number</span><span class="d">runs that count</span></li>
+<li><span class="f">boards</span><span class="pill t-number">number</span><span class="d">boards they have a time on</span></li>
+<li><span class="f">records</span><span class="pill t-number">number</span><span class="d">boards they hold the record on</span></li>
+<li><span class="f">podiums</span><span class="pill t-number">number</span><span class="d">top-3 places</span></li>
+<li><span class="f">gold, silver, bronze</span><span class="pill t-number">number</span><span class="d">first, second and third places</span></li>
+<li><span class="f">first_run, last_run</span><span class="pill t-string">string</span><span class="d">when their first and newest runs were judged</span></li>
+</ul></li>
 <li><span class="f">places</span><span class="pill t-list">list</span>
 <ul>
 <li><span class="f">map, kind, mode, mode_name</span><span class="d">the board</span></li>
@@ -174,9 +238,10 @@
 <li><span class="f">run</span><span class="pill t-number">number</span></li>
 <li><span class="f">replay</span><span class="pill t-string">string</span><span class="d">download URL, once public</span></li>
 </ul></li>
+<li><span class="f">recent_runs</span><span class="pill t-list">list</span><span class="d">their 20 newest runs, as <code>/runs</code> gives them</span></li>
 </ul>
 <h3>Example</h3>
-<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}]}`}}</pre>
+<pre class="json">{{jsonhl `{"id":"4f1c9e…","name":"carol","stats":{"runs":393,"boards":41,"records":12,"podiums":25,"gold":12,"silver":8,"bronze":5,"first_run":"2026-10-12T18:20:05Z","last_run":"2026-11-09T09:58:13Z"},"places":[{"map":"abbey","kind":"flagrun","mode":12,"mode_name":"insta ctf","rank":1,"of":4,"ms":7100,"time":"0:07.100","when":"2026-11-08T22:47:16Z","run":9,"replay":"https://speedbraten.example/replay?run=9"}],"recent_runs":[{"map":"luna","kind":"flagrun","mode":17,"mode_name":"effic ctf","player":"4f1c9e…","name":"carol","ms":5702,"time":"0:05.702","when":"2026-11-09T09:58:13Z","run":240,"record":false}]}`}}</pre>
 </section>
 </div>
 </div>

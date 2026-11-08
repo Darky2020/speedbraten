@@ -60,6 +60,58 @@ func (s *Store) RecentRuns(n int) ([]Run, error) {
 	return out, err
 }
 
+// PlayerStats sums up a player's runs that count and places on the boards.
+type PlayerStats struct {
+	Player     string
+	Name       string
+	Registered bool
+	Runs       int    // runs that count
+	Boards     int    // boards they have a time on
+	Medals     [4]int // [1] records (first places), [2] seconds, [3] thirds
+	First      time.Time
+	Last       time.Time
+}
+
+// PlayerStats lists every player with a run that counts, in no particular order.
+func (s *Store) PlayerStats() ([]PlayerStats, error) {
+	var out []PlayerStats
+	err := s.locked(func() {
+		byPlayer := map[string]*PlayerStats{}
+		get := func(install string) *PlayerStats {
+			p := byPlayer[install]
+			if p == nil {
+				p = &PlayerStats{Player: install, Name: s.names[install], Registered: s.named[install]}
+				byPlayer[install] = p
+			}
+			return p
+		}
+		for _, v := range s.runs {
+			p := get(v.install)
+			p.Runs++
+			when := time.UnixMilli(v.when)
+			if p.First.IsZero() || when.Before(p.First) {
+				p.First = when
+			}
+			if when.After(p.Last) {
+				p.Last = when
+			}
+		}
+		for _, b := range s.boards {
+			for _, e := range b.Entries {
+				p := get(e.Install)
+				p.Boards++
+				if e.Rank <= 3 {
+					p.Medals[e.Rank]++
+				}
+			}
+		}
+		for _, p := range byPlayer {
+			out = append(out, *p)
+		}
+	})
+	return out, err
+}
+
 // Standing is a board's current best.
 type Standing struct {
 	Key   Key

@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +58,8 @@ func (a *api) register(mux *http.ServeMux) {
 	mux.Handle("/api/v1/board", a.handle(apiCacheTTL, a.board))
 	mux.Handle("/api/v1/records", a.handle(apiCacheTTL, a.records))
 	mux.Handle("/api/v1/player", a.handle(apiCacheTTL, a.player))
+	mux.Handle("/api/v1/players", a.handle(apiCacheTTL, a.players))
+	mux.Handle("/api/v1/runs", a.handle(apiCacheTTL, a.runs))
 }
 
 // allow takes one request from the client's budget
@@ -143,7 +146,8 @@ func keyOf(k board.Key) apiKey {
 	return apiKey{Map: k.Map, Kind: k.Kind, Mode: k.Mode, ModeName: name}
 }
 
-// replays gives the download URLs of the runs whose replays are public; the others are left out
+// replays gives the download URLs of the runs whose replays are public: board entries past their
+// kind's publish delay; the others are left out
 func (a *api) replays(r *http.Request, runs []int64) map[int64]string {
 	locks, err := a.s.store.ReplayLocks(runs, "")
 	if err != nil {
@@ -155,6 +159,9 @@ func (a *api) replays(r *http.Request, runs []int64) map[int64]string {
 	}
 	urls := map[int64]string{}
 	for _, run := range runs {
+		if listed, _ := a.s.store.Listed(run); !listed {
+			continue
+		}
 		if _, locked := locks[run]; !locked {
 			urls[run] = scheme + "://" + r.Host + "/replay?run=" + strconv.FormatInt(run, 10)
 		}
@@ -351,9 +358,11 @@ func (a *api) player(r *http.Request) (int, any) {
 		Replay string `json:"replay,omitempty"`
 	}
 	type out struct {
-		ID     string  `json:"id"`
-		Name   string  `json:"name"`
-		Places []place `json:"places"`
+		ID     string   `json:"id"`
+		Name   string   `json:"name"`
+		Stats  apiStats `json:"stats"`
+		Places []place  `json:"places"`
+		Recent []apiRun `json:"recent_runs"`
 	}
 	id := r.URL.Query().Get("id")
 	if id == "" {
@@ -368,6 +377,16 @@ func (a *api) player(r *http.Request) (int, any) {
 		return 404, apiError{"no such player"}
 	}
 	res := out{ID: id, Name: name, Places: []place{}}
+	if all, err := a.s.store.PlayerStats(); err == nil {
+		for _, p := range all {
+			if p.Player == id {
+				res.Stats = statsOf(p)
+			}
+		}
+	}
+	if res.Recent, err = a.latestRuns(r, id, 20); err != nil {
+		return 500, apiError{"something went wrong"}
+	}
 	runs := make([]int64, len(places))
 	for i, p := range places {
 		runs[i] = p.Entry.Run
@@ -412,4 +431,136 @@ func jsonHighlight(src string) template.HTML {
 	}
 	out.WriteString(template.HTMLEscapeString(text[last:]))
 	return template.HTML(out.String())
+}
+
+type apiStats struct {
+	Runs    int    `json:"runs"`
+	Boards  int    `json:"boards"`
+	Records int    `json:"records"` // boards they hold the record on
+	Podiums int    `json:"podiums"`
+	Gold    int    `json:"gold"`
+	Silver  int    `json:"silver"`
+	Bronze  int    `json:"bronze"`
+	First   string `json:"first_run"`
+	Last    string `json:"last_run"`
+}
+
+func statsOf(p board.PlayerStats) apiStats {
+	return apiStats{Runs: p.Runs, Boards: p.Boards, Records: p.Medals[1], Podiums: p.Medals[1] + p.Medals[2] + p.Medals[3],
+		Gold: p.Medals[1], Silver: p.Medals[2], Bronze: p.Medals[3],
+		First: p.First.UTC().Format(time.RFC3339), Last: p.Last.UTC().Format(time.RFC3339)}
+}
+
+func (a *api) players(r *http.Request) (int, any) {
+	type out struct {
+		ID         string   `json:"id"`
+		Name       string   `json:"name"`
+		Registered bool     `json:"registered"`
+		Stats      apiStats `json:"stats"`
+	}
+	all, err := a.s.store.PlayerStats()
+	if err != nil {
+		return 500, apiError{"something went wrong"}
+	}
+	q := r.URL.Query()
+	by := q.Get("sort")
+	sort.Slice(all, func(i, j int) bool {
+		x, y := all[i], all[j]
+		switch by {
+		case "runs":
+			if x.Runs != y.Runs {
+				return x.Runs > y.Runs
+			}
+		case "recent":
+			if !x.Last.Equal(y.Last) {
+				return x.Last.After(y.Last)
+			}
+		case "name":
+			if xl, yl := strings.ToLower(x.Name), strings.ToLower(y.Name); xl != yl {
+				return xl < yl
+			}
+		default:
+			if x.Medals != y.Medals {
+				for k := 1; k <= 3; k++ {
+					if x.Medals[k] != y.Medals[k] {
+						return x.Medals[k] > y.Medals[k]
+					}
+				}
+			}
+			if x.Boards != y.Boards {
+				return x.Boards > y.Boards
+			}
+		}
+		return x.Player < y.Player
+	})
+	limit := 100
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+		limit = min(n, 1000)
+	}
+	list := []out{}
+	for _, p := range all {
+		if len(list) >= limit {
+			break
+		}
+		list = append(list, out{ID: p.Player, Name: p.Name, Registered: p.Registered, Stats: statsOf(p)})
+	}
+	return 200, list
+}
+
+type apiRun struct {
+	apiKey
+	Player string `json:"player"`
+	Name   string `json:"name"`
+	MS     int64  `json:"ms"`
+	Time   string `json:"time"`
+	When   string `json:"when"`
+	Run    int64  `json:"run"`
+	Record bool   `json:"record"` // the board's best when it was judged
+	Replay string `json:"replay,omitempty"`
+}
+
+// latestRuns lists the newest runs that count, newest first, filtered as the request asks
+func (a *api) latestRuns(r *http.Request, player string, limit int) ([]apiRun, error) {
+	q := r.URL.Query()
+	all, err := a.s.store.RecentRuns(1 << 30)
+	if err != nil {
+		return nil, err
+	}
+	list := []apiRun{}
+	for _, run := range all {
+		if len(list) >= limit {
+			break
+		}
+		if q.Get("kind") != "" && run.Key.Kind != q.Get("kind") || q.Get("mode") != "" && strconv.Itoa(run.Key.Mode) != q.Get("mode") || player != "" && run.Install != player {
+			continue
+		}
+		list = append(list, apiRun{apiKey: keyOf(run.Key), Player: run.Install, Name: run.Name, MS: run.MS, Time: board.Time(run.MS),
+			When: run.When.UTC().Format(time.RFC3339), Run: run.Run, Record: run.Record})
+	}
+	runs := make([]int64, len(list))
+	for i, o := range list {
+		runs[i] = o.Run
+	}
+	urls := a.replays(r, runs)
+	for i := range list {
+		list[i].Replay = urls[list[i].Run]
+	}
+	return list, nil
+}
+
+func (a *api) runs(r *http.Request) (int, any) {
+	q := r.URL.Query()
+	limit := 50
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+		limit = min(n, apiRecordsMax)
+	}
+	player := ""
+	if id := q.Get("player"); id != "" {
+		player = a.s.store.Canonical(id)
+	}
+	list, err := a.latestRuns(r, player, limit)
+	if err != nil {
+		return 500, apiError{"something went wrong"}
+	}
+	return 200, list
 }

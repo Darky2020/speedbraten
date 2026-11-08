@@ -180,3 +180,65 @@ func TestJSONHighlight(t *testing.T) {
 		t.Fatalf("not json: %s", got)
 	}
 }
+
+func TestAPIPlayersAndRuns(t *testing.T) {
+	store, dir := fixture(t)
+	s := newSite(store)
+
+	var players []struct {
+		ID    string
+		Name  string
+		Stats struct {
+			Runs, Boards, Records, Podiums, Gold, Silver int
+		}
+	}
+	if code := getJSON(t, s, "/api/v1/players", &players); code != 200 || len(players) != 2 || players[0].ID != "kb" ||
+		players[0].Stats.Runs != 2 || players[0].Stats.Boards != 2 || players[0].Stats.Records != 1 || players[0].Stats.Silver != 1 {
+		t.Fatalf("players %d %+v", code, players)
+	}
+	if getJSON(t, s, "/api/v1/players?sort=name", &players); len(players) != 2 || strings.ToLower(players[0].Name) > strings.ToLower(players[1].Name) {
+		t.Fatalf("players by name %+v", players)
+	}
+	if getJSON(t, s, "/api/v1/players?sort=runs&limit=1", &players); len(players) != 1 || players[0].ID != "kb" {
+		t.Fatalf("players by runs %+v", players)
+	}
+
+	var runs []struct {
+		Map    string
+		Run    int64
+		Record bool
+		Replay string
+	}
+	if code := getJSON(t, s, "/api/v1/runs", &runs); code != 200 || len(runs) != 3 || runs[0].Run != 4 || runs[2].Run != 1 || !runs[2].Record || runs[1].Record {
+		t.Fatalf("runs %d %+v", code, runs)
+	}
+	if getJSON(t, s, "/api/v1/runs?player=ka", &runs); len(runs) != 1 || runs[0].Run != 1 {
+		t.Fatalf("runs of ka %+v", runs)
+	}
+
+	var p struct {
+		Stats  struct{ Runs, Records int }
+		Recent []struct{ Run int64 } `json:"recent_runs"`
+	}
+	if getJSON(t, s, "/api/v1/player?id=kb", &p); p.Stats.Runs != 2 || p.Stats.Records != 1 || len(p.Recent) != 2 || p.Recent[0].Run != 4 {
+		t.Fatalf("player stats %+v", p)
+	}
+
+	// a record its player has since beaten is no board entry: no replay link for it
+	w, err := sqlite.Open(filepath.Join(dir, "witness.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if _, err := w.Exec("INSERT INTO runs(id, session, installkey, map, player, runkind, mode, runtimems, verdict, judged, file) VALUES(6, 1, 'ka', 'forge', 'x', 'flagrun', 17, 8500, 'valid', 1792900005000, ?)", filepath.Join(dir, "a.sbr")); err != nil {
+		t.Fatal(err)
+	}
+	store.Refresh()
+	var recs []struct {
+		Run    int64
+		Replay string
+	}
+	if getJSON(t, s, "/api/v1/records?kind=flagrun&limit=10", &recs); len(recs) != 2 || recs[0].Run != 6 || recs[0].Replay == "" || recs[1].Run != 1 || recs[1].Replay != "" {
+		t.Fatalf("records after ka beat their own %+v", recs)
+	}
+}
