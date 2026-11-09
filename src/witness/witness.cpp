@@ -118,7 +118,7 @@ namespace witness
     // them; -l<name>=<value> sets one (bytes for the byte limits).
     static struct { const char *name; long long value; } limits[] =
     {
-        { "runbytes", 16LL << 20 }, { "runsperminute", 60 }, { "runsperhour", 1500 }, { "addressrunsperminute", 120 },
+        { "runbytes", 16LL << 20 }, { "runsperminute", 60 }, { "runsperhour", 3000 }, { "addressrunsperminute", 120 },
         { "bytesperday", 200LL << 20 }, { "addressbytesperday", 500LL << 20 }, { "newinstallsperday", 5 },
         { "queued", 20 }, { "freedisk", 1LL << 30 }
     };
