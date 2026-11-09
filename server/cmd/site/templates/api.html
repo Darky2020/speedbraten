@@ -30,7 +30,8 @@
 <p>Runs whose replay is public carry <code>replay</code>, the URL to download the signed replay (a <code>.sbr</code> file to open in the client's replay browser or race as a ghost); it is absent while a new record's replay is still held back.</p>
 <p>Times come as <code>ms</code> (a number of milliseconds) and <code>time</code> (the same as <code>m:ss.mmm</code>). Dates (<code>when</code>) are RFC 3339 in UTC: when the witness judged the run.</p>
 <p>A <code>player</code> is a player's id, the same as in the address of their page (<code>/player?id=…</code>). Names can change and aren't unique; ids don't.</p>
-<p>Errors are <code>{"error": "…"}</code> with <code>400</code> for a missing or bad parameter, <code>404</code> for no such board or player, <code>405</code> for a method other than GET, <code>429</code> past the rate limit (with <code>Retry-After: 1</code>) and <code>500</code>.</p>
+<p>Long lists come in pages. <code>/runs</code> and <code>/records</code> take <code>before</code>: pass the <code>run</code> of the last item you got for the next, older page; an empty list is the end. Since the page starts after a run rather than at a position, new runs arriving in between don't shift it. <code>/players</code> takes <code>offset</code>.</p>
+<p>Errors are <code>{"error": "…"}</code> with <code>400</code> for a missing or bad parameter, <code>404</code> for no such board, player or <code>before</code> run, <code>405</code> for a method other than GET, <code>429</code> past the rate limit (with <code>Retry-After: 1</code>) and <code>500</code>.</p>
 <h3 id="kinds">Kinds and modes</h3>
 <p>A board is one map in one mode for one kind of run. Objects that name a board carry <code>map</code>, <code>kind</code>, <code>mode</code> and <code>mode_name</code> (the mode as text).</p>
 <table class="params kinds">
@@ -137,6 +138,7 @@
 <tr><td><code>mode</code> <span class="pill opt">optional</span></td><td>only this mode number</td></tr>
 <tr><td><code>limit</code> <span class="pill opt">optional</span></td><td>how many: 50 by default, at most 500</td></tr>
 <tr><td><code>latest</code> <span class="pill opt">optional</span></td><td><code>1</code>: only each board's newest record</td></tr>
+<tr><td><code>before</code> <span class="pill opt">optional</span></td><td>the next page: records older than the one with this <code>run</code></td></tr>
 </table>
 <h3>Response: a list of</h3>
 <ul class="fields">
@@ -163,6 +165,7 @@
 <tr><td><code>mode</code> <span class="pill opt">optional</span></td><td>only this mode number</td></tr>
 <tr><td><code>player</code> <span class="pill opt">optional</span></td><td>only this player's runs (an id)</td></tr>
 <tr><td><code>limit</code> <span class="pill opt">optional</span></td><td>how many: 50 by default, at most 500</td></tr>
+<tr><td><code>before</code> <span class="pill opt">optional</span></td><td>the next page: runs older than the one with this <code>run</code></td></tr>
 </table>
 <h3>Response: a list of</h3>
 <ul class="fields">
@@ -187,6 +190,7 @@
 <table class="params">
 <tr><td><code>sort</code> <span class="pill opt">optional</span></td><td><code>records</code> (default: most records, then seconds, thirds and boards), <code>runs</code>, <code>recent</code> (newest run first) or <code>name</code></td></tr>
 <tr><td><code>limit</code> <span class="pill opt">optional</span></td><td>how many: 100 by default, at most 1000</td></tr>
+<tr><td><code>offset</code> <span class="pill opt">optional</span></td><td>skip this many players of the sorted list</td></tr>
 </table>
 <h3>Response: a list of</h3>
 <ul class="fields">

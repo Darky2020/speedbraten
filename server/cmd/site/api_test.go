@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -254,5 +255,56 @@ func TestAPIPlayersAndRuns(t *testing.T) {
 	}
 	if getJSON(t, s, "/api/v1/records?kind=flagrun&limit=10", &recs); len(recs) != 2 || recs[0].Run != 6 || recs[0].Replay == "" || recs[1].Run != 1 || recs[1].Replay != "" {
 		t.Fatalf("records after ka beat their own %+v", recs)
+	}
+}
+
+// Pages: before= continues a newest-first list just past a run, offset= skips players.
+func TestAPIPages(t *testing.T) {
+	store, _ := fixture(t)
+	s := newSite(store)
+	page := func(path string) []int64 {
+		t.Helper()
+		var list []struct{ Run int64 }
+		if code := getJSON(t, s, path, &list); code != 200 {
+			t.Fatalf("%s: %d", path, code)
+		}
+		var runs []int64
+		for _, r := range list {
+			runs = append(runs, r.Run)
+		}
+		return runs
+	}
+	if got := page("/api/v1/runs?limit=1"); len(got) != 1 || got[0] != 4 {
+		t.Fatalf("first page %v", got)
+	}
+	if got := page("/api/v1/runs?limit=1&before=4"); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("second page %v", got)
+	}
+	if got := page("/api/v1/runs?before=1"); len(got) != 0 {
+		t.Fatalf("past the end %v", got)
+	}
+	if got := page("/api/v1/runs?kind=flagrun&before=4"); len(got) != 2 || got[0] != 2 || got[1] != 1 {
+		t.Fatalf("filtered page %v", got)
+	}
+	var e struct{ Error string }
+	if code := getJSON(t, s, "/api/v1/runs?before=999", &e); code != 404 {
+		t.Fatalf("unknown cursor %d", code)
+	}
+	if code := getJSON(t, s, "/api/v1/records?before=999", &e); code != 404 {
+		t.Fatalf("unknown records cursor %d", code)
+	}
+	all := page("/api/v1/records")
+	if len(all) < 2 {
+		t.Fatalf("records %v", all)
+	}
+	if got := page("/api/v1/records?before=" + strconv.FormatInt(all[0], 10)); len(got) != len(all)-1 || got[0] != all[1] {
+		t.Fatalf("records page %v of %v", got, all)
+	}
+
+	var players []struct{ ID string }
+	getJSON(t, s, "/api/v1/players", &players)
+	var second []struct{ ID string }
+	if getJSON(t, s, "/api/v1/players?offset=1&limit=1", &second); len(second) != 1 || second[0].ID != players[1].ID {
+		t.Fatalf("players offset %+v of %+v", second, players)
 	}
 }

@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net/http"
 	"regexp"
@@ -320,12 +321,16 @@ func (a *api) records(r *http.Request) (int, any) {
 	if q.Get("latest") == "1" {
 		get = a.s.store.LatestRecords
 	}
-	all, err := get(100000)
+	all, err := get(1 << 30)
 	if err != nil {
 		return 500, apiError{"something went wrong"}
 	}
+	start, ok := afterRun(q.Get("before"), len(all), func(i int) int64 { return all[i].Run })
+	if !ok {
+		return 404, apiError{"no such run in this list"}
+	}
 	list := []out{}
-	for _, rec := range all {
+	for _, rec := range all[start:] {
 		if len(list) >= limit {
 			break
 		}
@@ -384,7 +389,7 @@ func (a *api) player(r *http.Request) (int, any) {
 			}
 		}
 	}
-	if res.Recent, err = a.latestRuns(r, id, 20); err != nil {
+	if res.Recent, err = a.latestRuns(r, id, "", 20); err != nil {
 		return 500, apiError{"something went wrong"}
 	}
 	runs := make([]int64, len(places))
@@ -531,9 +536,13 @@ func (a *api) players(r *http.Request) (int, any) {
 	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
 		limit = min(n, 1000)
 	}
+	offset := 0
+	if n, err := strconv.Atoi(q.Get("offset")); err == nil && n > 0 {
+		offset = min(n, len(all))
+	}
 	list := []out{}
 	totals, mine := a.s.completionTotals(), a.completionByPlayer()
-	for _, p := range all {
+	for _, p := range all[offset:] {
 		if len(list) >= limit {
 			break
 		}
@@ -554,15 +563,40 @@ type apiRun struct {
 	Replay string `json:"replay,omitempty"`
 }
 
-// latestRuns lists the newest runs that count, newest first, filtered as the request asks
-func (a *api) latestRuns(r *http.Request, player string, limit int) ([]apiRun, error) {
+var errNoRun = errors.New("no such run in this list")
+
+// afterRun is where a page starts in a newest-first list: just past the run before names, or at
+// the start without one; false when the list has no such run
+func afterRun(before string, n int, run func(i int) int64) (int, bool) {
+	if before == "" {
+		return 0, true
+	}
+	id, err := strconv.ParseInt(before, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	for i := 0; i < n; i++ {
+		if run(i) == id {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+// latestRuns lists the newest runs that count, newest first, filtered as the request asks, from
+// just past the run before (if not "")
+func (a *api) latestRuns(r *http.Request, player, before string, limit int) ([]apiRun, error) {
 	q := r.URL.Query()
 	all, err := a.s.store.RecentRuns(1 << 30)
 	if err != nil {
 		return nil, err
 	}
+	start, ok := afterRun(before, len(all), func(i int) int64 { return all[i].Run })
+	if !ok {
+		return nil, errNoRun
+	}
 	list := []apiRun{}
-	for _, run := range all {
+	for _, run := range all[start:] {
 		if len(list) >= limit {
 			break
 		}
@@ -593,7 +627,10 @@ func (a *api) runs(r *http.Request) (int, any) {
 	if id := q.Get("player"); id != "" {
 		player = a.s.store.Canonical(id)
 	}
-	list, err := a.latestRuns(r, player, limit)
+	list, err := a.latestRuns(r, player, q.Get("before"), limit)
+	if err == errNoRun {
+		return 404, apiError{err.Error()}
+	}
 	if err != nil {
 		return 500, apiError{"something went wrong"}
 	}
