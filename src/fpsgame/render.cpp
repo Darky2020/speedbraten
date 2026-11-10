@@ -53,7 +53,8 @@ namespace game
         {
             physent *d = displayents[i];
             displaysaved.add(d->o);
-            if(d->type != ENT_BOUNCE && getragdolleye((dynent *)d, d->o)) continue;
+            // a player who respawned while followed (not drawn) can still hold its old ragdoll
+            if(d->type != ENT_BOUNCE && ((dynent *)d)->state == CS_DEAD && getragdolleye((dynent *)d, d->o)) continue;
             if(d->interpmillis == lastmillis) d->o.add(vec(d->deltapos).mul(1 - alpha));
         }
     }
