@@ -1590,7 +1590,7 @@ namespace game
         g.titlef("%s", COL_WHITE, NULL, localboardtitle());
         g.space(.75f);
         g.pushlist();
-        g.pushlist(); g.text("name", COL_GRAY); g.text(ownname(), colour); g.poplist();
+        g.pushlist(); g.text("name", COL_GRAY); g.text(player1->name, colour); g.poplist();
         g.space(2);
         g.pushlist(); g.text("map", COL_GRAY); g.text(runlabel(runmap()), colour); g.poplist();
         g.space(2);
