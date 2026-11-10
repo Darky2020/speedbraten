@@ -9,6 +9,7 @@
 - After spectating, you get your lobby back, so you see who spectates you.
 - Watching a legacy record demo while spectating resumes spectating after.
 - Races in ffa and coop edit share one board per map.
+- Following a player right as a demo starts no longer leaves the view stuck under the map.
 
 ## v0.3.14
 
