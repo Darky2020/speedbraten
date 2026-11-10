@@ -147,7 +147,8 @@ namespace game
         else if(!*numargs) printname();
         else result(colorname(player1));
     });
-    ICOMMAND(getname, "", (), result(player1->name));
+    // map scripts that name the player (campaign dialogue) name whoever played a run being played back
+    ICOMMAND(getname, "", (), { const char *runner = inputreplayplayer(); result(runner ? runner : player1->name); });
 
     void switchteam(const char *team)
     {

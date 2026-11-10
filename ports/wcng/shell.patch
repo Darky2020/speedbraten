@@ -2045,7 +2045,17 @@
      int sessionid = 0, mastermode = MM_OPEN, gamespeed = 100;
      bool demohasextinfo = false;           //NEW
      bool demohasservertitle = false;       //NEW
-@@ -256,7 +260,12 @@
+@@ -243,7 +247,8 @@
+         else if(!*numargs) printname();
+         else result(colorname(player1));
+     });
+-    ICOMMAND(getname, "", (), result(player1->name));
++    // map scripts that name the player (campaign dialogue) name whoever played a run being played back
++    ICOMMAND(getname, "", (), { const char *runner = inputreplayplayer(); result(runner ? runner : player1->name); });
+ 
+     void switchteam(const char *team)
+     {
+@@ -256,7 +261,12 @@
      }
      ICOMMAND(team, "sN", (char *s, int *numargs),
      {
@@ -2059,7 +2069,7 @@
          else if(!*numargs) printteam();
          else result(player1->team);
      });
-@@ -373,6 +382,7 @@
+@@ -373,6 +383,7 @@
  
      void edittoggled(bool on)
      {
@@ -2067,7 +2077,7 @@
          addmsg(N_EDITMODE, "ri", on ? 1 : 0);
          if(player1->state==CS_DEAD) deathstate(player1, true);
          else if(player1->state==CS_EDITING && player1->editstate==CS_DEAD) showscores(false);
-@@ -647,6 +657,8 @@
+@@ -647,6 +658,8 @@
          }
          //NEW END
  
@@ -2076,7 +2086,7 @@
          if(multiplayer(false) && !m_mp(mode))
          {
              conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);
-@@ -657,9 +669,14 @@
+@@ -657,9 +670,14 @@
          nextmode = mode;
          mapstart = lastmillis; //NEW
          if(!demoplayback) gametimestamp = time(NULL); //NEW
@@ -2091,7 +2101,7 @@
          if((m_edit && !name[0]) || !load_world(name))
          {
              emptymap(0, true, name);
-@@ -714,6 +731,7 @@
+@@ -714,6 +732,7 @@
      {
          if(!remote)
          {
@@ -2099,7 +2109,7 @@
              server::forcemap(name, mode);
              if(!isconnected()) localconnect();
          }
-@@ -763,6 +781,7 @@
+@@ -763,6 +782,7 @@
  
      void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
      {
@@ -2107,7 +2117,7 @@
          if(m_edit) switch(op)
          {
              case EDIT_FLIP:
-@@ -931,7 +950,7 @@
+@@ -931,7 +951,7 @@
  
      bool ispaused() { return gamepaused; }
  
@@ -2116,7 +2126,7 @@
  
      void changegamespeed(int val)
      {
-@@ -952,6 +971,8 @@
+@@ -952,6 +972,8 @@
      vector<uchar> messages;
      int messagecn = -1, messagereliable = false;
  
@@ -2125,7 +2135,7 @@
      bool addmsg(int type, const char *fmt, ...)
      {
          if(!connected) return false;
-@@ -1044,6 +1065,7 @@
+@@ -1044,6 +1066,7 @@
  
      void gamedisconnect(bool cleanup)
      {
@@ -2133,7 +2143,7 @@
          if(remote) stopfollowing();
          ignores.setsize(0);
          connected = remote = false;
-@@ -1087,6 +1109,8 @@
+@@ -1087,6 +1110,8 @@
          extern void clearpings();
          clearpings();
          //NEW END
@@ -2142,7 +2152,7 @@
      }
  
      VARP(teamcolorchat, 0, 1, 1);
-@@ -1094,6 +1118,7 @@
+@@ -1094,6 +1119,7 @@
  
      void toserver(char *text) 
      { 
@@ -2150,7 +2160,7 @@
          conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text);
          extern void sendmessages();                     //NEW
          if(mod::bouncerserverhost.host) sendmessages(); //NEW
-@@ -1103,7 +1128,7 @@
+@@ -1103,7 +1129,7 @@
      }
      COMMANDN(say, toserver, "C");
  
@@ -2159,7 +2169,7 @@
      COMMAND(sayteam, "C");
  
      ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
-@@ -1230,6 +1255,7 @@
+@@ -1230,6 +1256,7 @@
  
      void sendmessages()
      {
@@ -2167,7 +2177,7 @@
          packetbuf p(MAXTRANS);
          if(sendcrc)
          {
-@@ -1255,7 +1281,8 @@
+@@ -1255,7 +1282,8 @@
              messagereliable = false;
              messagecn = -1;
          }
@@ -2177,7 +2187,7 @@
          {
              putint(p, N_PING);
              putint(p, addping()); //NEW
-@@ -1541,8 +1568,13 @@
+@@ -1541,8 +1569,13 @@
                  fullyconnected = true;      //NEW
                  rebindpingport();           //NEW
                  mod::extinfo::connect();    //NEW
@@ -2193,7 +2203,7 @@
                  break;
              }
  
-@@ -1775,7 +1807,9 @@
+@@ -1775,7 +1808,9 @@
                  {
                      showscores(false);
                      lasthit = 0;
@@ -2203,7 +2213,7 @@
                  if(cmode) cmode->respawned(s);
  				ai::spawned(s);
                  addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
-@@ -1851,6 +1885,8 @@
+@@ -1851,6 +1886,8 @@
                      particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                  }
                  if(!victim) break;
@@ -2212,7 +2222,7 @@
                  killed(victim, actor);
                  if(actor!=victim && isteam(actor->team, victim->team)) actor->teamkills++; //NEW
                  break;
-@@ -2233,6 +2269,13 @@
+@@ -2233,6 +2270,13 @@
                  if(!w) return;
                  static string teamold; copystring(teamold, w->team); //NEW
                  filtertext(w->team, text, false, false, MAXTEAMLEN);

@@ -992,7 +992,9 @@ namespace game
         uchar chunk[65536];
         for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
         delete f;
-        return buf.length() >= 4 && !memcmp(buf.getbuf(), "SBR2", 4) && readsbr2prefix(file, buf, run, info, known);
+        if(buf.length() < 4 || memcmp(buf.getbuf(), "SBR2", 4) || !readsbr2prefix(file, buf, run, info, known)) return false;
+        loopv(run.attempts) if(!run.attempts[i]->player[0]) copystring(run.attempts[i]->player, info.player);
+        return true;
     }
 
     // A legacy flagrun record's ghost (tools/legacyflagruns.py): gzip of "SBGH", var version, str
@@ -1044,6 +1046,8 @@ namespace game
         for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
         delete f;
         if(buf.length() < 4 || memcmp(buf.getbuf(), "SBR2", 4) || !readsbr2(file, buf, run, info)) return false;
+        // the file names its player once; playback names them per attempt
+        if(run) loopv(run->attempts) if(!run->attempts[i]->player[0]) copystring(run->attempts[i]->player, info.player);
         if(run && info.simversion < REPLAYSIMVERSION) conoutf(CON_ERROR, "replay %s was made with an older build: it will likely desync", file);
         return true;
     }

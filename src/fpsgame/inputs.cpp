@@ -752,6 +752,14 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
+    // the name of whoever played the run being played back (spectated, watched or re-simulated),
+    // NULL outside playback or when the run doesn't say
+    const char *inputreplayplayer()
+    {
+        if(!replaying || !replaydata.attempts.inrange(replayattempt) || !replaycur().player[0]) return NULL;
+        return replaycur().player;
+    }
+
     // the attempt and tick a watched replay is at, for the input display; false when none is watched
     bool replayviewinputs(const inputattempt *&a, int &tick)
     {
