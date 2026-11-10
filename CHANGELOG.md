@@ -10,7 +10,7 @@
 - Watching a legacy record demo while spectating resumes spectating after.
 - Races in ffa and coop edit share one board per map.
 - Following a player right as a demo starts no longer leaves the view stuck under the map.
-- Campaign dialogue names the player you spectate or whose replay you watch.
+- Spectating or watching a replay shows the runner's name, not yours (scoreboard, dialogue).
 
 ## v0.3.14
 

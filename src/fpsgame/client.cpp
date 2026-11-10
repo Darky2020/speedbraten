@@ -132,10 +132,11 @@ namespace game
 
     void switchname(const char *name)
     {
-        filtertext(player1->name, name, false, false, MAXNAMELEN);
-        if(!player1->name[0]) copystring(player1->name, "unnamed");
-        addmsg(N_SWITCHNAME, "rs", player1->name);
-        if(demorecord) recordmsg(N_SWITCHNAME, "rs", player1->name);
+        char *own = ownname();
+        filtertext(own, name, false, false, MAXNAMELEN);
+        if(!own[0]) copystring(own, "unnamed", MAXSTRLEN);
+        addmsg(N_SWITCHNAME, "rs", own);
+        if(demorecord) recordmsg(N_SWITCHNAME, "rs", own);
     }
     void printname()
     {
@@ -147,8 +148,7 @@ namespace game
         else if(!*numargs) printname();
         else result(colorname(player1));
     });
-    // map scripts that name the player (campaign dialogue) name whoever played a run being played back
-    ICOMMAND(getname, "", (), { const char *runner = inputreplayplayer(); result(runner ? runner : player1->name); });
+    ICOMMAND(getname, "", (), result(player1->name));
 
     void switchteam(const char *team)
     {
@@ -200,7 +200,7 @@ namespace game
 
     authkey *findauthkey(const char *desc = "")
     {
-        loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc) && !strcasecmp(authkeys[i]->name, player1->name)) return authkeys[i];
+        loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc) && !strcasecmp(authkeys[i]->name, ownname())) return authkeys[i];
         loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc)) return authkeys[i];
         return NULL;
     }
@@ -267,7 +267,7 @@ namespace game
 
     void writeclientinfo(stream *f)
     {
-        f->printf("name %s\n", escapestring(player1->name));
+        f->printf("name %s\n", escapestring(ownname()));
     }
 
     bool allowedittoggle()
@@ -1193,7 +1193,7 @@ namespace game
     {
         packetbuf p(MAXTRANS, ENET_PACKET_FLAG_RELIABLE);
         putint(p, N_CONNECT);
-        sendstring(player1->name, p);
+        sendstring(ownname(), p);
         putint(p, player1->playermodel);
         string hash = "";
         if(connectpass[0])

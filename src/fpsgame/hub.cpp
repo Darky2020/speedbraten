@@ -977,8 +977,8 @@ namespace game
             {
                 case -1:
                     hubreset();
-                    copystring(hubaskedname, player1->name);
-                    hubsendtext(HM_HELLO, player1->name);
+                    copystring(hubaskedname, ownname());
+                    hubsendtext(HM_HELLO, ownname());
                     break;
                 case HM_WELCOME:
                 {
@@ -1453,10 +1453,10 @@ namespace game
         if(hubstate() == WITNESS_OPEN && hubwelcomed)
         {
             if(!hublisted && totalmillis - hubwelcomedat >= HUBLISTED) tellonline();
-            if(strcmp(player1->name, hubaskedname))
+            if(strcmp(ownname(), hubaskedname))
             {
-                copystring(hubaskedname, player1->name);
-                hubsendtext(HM_SETNAME, player1->name);
+                copystring(hubaskedname, ownname());
+                hubsendtext(HM_SETNAME, ownname());
             }
             if(spectating() && remote) hubspectateleave();
             sendviewend();
@@ -1590,7 +1590,7 @@ namespace game
         g.titlef("%s", COL_WHITE, NULL, localboardtitle());
         g.space(.75f);
         g.pushlist();
-        g.pushlist(); g.text("name", COL_GRAY); g.text(player1->name, colour); g.poplist();
+        g.pushlist(); g.text("name", COL_GRAY); g.text(ownname(), colour); g.poplist();
         g.space(2);
         g.pushlist(); g.text("map", COL_GRAY); g.text(runlabel(runmap()), colour); g.poplist();
         g.space(2);

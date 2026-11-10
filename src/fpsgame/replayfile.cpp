@@ -1706,7 +1706,7 @@ namespace game
         info.date = first.date ? first.date : uint(time(NULL));
         info.live = true;
         copystring(info.client, SPEEDBRATEN_CLIENT);
-        copystring(info.player, first.player[0] ? first.player : player1->name);
+        copystring(info.player, first.player[0] ? first.player : ownname());
         info.mode = first.mode;
         info.flagrun = first.flagrun;
         info.race = first.race;

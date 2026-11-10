@@ -2367,17 +2367,20 @@
      int sessionid = 0, mastermode = MM_OPEN, gamespeed = 100;
      string servdesc = "", servauth = "", connectpass = "";
  
-@@ -141,7 +145,8 @@
-         else if(!*numargs) printname();
-         else result(colorname(player1));
-     });
--    ICOMMAND(getname, "", (), result(player1->name));
-+    // map scripts that name the player (campaign dialogue) name whoever played a run being played back
-+    ICOMMAND(getname, "", (), { const char *runner = inputreplayplayer(); result(runner ? runner : player1->name); });
+@@ -127,9 +131,9 @@
  
-     void switchteam(const char *team)
+     void switchname(const char *name)
      {
-@@ -154,7 +159,12 @@
+-        filtertext(player1->name, name, false, false, MAXNAMELEN);
+-        if(!player1->name[0]) copystring(player1->name, "unnamed");
+-        addmsg(N_SWITCHNAME, "rs", player1->name);
++        filtertext(ownname(), name, false, false, MAXNAMELEN);
++        if(!ownname()[0]) copystring(ownname(), "unnamed", MAXSTRLEN);
++        addmsg(N_SWITCHNAME, "rs", ownname());
+     }
+     void printname()
+     {
+@@ -154,7 +158,12 @@
      }
      ICOMMAND(team, "sN", (char *s, int *numargs),
      {
@@ -2391,7 +2394,25 @@
          else if(!*numargs) printteam();
          else result(player1->team);
      });
-@@ -271,6 +281,7 @@
+@@ -188,7 +197,7 @@
+ 
+     authkey *findauthkey(const char *desc = "")
+     {
+-        loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc) && !strcasecmp(authkeys[i]->name, player1->name)) return authkeys[i];
++        loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc) && !strcasecmp(authkeys[i]->name, ownname())) return authkeys[i];
+         loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc)) return authkeys[i];
+         return NULL;
+     }
+@@ -255,7 +264,7 @@
+ 
+     void writeclientinfo(stream *f)
+     {
+-        f->printf("name %s\n", escapestring(player1->name));
++        f->printf("name %s\n", escapestring(ownname()));
+     }
+ 
+     bool allowedittoggle()
+@@ -271,6 +280,7 @@
  
      void edittoggled(bool on)
      {
@@ -2399,7 +2420,7 @@
          addmsg(N_EDITMODE, "ri", on ? 1 : 0);
          if(player1->state==CS_DEAD) deathstate(player1, true);
          else if(player1->state==CS_EDITING && player1->editstate==CS_DEAD) showscores(false);
-@@ -528,6 +539,8 @@
+@@ -528,6 +538,8 @@
  
      void changemapserv(const char *name, int mode)        // forced map change from the server
      {
@@ -2408,7 +2429,7 @@
          if(multiplayer(false) && !m_mp(mode))
          {
              conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);
-@@ -536,8 +549,13 @@
+@@ -536,8 +548,13 @@
  
          gamemode = mode;
          nextmode = mode;
@@ -2422,7 +2443,7 @@
          if((m_edit && !name[0]) || !load_world(name))
          {
              emptymap(0, true, name);
-@@ -592,6 +610,7 @@
+@@ -592,6 +609,7 @@
      {
          if(!remote)
          {
@@ -2430,7 +2451,7 @@
              server::forcemap(name, mode);
              if(!isconnected()) localconnect();
          }
-@@ -641,6 +660,7 @@
+@@ -641,6 +659,7 @@
  
      void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
      {
@@ -2438,7 +2459,7 @@
          if(m_edit) switch(op)
          {
              case EDIT_FLIP:
-@@ -809,7 +829,7 @@
+@@ -809,7 +828,7 @@
  
      bool ispaused() { return gamepaused; }
  
@@ -2447,7 +2468,7 @@
  
      void changegamespeed(int val)
      {
-@@ -830,6 +850,8 @@
+@@ -830,6 +849,8 @@
      vector<uchar> messages;
      int messagecn = -1, messagereliable = false;
  
@@ -2456,7 +2477,7 @@
      bool addmsg(int type, const char *fmt, ...)
      {
          if(!connected) return false;
-@@ -912,6 +934,7 @@
+@@ -912,6 +933,7 @@
  
      void gamedisconnect(bool cleanup)
      {
@@ -2464,7 +2485,7 @@
          if(remote) stopfollowing();
          ignores.setsize(0);
          connected = remote = false;
-@@ -937,15 +960,17 @@
+@@ -937,15 +959,17 @@
              nextmode = gamemode = INT_MAX;
              clientmap[0] = '\0';
          }
@@ -2484,7 +2505,7 @@
      COMMAND(sayteam, "C");
  
      ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
-@@ -1036,6 +1061,7 @@
+@@ -1036,6 +1060,7 @@
  
      void sendmessages()
      {
@@ -2492,7 +2513,7 @@
          packetbuf p(MAXTRANS);
          if(sendcrc)
          {
-@@ -1061,7 +1087,8 @@
+@@ -1061,7 +1086,8 @@
              messagereliable = false;
              messagecn = -1;
          }
@@ -2502,7 +2523,16 @@
          {
              putint(p, N_PING);
              putint(p, totalmillis);
-@@ -1497,7 +1524,9 @@
+@@ -1084,7 +1110,7 @@
+     {
+         packetbuf p(MAXTRANS, ENET_PACKET_FLAG_RELIABLE);
+         putint(p, N_CONNECT);
+-        sendstring(player1->name, p);
++        sendstring(ownname(), p);
+         putint(p, player1->playermodel);
+         string hash = "";
+         if(connectpass[0])
+@@ -1497,7 +1523,9 @@
                  {
                      showscores(false);
                      lasthit = 0;
@@ -2512,7 +2542,7 @@
                  if(cmode) cmode->respawned(s);
  				ai::spawned(s);
                  addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
-@@ -1572,6 +1601,8 @@
+@@ -1572,6 +1600,8 @@
                      particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                  }
                  if(!victim) break;
@@ -2521,7 +2551,7 @@
                  killed(victim, actor);
                  break;
              }
-@@ -1898,6 +1929,13 @@
+@@ -1898,6 +1928,13 @@
                  fpsent *w = getclient(wn);
                  if(!w) return;
                  filtertext(w->team, text, false, false, MAXTEAMLEN);

@@ -752,12 +752,27 @@ namespace game
 
     static inputattempt &replaycur() { return *replaydata.attempts[replayattempt]; }
 
-    // the name of whoever played the run being played back (spectated, watched or re-simulated),
-    // NULL outside playback or when the run doesn't say
-    const char *inputreplayplayer()
+    // While a run plays back (spectated, watched or re-simulated), player1 carries the name of whoever
+    // played it, so the scoreboard, the HUD and map scripts name the runner. The player's own name is
+    // kept here meanwhile, for what identifies them: the hub, the config, auth keys, recordings.
+    static string ownnamebuf = "";
+    static bool runnername = false;
+
+    char *ownname() { return runnername ? ownnamebuf : player1->name; }
+
+    static void syncrunnername()
     {
-        if(!replaying || !replaydata.attempts.inrange(replayattempt) || !replaycur().player[0]) return NULL;
-        return replaycur().player;
+        const char *runner = replaying && replaydata.attempts.inrange(replayattempt) && replaycur().player[0] ? replaycur().player : NULL;
+        if(runner)
+        {
+            if(!runnername) { copystring(ownnamebuf, player1->name); runnername = true; }
+            if(strcmp(player1->name, runner)) copystring(player1->name, runner);
+        }
+        else if(runnername)
+        {
+            copystring(player1->name, ownnamebuf);
+            runnername = false;
+        }
     }
 
     // the attempt and tick a watched replay is at, for the input display; false when none is watched
@@ -1596,7 +1611,7 @@ namespace game
         inputattempt &a = recording.add();
         a.seed = gameseed;
         a.date = uint(time(NULL));
-        copystring(a.player, player1->name);
+        copystring(a.player, ownname());
         a.lifeseeds = true;
         copystring(a.map, name);
         a.mode = mode;
@@ -1658,6 +1673,7 @@ namespace game
 
     void frametimed(int us, int ticks, bool drawn)
     {
+        syncrunnername();
         replayfastframe(us);
         spectateframe(us);
         runtimerframe();
