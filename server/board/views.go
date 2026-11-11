@@ -158,15 +158,29 @@ type Holder struct {
 
 // TopHolders lists the installs holding the most bests.
 func (s *Store) TopHolders(n int) ([]Holder, error) {
-	counts := map[string]int{}
-	firsts := map[string]Entry{}
+	var boards []*Board
 	err := s.locked(func() {
 		for _, b := range s.boards {
-			e := b.Entries[0]
+			boards = append(boards, b)
+		}
+	})
+	return HoldersOf(boards, n), err
+}
+
+// HoldersOf lists who holds the most of these boards' bests, n at most; everyone tied for a
+// board's best time holds it.
+func HoldersOf(boards []*Board, n int) []Holder {
+	counts := map[string]int{}
+	firsts := map[string]Entry{}
+	for _, b := range boards {
+		for _, e := range b.Entries {
+			if e.Rank != 1 {
+				break
+			}
 			counts[e.Install]++
 			firsts[e.Install] = e
 		}
-	})
+	}
 	var out []Holder
 	for k, c := range counts {
 		out = append(out, Holder{Install: k, Name: firsts[k].Name, Registered: firsts[k].Registered, Records: c})
@@ -177,7 +191,7 @@ func (s *Store) TopHolders(n int) ([]Holder, error) {
 	if len(out) > n {
 		out = out[:n]
 	}
-	return out, err
+	return out
 }
 
 // PlayerRuns are an install's runs that count, newest first (at most n), with its total and when

@@ -748,7 +748,7 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 	for _, b := range boards {
 		oldest = append(oldest, board.Standing{Key: b.Key, Entry: b.Entries[0]})
 	}
-	holders := topHolders(boards, categoryPanel)
+	holders := board.HoldersOf(boards, categoryPanel)
 	sort.Slice(oldest, func(i, j int) bool { return oldest[i].Entry.When.Before(oldest[j].Entry.When) })
 	if len(oldest) > recentRuns {
 		oldest = oldest[:recentRuns]
@@ -766,7 +766,7 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 					of = append(of, b)
 				}
 			}
-			split = append(split, modeHolders{Key: board.Key{Kind: kind, Mode: m}, Holders: topHolders(of, 5)})
+			split = append(split, modeHolders{Key: board.Key{Kind: kind, Mode: m}, Holders: board.HoldersOf(of, 5)})
 		}
 		data["ModeHolders"] = split
 	}
@@ -776,27 +776,6 @@ func (s *site) addCategory(data map[string]any, boards []*board.Board, kind stri
 	if more != "" {
 		data["More"] = "/records?mode=" + more
 	}
-}
-
-// topHolders lists who holds the most of these boards' bests.
-func topHolders(boards []*board.Board, n int) []board.Holder {
-	counts, firsts := map[string]int{}, map[string]board.Entry{}
-	for _, b := range boards {
-		e := b.Entries[0]
-		counts[e.Install]++
-		firsts[e.Install] = e
-	}
-	var out []board.Holder
-	for k, c := range counts {
-		out = append(out, board.Holder{Install: k, Name: firsts[k].Name, Registered: firsts[k].Registered, Records: c})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Records > out[j].Records || out[i].Records == out[j].Records && out[i].Name < out[j].Name
-	})
-	if len(out) > n {
-		out = out[:n]
-	}
-	return out
 }
 
 type completionRow struct {

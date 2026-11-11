@@ -299,3 +299,24 @@ func TestRaceModesShareABoard(t *testing.T) {
 		t.Fatalf("race records %+v", recs)
 	}
 }
+
+// Everyone tied for a board's best time holds that record.
+func TestTopHoldersCountTies(t *testing.T) {
+	f := newFixture(t)
+	f.run(1, "ka", "a", "forge", "flagrun", 17, 5000, "valid")
+	f.run(2, "kb", "b", "forge", "flagrun", 17, 5000, "valid")
+	f.run(3, "kc", "c", "forge", "flagrun", 17, 6000, "valid")
+	f.run(4, "kb", "b", "ra", "flagrun", 17, 7000, "valid")
+	s := f.open()
+	holders, err := s.TopHolders(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, h := range holders {
+		got[h.Install] = h.Records
+	}
+	if len(got) != 2 || got["ka"] != 1 || got["kb"] != 2 {
+		t.Fatalf("holders %+v, want ka 1 (forge, tied) and kb 2 (forge tied, ra)", holders)
+	}
+}
