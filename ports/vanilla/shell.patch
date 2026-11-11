@@ -2489,6 +2489,15 @@
  
      void changegamespeed(int val)
      {
+@@ -819,7 +838,7 @@
+     }
+     ICOMMAND(gamespeed, "iN$", (int *val, int *numargs, ident *id),
+     {
+-        if(*numargs > 0) changegamespeed(clampvar(id, *val, 10, 1000));
++        if(*numargs > 0) changegamespeed(clampvar(id, *val, 1, 1000));
+         else if(*numargs < 0) intret(gamespeed);
+         else printvar(id, gamespeed);
+     });
 @@ -830,6 +849,8 @@
      vector<uchar> messages;
      int messagecn = -1, messagereliable = false;
@@ -2553,6 +2562,15 @@
          putint(p, player1->playermodel);
          string hash = "";
          if(connectpass[0])
+@@ -1318,7 +1344,7 @@
+ 
+             case N_GAMESPEED:
+             {
+-                int val = clamp(getint(p), 10, 1000), cn = getint(p);
++                int val = clamp(getint(p), 1, 1000), cn = getint(p);
+                 fpsent *a = cn >= 0 ? getclient(cn) : NULL;
+                 if(!demopacket) gamespeed = val;
+                 extern int slowmosp;
 @@ -1497,7 +1523,9 @@
                  {
                      showscores(false);
@@ -3441,11 +3459,10 @@
          }
  
          void cleanclipboard(bool fullclean = true)
-@@ -853,6 +880,15 @@
-     servmode *smode = NULL;
+@@ -854,6 +881,15 @@
  
      bool canspawnitem(int type) { return !m_noitems && (type>=I_SHELLS && type<=I_QUAD && (!m_noammo || type<I_SHELLS || type>I_CARTRIDGES)); }
-+
+ 
 +    // Race rules for ffa and coop edit: picked-up items are back at once, your own shots do
 +    // no damage to you (they still push you) and there is no time limit. Latched at each map
 +    // change.
@@ -3454,9 +3471,10 @@
 +    static int nextracerules = -1;
 +    bool racerulesactive() { return raceruleson; }
 +    void forcenextracerules(int on) { nextracerules = on; }
- 
++
      int spawntime(int type)
      {
+         if(m_classicsp) return INT_MAX;
 @@ -877,8 +913,10 @@
          return sec*1000;
      }
@@ -3514,6 +3532,15 @@
      void autoteam()
      {
          static const char * const teamnames[2] = {"good", "evil"};
+@@ -1356,7 +1424,7 @@
+ 
+     void changegamespeed(int val, clientinfo *ci = NULL)
+     {
+-        val = clamp(val, 10, 1000);
++        val = clamp(val, 1, 1000);
+         if(gamespeed==val) return;
+         gamespeed = val;
+         sendf(-1, 1, "riii", N_GAMESPEED, gamespeed, ci ? ci->clientnum : -1);
 @@ -1876,7 +1944,7 @@
          sendstring(smapname, p);
          putint(p, gamemode);

@@ -899,7 +899,7 @@ namespace game
     }
     ICOMMAND(gamespeed, "iN$", (int *val, int *numargs, ident *id),
     {
-        if(*numargs > 0) changegamespeed(clampvar(id, *val, 10, 1000));
+        if(*numargs > 0) changegamespeed(clampvar(id, *val, 1, 1000));
         else if(*numargs < 0) intret(gamespeed);
         else printvar(id, gamespeed);
     });
@@ -1429,7 +1429,7 @@ namespace game
 
             case N_GAMESPEED:
             {
-                int val = clamp(getint(p), 10, 1000), cn = getint(p);
+                int val = clamp(getint(p), 1, 1000), cn = getint(p);
                 fpsent *a = cn >= 0 ? getclient(cn) : NULL;
                 if(!demopacket) gamespeed = val;
                 extern int slowmosp;
