@@ -56,6 +56,49 @@ extern bool hublearnedkey(uchar *channelkey);
 extern bool hubsend(int type, const uchar *data, int len);
 // bytes waiting to go out to the hub; hubsend fails the connection past a few MB
 extern int hubqueued();
+
+// Top edges that a body rising alongside their side can "land" on for a moment, which clears the
+// gravity built up since it left the ground (the practice visualizers' bounce edges): a floor-like
+// top face, a near-vertical side right under the edge, the floor in front of the side height units
+// lower. approaches: a bit per clear approach, 1<<(2*angle + end) with angle 0..3 for
+// BOUNCEANGLES and end 0/1 for coming in towards b or towards a; keep: the share of horizontal speed
+// left after sliding into the side at the shallowest clear one, 0 when none is clear. out points
+// away from the side. Found again when the map changes.
+enum { NUMBOUNCEANGLES = 4 };
+extern const float BOUNCEANGLES[NUMBOUNCEANGLES];
+struct bounceedge { vec a, b, out; float height, keep; int approaches; };
+// the takeoff point (on the floor) and where the body touches the side, of one approach
+extern void bounceapproachpath(const bounceedge &e, int angle, int end, vec &takeoff, vec &contact);
+// a standing jump at an edge head on, without touching the side: seconds until the feet are at the
+// top (reach) and STAIRHEIGHT below it (stair), and how long they stay in the 0.1 units above the
+// top where crossing the edge counts as a landing (window); false if it doesn't reach the top
+extern bool bounceflyover(float height, float &reach, float &stair, float &window);
+// how far a jump taken at horizontal speed (running forward) travels in secs: on its first tick the
+// speed still heads for the ground's top speed, after that for the faster one in the air
+extern float bouncerunup(float speed, float secs);
+// where the player's feet were when their last jump left the ground, the horizontal speed then and
+// lastmillis at the time (-1 before the first)
+// the player's last mid-air gravity reset (a bump), as the physics found it: BUMP_LANDING when a floor
+// was found under the edge of the body while rising, BUMP_STEP for a step up onto an edge from a
+// fall, BUMP_STEPJUMP when a jump followed that step; millis -1 before the first. entry and after:
+// horizontal speed going in and a tick later; upbefore and upafter: upward speed (velocity plus
+// built-up gravity) before and after; gravity: the built-up gravity it cleared.
+enum { BUMP_LANDING = 0, BUMP_STEP, BUMP_STEPJUMP };
+// entryvel: horizontal velocity going in; wall: the normal of the wall first touched since leaving the
+// ground, zero without one.
+struct bumpinfo { int kind, millis; vec o, entryvel, wall; float entry, after, upbefore, upafter, gravity; };
+extern bumpinfo lastbump;
+extern vec lastjumpat;
+extern float lastjumpspeed;
+extern int lastjumpmillis;
+// how far a ray goes before something a player collides with: geometry, except where noclip makes
+// it empty, and clip material cubes; other materials are passed through. maxdist when nothing is hit.
+extern float bounceray(const vec &o, const vec &dir, float maxdist);
+// speed: the run's horizontal speed the approaches are checked for (searched again when it changes)
+extern const vector<bounceedge> &bounceedges(float speed);
+// the upward speed such an edge gives after a standing jump from the floor height units below its
+// top, -1 when a standing jump doesn't reach it
+extern float bouncegain(float height);
 extern bool hubreceive(int &type, vector<uchar> &payload);
 
 // an input device the system reports; kind: 0 other, 1 keyboard, 2 mouse

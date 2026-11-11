@@ -641,6 +641,7 @@ namespace game
     void drawsplits(int w, int h)
     {
         drawrunstats(w, h);
+        drawpracticehud(w, h);
         drawsplitlines(w, h);
     }
 

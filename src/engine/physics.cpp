@@ -1178,8 +1178,36 @@ void switchfloor(physent *d, vec &dir, const vec &floor)
     recalcdir(d, oldvel, dir);
 }
 
+bumpinfo lastbump = { BUMP_LANDING, -1, vec(0, 0, 0), vec(0, 0, 0), vec(0, 0, 0), 0, 0, 0, 0, 0 };
+static bool bumpafterpending = false;
+// the player's horizontal velocity just before touching a wall for the first time since leaving the
+// ground and that wall's normal; touchedwall is false while it hasn't
+static bool touchedwall = false;
+static vec velbeforewall(0, 0, 0), firstwall(0, 0, 0);
+
+static void notebump(physent *d, int kind, float upbefore, float upafter, float gravity)
+{
+    if(d != player) return;
+    vec feet(d->o.x, d->o.y, d->o.z - d->eyeheight);
+    // further sub-steps and ticks along the same edge belong to the same bump
+    if(lastbump.millis >= 0 && lastmillis - lastbump.millis <= 4*5 && lastbump.o.dist(feet) < 8) return;
+    lastbump.kind = kind;
+    lastbump.millis = lastmillis;
+    lastbump.o = feet;
+    lastbump.after = vec(d->vel.x, d->vel.y, 0).magnitude();
+    lastbump.entryvel = touchedwall ? velbeforewall : vec(d->vel.x, d->vel.y, 0);
+    lastbump.entry = lastbump.entryvel.magnitude();
+    lastbump.wall = touchedwall ? firstwall : vec(0, 0, 0);
+    lastbump.upbefore = upbefore;
+    lastbump.upafter = upafter;
+    lastbump.gravity = gravity;
+    bumpafterpending = true;
+}
+
 bool trystepup(physent *d, vec &dir, const vec &obstacle, float maxstep, const vec &floor)
 {
+    bool fell = d->physstate == PHYS_FALL;
+    float rise = d->vel.z + d->falling.z, gravity = -d->falling.z;
     vec old(d->o), stairdir = (obstacle.z >= 0 && obstacle.z < SLOPEZ ? vec(-obstacle.x, -obstacle.y, 0) : vec(dir.x, dir.y, 0)).rescale(1);
     bool cansmooth = true;
     /* check if there is space atop the stair to move to */
@@ -1246,6 +1274,7 @@ bool trystepup(physent *d, vec &dir, const vec &obstacle, float maxstep, const v
                     switchfloor(d, dir, d->floor);
                 }
                 d->physstate = PHYS_STEP_UP;
+                if(fell) notebump(d, BUMP_STEP, rise, d->vel.z + d->falling.z, gravity);
                 return true;
             }
         }
@@ -1263,6 +1292,7 @@ bool trystepup(physent *d, vec &dir, const vec &obstacle, float maxstep, const v
             switchfloor(d, dir, d->floor);
         }
         if(cansmooth) d->physstate = PHYS_STEP_UP;
+        if(fell) notebump(d, BUMP_STEP, rise, d->vel.z + d->falling.z, gravity);
         return true;
     }
     d->o = old;
@@ -1447,6 +1477,12 @@ bool move(physent *d, vec &dir)
         }
         /* can't step over the obstacle, so just slide against it */
         collided = true;
+        if(d == player && d->physstate == PHYS_FALL && !touchedwall)
+        {
+            touchedwall = true;
+            velbeforewall = vec(d->vel.x, d->vel.y, 0);
+            firstwall = vec(obstacle.x, obstacle.y, 0);
+        }
     }
     else if(d->physstate == PHYS_STEP_UP)
     {
@@ -1473,7 +1509,13 @@ bool move(physent *d, vec &dir)
         //if(d->type == ENT_AI || d->type == ENT_INANIMATE)
         d->blocked = true;
     }
-    if(found) landing(d, dir, floor, collided);
+    if(found && d->physstate == PHYS_FALL && floor.z >= FLOORZ && d->falling.z < 0 && d->vel.z + d->falling.z > 0)
+    {
+        float upbefore = d->vel.z + d->falling.z, gravity = -d->falling.z;
+        landing(d, dir, floor, collided);
+        notebump(d, BUMP_LANDING, upbefore, d->vel.z + d->falling.z, gravity);
+    }
+    else if(found) landing(d, dir, floor, collided);
     else falling(d, dir, floor);
     return !collided;
 }
@@ -1656,6 +1698,10 @@ FVAR(straferoll, 0, 0.033f, 90);
 FVAR(faderoll, 0, 0.95f, 1);
 VAR(floatspeed, 1, 100, 10000);
 
+vec lastjumpat(0, 0, 0);
+float lastjumpspeed = 0;
+int lastjumpmillis = -1;
+
 void modifyvelocity(physent *pl, bool local, bool water, bool floating, int curtime)
 {
     bool allowmove = game::allowmove(pl);
@@ -1674,6 +1720,17 @@ void modifyvelocity(physent *pl, bool local, bool water, bool floating, int curt
         {
             pl->jumping = false;
 
+            if(pl == player && pl->physstate == PHYS_STEP_UP && lastbump.kind == BUMP_STEP && lastmillis - lastbump.millis <= 2*PHYSFRAMETIME)
+            {
+                lastbump.kind = BUMP_STEPJUMP;
+                lastbump.upafter = max(pl->vel.z, JUMPVEL) + pl->falling.z;
+            }
+            if(pl == player)
+            {
+                lastjumpat = vec(pl->o.x, pl->o.y, pl->o.z - pl->eyeheight);
+                lastjumpspeed = vec(pl->vel.x, pl->vel.y, 0).magnitude();
+                lastjumpmillis = lastmillis;
+            }
             pl->vel.z = max(pl->vel.z, JUMPVEL); // physics impulse upwards
             if(water) { pl->vel.x /= 8.0f; pl->vel.y /= 8.0f; } // dampen velocity change even harder, gives correct water feel
 
@@ -1792,6 +1849,12 @@ bool moveplayer(physent *pl, int moveres, bool local, int curtime)
         }
     }
 
+    if(pl == player && pl->physstate != PHYS_FALL) touchedwall = false;
+    if(pl == player && bumpafterpending && lastmillis > lastbump.millis)
+    {
+        lastbump.after = vec(pl->vel.x, pl->vel.y, 0).magnitude();
+        bumpafterpending = false;
+    }
     if(pl->state==CS_ALIVE) updatedynentcache(pl);
 
     // automatically apply smooth roll when strafing
@@ -1813,6 +1876,265 @@ bool moveplayer(physent *pl, int moveres, bool local, int curtime)
     if(pl->state==CS_ALIVE && (pl->o.z < 0 || material&MAT_DEATH)) game::suicide(pl);
 
     return true;
+}
+
+// a standing jump rising to height: the gravity built up when the feet get there and how long that
+// takes; false if it doesn't get there. The jump's first tick still has the ground's friction.
+static bool standingjump(float height, float &gain, float &secs)
+{
+    float vz = JUMPVEL*detfrictionpow(1 - 1/6.0f, PHYSFRAMETIME), falling = 0, z = 0, step = PHYSFRAMETIME/1000.0f;
+    for(int tick = 0; tick < 1000; tick++)
+    {
+        if(tick)
+        {
+            falling -= GRAVITY*step;
+            vz *= detfrictionpow(1 - 1/30.0f, PHYSFRAMETIME);
+        }
+        if(vz + falling <= 0) return false;
+        z += (vz + falling)*step;
+        if(z >= height) { gain = -falling; secs = (tick + 1)*step; return true; }
+    }
+    return false;
+}
+
+float bouncerunup(float speed, float secs)
+{
+    // modifyvelocity's targets for a player holding forward only: 1.3x, and 1.3x again in the air
+    float ground = player->maxspeed*1.3f, air = ground*1.3f, step = PHYSFRAMETIME/1000.0f, dist = 0;
+    int ticks = int(secs/step);
+    loopi(ticks + 1)
+    {
+        if(!i) speed = ground + (speed - ground)*detfrictionpow(1 - 1/6.0f, PHYSFRAMETIME);
+        else speed = air + (speed - air)*detfrictionpow(1 - 1/30.0f, PHYSFRAMETIME);
+        dist += speed*(i < ticks ? step : secs - ticks*step);
+    }
+    return dist;
+}
+
+bool bounceflyover(float height, float &reach, float &stair, float &window)
+{
+    float vz = JUMPVEL*detfrictionpow(1 - 1/6.0f, PHYSFRAMETIME), falling = 0, z = 0, step = PHYSFRAMETIME/1000.0f;
+    stair = 0;
+    for(int tick = 0; tick < 1000; tick++)
+    {
+        if(tick)
+        {
+            falling -= GRAVITY*step;
+            vz *= detfrictionpow(1 - 1/30.0f, PHYSFRAMETIME);
+        }
+        float rise = vz + falling;
+        if(rise <= 0) return false;
+        float next = z + rise*step;
+        if(next >= height - STAIRHEIGHT && z < height - STAIRHEIGHT) stair = (tick + (height - STAIRHEIGHT - z)/(rise*step))*step;
+        if(next >= height)
+        {
+            reach = (tick + (height - z)/(rise*step))*step;
+            window = 0.1f/rise;
+            return true;
+        }
+        z = next;
+    }
+    return false;
+}
+
+float bouncegain(float height)
+{
+    float gain, secs;
+    return standingjump(height, gain, secs) ? gain : -1;
+}
+
+// a cube's geometry right at p: a ray from just before it stops at once
+static bool geometryat(const vec &p, const vec &dir)
+{
+    return raycube(vec(dir).mul(-0.02f).add(p), dir, 0.04f, RAY_CLIPMAT) < 0.04f;
+}
+
+float bounceray(const vec &o, const vec &dir, float maxdist)
+{
+    vec p(o);
+    float travelled = 0;
+    // each step stops at the next geometry or material cube; noclip and the other materials are
+    // stepped into and the ray goes on from inside them
+    loopi(64)
+    {
+        float left = maxdist - travelled, d = raycube(p, dir, left, RAY_CLIPMAT | RAY_EDITMAT | (i ? RAY_SKIPFIRST : 0));
+        if(d >= left) return maxdist;
+        vec in = vec(dir).mul(d + 0.01f).add(p);
+        int clip = lookupmaterial(in)&MATF_CLIP;
+        if(clip == MAT_CLIP || (clip != MAT_NOCLIP && geometryat(in, dir))) return travelled + d;
+        travelled += d + 0.01f;
+        p = in;
+    }
+    return maxdist;
+}
+
+const float BOUNCEANGLES[NUMBOUNCEANGLES] = { 10, 20, 30, 45 };
+static const float BOUNCERADIUS = 4.1f;
+static float bouncespeed = 165;
+
+// a jump from the floor height below the top at bouncespeed, coming in at BOUNCEANGLES[angle]
+// to the side: it takes off where it is still that far from touching the side when the feet are at
+// the top
+static void bouncepath(const vec &mid, const vec &along, const vec &out, float height, float secs, int angle, int end, vec &takeoff, vec &contact, vec &dir)
+{
+    float a = BOUNCEANGLES[angle]*RAD;
+    contact = vec(out).mul(BOUNCERADIUS + 0.1f).add(mid);
+    dir = vec(along).mul((end ? -1 : 1)*cosf(a)).sub(vec(out).mul(sinf(a)));
+    takeoff = vec(contact).sub(vec(dir).mul(bouncerunup(bouncespeed, secs)));
+    takeoff.z -= height;
+}
+
+// whether that path is open: the takeoff is on a floor that high and the straight line to the
+// contact is clear at the feet, the eyes and on the side of the body away from the wall
+static bool bounceapproach(const vec &mid, const vec &along, const vec &out, float height, float secs, int angle, int end)
+{
+    const float eye = 14;
+    vec start, contact, dir;
+    bouncepath(mid, along, out, height, secs, angle, end, start, contact, dir);
+    float ground = bounceray(vec(start).add(vec(0, 0, 1)), vec(0, 0, -1), 5);
+    if(ground < 0.5f || ground > 3.5f) return false;
+    vec side = vec(dir.y, -dir.x, 0);
+    if(side.dot(out) < 0) side.neg();
+    const float lifts[3] = { 1, eye, eye/2 };
+    loopj(3)
+    {
+        vec from = vec(start).add(vec(0, 0, lifts[j])), to = vec(contact).add(vec(0, 0, lifts[j]));
+        if(j == 2) { from.add(vec(side).mul(BOUNCERADIUS - 0.5f)); to.add(vec(side).mul(BOUNCERADIUS - 0.5f)); }
+        vec ray = vec(to).sub(from);
+        float len = ray.magnitude();
+        if(len <= 0 || bounceray(from, ray.div(len), len) < len) return false;
+    }
+    return true;
+}
+
+void bounceapproachpath(const bounceedge &e, int angle, int end, vec &takeoff, vec &contact)
+{
+    float gain, secs;
+    vec along = vec(e.b).sub(e.a), dir;
+    along.z = 0;
+    along.normalize();
+    if(!standingjump(e.height, gain, secs)) secs = 0;
+    bouncepath(vec(e.a).add(e.b).mul(0.5f), along, e.out, e.height, secs, angle, end, takeoff, contact, dir);
+}
+
+static vector<bounceedge> bedges;
+static cube *bedgesroot = NULL;
+static string bedgesmap = "";
+
+// the side the probe hit at p is near vertical: from a unit out, a quarter unit higher and lower,
+// the same ray hits it about as close (a wall leaning by WALLZ moves it 0.05)
+static bool sidewall(const vec &p, const vec &out)
+{
+    loopi(2)
+    {
+        vec q = vec(out).add(p);
+        q.z += i ? 0.25f : -0.25f;
+        if(fabs(bounceray(q, vec(out).neg(), 2) - 1) > 0.1f) return false;
+    }
+    return true;
+}
+
+// splits a top edge into pieces of at most 8 units and keeps those with a near-vertical side right
+// under them and a floor in front far enough down not to be a stair
+static void addbounceedge(const vec &a, const vec &b, const vec &out)
+{
+    vec along = vec(b).sub(a);
+    along.z = 0;
+    along.normalize();
+    int pieces = max(int(ceil(a.dist(b)/8)), 1);
+    loopi(pieces)
+    {
+        vec pa = vec(b).sub(a).mul(float(i)/pieces).add(a), pb = vec(b).sub(a).mul(float(i+1)/pieces).add(a),
+            mid = vec(pa).add(pb).mul(0.5f);
+        vec probe = vec(out).mul(3).add(mid);
+        probe.z -= 0.5f;
+        float wall = bounceray(probe, vec(out).neg(), 4);
+        if(wall < 2 || wall > 3.6f || !sidewall(vec(out).neg().mul(wall).add(probe), out)) continue;
+        vec outside = vec(out).mul(0.5f).add(mid);
+        outside.z -= 0.5f;
+        float drop = bounceray(outside, vec(0, 0, -1), 128);
+        if(drop <= 0 || drop >= 128) continue;
+        float height = drop + 0.5f;
+        if(height <= STAIRHEIGHT) continue;
+        bounceedge &e = bedges.add();
+        e.a = pa;
+        e.b = pb;
+        e.out = out;
+        e.height = height;
+        e.keep = 0;
+        e.approaches = 0;
+        float gain, secs;
+        if(standingjump(height, gain, secs)) loopk(NUMBOUNCEANGLES) loopj(2) if(bounceapproach(mid, along, out, height, secs, k, j))
+        {
+            e.approaches |= 1<<(2*k + j);
+            if(!e.keep) e.keep = cosf(BOUNCEANGLES[k]*RAD);
+        }
+    }
+}
+
+// a clip material cube is a solid box to players: its top is a floor unless something they collide
+// with sits on it, and each of its sides is an edge where the cube beside it isn't solid too
+static void addclipedges(const ivec &co, int size)
+{
+    vec lo(co), centre = vec(lo).add(size/2.0f);
+    centre.z = lo.z + size;
+    if(bounceray(vec(centre).add(vec(0, 0, 0.05f)), vec(0, 0, 1), 0.5f) < 0.5f) return;
+    vec p[4] = { vec(lo.x, lo.y, centre.z), vec(lo.x + size, lo.y, centre.z), vec(lo.x + size, lo.y + size, centre.z), vec(lo.x, lo.y + size, centre.z) };
+    static const vec outs[4] = { vec(0, -1, 0), vec(1, 0, 0), vec(0, 1, 0), vec(-1, 0, 0) };
+    loopk(4) addbounceedge(p[k], p[(k+1)&3], outs[k]);
+}
+
+static void findbounceedges(const cube *c, const ivec &o, int size)
+{
+    loopi(8)
+    {
+        ivec co(i, o, size);
+        const cube &cu = c[i];
+        if(cu.children) { findbounceedges(cu.children, co, size>>1); continue; }
+        int clip = cu.material&MATF_CLIP;
+        if(clip == MAT_CLIP) { addclipedges(co, size); continue; }
+        if(clip == MAT_NOCLIP || isempty(cu) || !visibleface(cu, O_TOP, co, size)) continue;
+        ivec v[4];
+        genfaceverts(cu, O_TOP, v);
+        vec p[4], centre(0, 0, 0);
+        loopk(4) { p[k] = vec(v[k]).mul(size/8.0f).add(vec(co)); centre.add(p[k]); }
+        centre.mul(0.25f);
+        bool floorlike = true;
+        loopk(2)
+        {
+            vec n;
+            n.cross(vec(p[k+1]).sub(p[0]), vec(p[k+2]).sub(p[0]));
+            if(n.squaredlen() < 1e-6f) continue;
+            n.normalize();
+            if(fabs(n.z) < FLOORZ) floorlike = false;
+        }
+        if(!floorlike || (lookupmaterial(vec(centre).add(vec(0, 0, 0.5f)))&MATF_CLIP) == MAT_CLIP) continue;
+        loopk(4)
+        {
+            const vec &a = p[k], &b = p[(k+1)&3];
+            vec d = vec(b).sub(a);
+            if(d.magnitude2() < 0.5f) continue;
+            vec out(d.y, -d.x, 0);
+            out.normalize();
+            if(out.dot(vec(a).add(b).mul(0.5f).sub(centre)) < 0) out.neg();
+            addbounceedge(a, b, out);
+        }
+    }
+}
+
+const vector<bounceedge> &bounceedges(float speed)
+{
+    if(bedgesroot != worldroot || strcmp(bedgesmap, game::getclientmap()) || speed != bouncespeed)
+    {
+        bouncespeed = speed;
+        bedgesroot = worldroot;
+        copystring(bedgesmap, game::getclientmap());
+        bedges.setsize(0);
+        int start = SDL_GetTicks();
+        findbounceedges(worldroot, ivec(0, 0, 0), worldsize>>1);
+        logoutf("bounce edges: %d in %d ms", bedges.length(), int(SDL_GetTicks()) - start);
+    }
+    return bedges;
 }
 
 int physsteps = 0, physframetime = PHYSFRAMETIME, lastphysframe = 0;

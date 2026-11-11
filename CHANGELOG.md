@@ -14,6 +14,9 @@
 - Share a replay in the hub from its replay menu; others see it in the console and watch it with /sharedlist.
 - The speedrun menu and the replay browser open without a freeze.
 - Custom menu backgrounds show from the loading screen on, in full quality.
+- Practice visualizers mark bounce edges: ledges that cut gravity when risen past, with their gain and approaches.
+- Practice visualizers show the last jump's takeoff and the last bump's numbers.
+- /gamespeed goes down to 1.
 
 ## v0.3.14
 
