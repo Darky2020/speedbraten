@@ -134,6 +134,19 @@ void writeinitcfg()
     f->printf("soundbufferlen %d\n", soundbufferlen);
     if(audiodriver[0]) f->printf("audiodriver %s\n", escapestring(audiodriver));
     delete f;
+
+    // read right after init.cfg, so the loading screen already shows the chosen menu background;
+    // a file of its own, since other clients sharing the home directory rewrite init.cfg
+    f = openutf8file("speedbraten_init.cfg", "w");
+    if(!f) return;
+    f->printf("// automatically written on exit, DO NOT MODIFY\n// modify settings in game\n");
+    extern int menubackground, menubackgrounddim, menubackgroundlogo;
+    extern char *menubackgroundfile;
+    f->printf("menubackground %d\n", menubackground);
+    f->printf("menubackgroundfile %s\n", escapestring(menubackgroundfile));
+    f->printf("menubackgrounddim %d\n", menubackgrounddim);
+    f->printf("menubackgroundlogo %d\n", menubackgroundlogo);
+    delete f;
 }
 
 COMMAND(quit, "");
@@ -1385,6 +1398,7 @@ int main(int argc, char **argv)
         break;
     }
     execfile("init.cfg", false);
+    execfile("speedbraten_init.cfg", false);
     if(overridedir[0]) logoutf("Using file patches: %s", overridedir);
     for(int i = 1; i<argc; i++)
     {

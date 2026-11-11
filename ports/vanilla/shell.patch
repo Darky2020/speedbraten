@@ -463,7 +463,27 @@
  
  dynent *player = NULL;
  
-@@ -177,8 +183,13 @@
+@@ -125,6 +131,19 @@
+     f->printf("soundbufferlen %d\n", soundbufferlen);
+     if(audiodriver[0]) f->printf("audiodriver %s\n", escapestring(audiodriver));
+     delete f;
++
++    // read right after init.cfg, so the loading screen already shows the chosen menu background;
++    // a file of its own, since other clients sharing the home directory rewrite init.cfg
++    f = openutf8file("speedbraten_init.cfg", "w");
++    if(!f) return;
++    f->printf("// automatically written on exit, DO NOT MODIFY\n// modify settings in game\n");
++    extern int menubackground, menubackgrounddim, menubackgroundlogo;
++    extern char *menubackgroundfile;
++    f->printf("menubackground %d\n", menubackground);
++    f->printf("menubackgroundfile %s\n", escapestring(menubackgroundfile));
++    f->printf("menubackgrounddim %d\n", menubackgrounddim);
++    f->printf("menubackgroundlogo %d\n", menubackgroundlogo);
++    delete f;
+ }
+ 
+ COMMAND(quit, "");
+@@ -177,8 +196,13 @@
      gle::end();
  }
  
@@ -477,7 +497,7 @@
      if(!inbetweenframes && !force) return;
  
      if(!restore || force) stopsounds(); // stop sounds while loading
-@@ -198,21 +209,25 @@
+@@ -198,21 +222,25 @@
          lastw = w;
          lasth = h;
  
@@ -509,7 +529,7 @@
      loopi(restore ? 1 : 3)
      {
          hudmatrix.ortho(0, w, h, 0, -1, 1);
-@@ -224,31 +239,58 @@
+@@ -224,31 +252,58 @@
          gle::defvertex(2);
          gle::deftexcoord0();
  
@@ -585,7 +605,7 @@
          if(caption)
          {
              int tw = text_width(caption);
-@@ -330,6 +372,9 @@
+@@ -330,6 +385,9 @@
  
  void renderprogress(float bar, const char *text, GLuint tex, bool background)   // also used during loading
  {
@@ -595,7 +615,7 @@
      if(!inbetweenframes || drawtex) return;
  
      extern int menufps, maxfps;
-@@ -472,7 +517,7 @@
+@@ -472,7 +530,7 @@
  VARNP(relativemouse, userelativemouse, 0, 1, 1);
  #endif
  
@@ -604,7 +624,7 @@
  
  #ifdef SDL_VIDEO_DRIVER_X11
  VAR(sdl_xgrab_bug, 0, 0, 1);
-@@ -480,6 +525,9 @@
+@@ -480,6 +538,9 @@
  
  void inputgrab(bool on, bool delay = false)
  {
@@ -614,7 +634,7 @@
  #ifdef SDL_VIDEO_DRIVER_X11
      bool wasrelativemouse = relativemouse;
  #endif
-@@ -637,6 +685,13 @@
+@@ -637,6 +698,13 @@
  
  void setupscreen()
  {
@@ -628,7 +648,7 @@
      if(glcontext)
      {
          SDL_GL_DeleteContext(glcontext);
-@@ -710,6 +765,9 @@
+@@ -710,6 +778,9 @@
          }
          screen = SDL_CreateWindow("Cube 2: Sauerbraten", winx, winy, winw, winh, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS | flags);
          if(!screen) continue;
@@ -638,13 +658,10 @@
  
      #ifdef __APPLE__
          static const int glversions[] = { 32, 20 };
-@@ -914,6 +972,53 @@
-         dx += event.motion.xrel;
-         dy += event.motion.yrel;
-         events.remove();
-+    }
-+}
-+
+@@ -917,6 +988,53 @@
+     }
+ }
+ 
 +#ifndef HEADLESS
 +// Harness: pushes an SDL event, which then goes through checkinput like a real one.
 +// kind: 0 key down, 1 key up (code = SDL keycode), 2 button down, 3 button up (code = SDL
@@ -689,10 +706,13 @@
 +        case SDL_BUTTON_X2 + 2: return -11;
 +        case SDL_BUTTON_X2 + 3: return -12;
 +        default: return 0;
-     }
- }
- 
-@@ -946,6 +1051,18 @@
++    }
++}
++
+ void checkinput()
+ {
+     if(interceptkeysym) clearinterceptkey();
+@@ -946,6 +1064,18 @@
  
              case SDL_KEYDOWN:
              case SDL_KEYUP:
@@ -711,7 +731,7 @@
                  if(keyrepeatmask || !event.key.repeat)
                      processkey(event.key.keysym.sym, event.key.state==SDL_PRESSED, event.key.keysym.mod | SDL_GetModState());
                  break;
-@@ -958,6 +1075,11 @@
+@@ -958,6 +1088,11 @@
                          break;
  
                      case SDL_WINDOWEVENT_FOCUS_GAINED:
@@ -723,7 +743,7 @@
                          shouldgrab = true;
                          break;
                      case SDL_WINDOWEVENT_ENTER:
-@@ -967,6 +1089,7 @@
+@@ -967,6 +1102,7 @@
  
                      case SDL_WINDOWEVENT_LEAVE:
                      case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -731,7 +751,7 @@
                          shouldgrab = false;
                          focused = -1;
                          break;
-@@ -998,11 +1121,18 @@
+@@ -998,11 +1134,18 @@
                  break;
  
              case SDL_MOUSEMOTION:
@@ -751,7 +771,7 @@
                      mousemoved = true;
                  }
                  else if(shouldgrab) inputgrab(grabinput = true);
-@@ -1011,6 +1141,13 @@
+@@ -1011,6 +1154,13 @@
              case SDL_MOUSEBUTTONDOWN:
              case SDL_MOUSEBUTTONUP:
                  //if(lasttype==event.type && lastbut==event.button.button) break; // why?? get event twice without it
@@ -765,7 +785,7 @@
                  switch(event.button.button)
                  {
                      case SDL_BUTTON_LEFT: processkey(-1, event.button.state==SDL_PRESSED); break;
-@@ -1027,6 +1164,14 @@
+@@ -1027,6 +1177,14 @@
                  break;
  
              case SDL_MOUSEWHEEL:
@@ -780,7 +800,7 @@
                  if(event.wheel.y > 0) { processkey(-4, true); processkey(-4, false); }
                  else if(event.wheel.y < 0) { processkey(-5, true); processkey(-5, false); }
                  else if(event.wheel.x > 0) { processkey(-8, true); processkey(-8, false); }
-@@ -1040,6 +1185,9 @@
+@@ -1040,6 +1198,9 @@
  
  void swapbuffers(bool overlay)
  {
@@ -790,7 +810,7 @@
      recorder::capture(overlay);
      gle::disable();
      SDL_GL_SwapWindow(screen);
-@@ -1047,28 +1195,44 @@
+@@ -1047,28 +1208,44 @@
  
  VARP(menufps, 0, 60, 1000);
  VARP(maxfps, 0, 200, 1000);
@@ -849,7 +869,7 @@
  }
  
  #if defined(WIN32) && !defined(_DEBUG) && !defined(__GNUC__)
-@@ -1176,7 +1340,17 @@
+@@ -1176,7 +1353,17 @@
      return max(millis, totalmillis);
  }
  
@@ -867,7 +887,7 @@
  
  int main(int argc, char **argv)
  {
-@@ -1193,10 +1367,17 @@
+@@ -1193,10 +1380,17 @@
  
      int dedicated = 0;
      char *load = NULL, *initscript = NULL;
@@ -885,10 +905,11 @@
      // set log after home dir, but before anything else
      for(int i = 1; i<argc; i++) if(argv[i][0]=='-' && argv[i][1] == 'g')
      {
-@@ -1206,11 +1387,13 @@
+@@ -1206,11 +1400,14 @@
          break;
      }
      execfile("init.cfg", false);
++    execfile("speedbraten_init.cfg", false);
 +    if(overridedir[0]) logoutf("Using file patches: %s", overridedir);
      for(int i = 1; i<argc; i++)
      {
@@ -899,7 +920,7 @@
              case 'r': /* compat, ignore */ break;
              case 'k':
              {
-@@ -1238,8 +1421,15 @@
+@@ -1238,8 +1435,15 @@
                  break;
              }
              case 'x': initscript = &argv[i][2]; break;
@@ -915,7 +936,7 @@
          else gameargs.add(argv[i]);
      }
      initing = NOT_INITING;
-@@ -1250,7 +1440,11 @@
+@@ -1250,7 +1454,11 @@
      {
          logoutf("init: sdl");
  
@@ -927,7 +948,7 @@
  
  #ifdef SDL_VIDEO_DRIVER_X11
          SDL_version version;
-@@ -1298,8 +1492,10 @@
+@@ -1298,8 +1506,10 @@
      camera1 = player = game::iterdynents(0);
      emptymap(0, true, NULL, false);
  
@@ -938,7 +959,7 @@
  
      logoutf("init: cfg");
      initing = INIT_LOAD;
-@@ -1312,6 +1508,8 @@
+@@ -1312,6 +1522,8 @@
      defformatstring(gamecfgname, "data/game_%s.cfg", game::gameident());
      execfile(gamecfgname);
      if(game::savedservers()) execfile(game::savedservers(), false);
@@ -947,7 +968,7 @@
  
      identflags |= IDF_PERSIST;
  
-@@ -1320,6 +1518,7 @@
+@@ -1320,6 +1532,7 @@
          execfile(game::defaultconfig());
          writecfg(game::restoreconfig());
      }
@@ -955,7 +976,7 @@
      execfile(game::autoexec(), false);
  
      identflags &= ~IDF_PERSIST;
-@@ -1351,6 +1550,11 @@
+@@ -1351,6 +1564,11 @@
  
      if(initscript) execute(initscript);
  
@@ -967,7 +988,7 @@
      initmumble();
      resetfpshistory();
  
-@@ -1359,45 +1563,78 @@
+@@ -1359,45 +1577,78 @@
  
      for(;;)
      {

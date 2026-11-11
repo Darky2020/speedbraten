@@ -38,13 +38,18 @@ ICOMMAND(menubackgroundfileat, "i", (int *i), result(menubgfiles.inrange(*i) ? m
 
 static void switchmenubackground(const char *file)
 {
-    Texture *t = file[0] ? textureload(file, 3, true, false) : NULL;
+    // full quality: texcompress would compress any image this large
+    defformatstring(name, "<nocompress>%s", file);
+    Texture *t = file[0] ? textureload(name, 3, true, false) : NULL;
     if(t == notexture) t = NULL;
     copystring(menubgcurfile, file);
     if(t == menubgcur) return;
+    // the first image, usually picked on the loading screen, appears at once instead of fading in
+    static bool shown = false;
+    menubgchanged = shown || !t ? totalmillis : totalmillis - menubackgroundfade;
+    if(t) shown = true;
     menubgprev = menubgcur;
     menubgcur = t;
-    menubgchanged = totalmillis;
 }
 
 // picks the image to show now; false to draw the tiles
