@@ -54,6 +54,8 @@ extern int hubstate();
 extern const char *huberror();
 extern bool hublearnedkey(uchar *channelkey);
 extern bool hubsend(int type, const uchar *data, int len);
+// bytes waiting to go out to the hub; hubsend fails the connection past a few MB
+extern int hubqueued();
 extern bool hubreceive(int &type, vector<uchar> &payload);
 
 // an input device the system reports; kind: 0 other, 1 keyboard, 2 mouse

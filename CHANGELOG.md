@@ -11,6 +11,9 @@
 - Races in ffa and coop edit share one board per map.
 - Following a player right as a demo starts no longer leaves the view stuck under the map.
 - Spectating or watching a replay shows the runner's name, not yours (scoreboard, dialogue).
+- Share a replay in the hub from its replay menu; others see it in the console and watch it with /sharedlist.
+- The speedrun menu and the replay browser open without a freeze.
+- Custom menu backgrounds show from the loading screen on, in full quality.
 
 ## v0.3.14
 

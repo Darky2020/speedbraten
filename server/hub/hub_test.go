@@ -61,13 +61,14 @@ type msg struct {
 }
 
 type client struct {
-	t    *testing.T
-	key  noise.DHKey
-	ch   *noisechan.Conn
-	conn net.Conn
-	in   chan msg
-	id   uint64
-	name string
+	t      *testing.T
+	key    noise.DHKey
+	ch     *noisechan.Conn
+	conn   net.Conn
+	in     chan msg
+	id     uint64
+	name   string
+	notice string // the NOTICE before the last SHARESTATE
 }
 
 func (f *fixture) connect(key noise.DHKey, addr, name string) *client {

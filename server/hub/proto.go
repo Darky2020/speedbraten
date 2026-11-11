@@ -32,6 +32,10 @@ const (
 	MsgAway         = 21
 	MsgBoardSummary = 22
 	MsgViewEnd      = 23
+	MsgShare        = 24
+	MsgShareData    = 25
+	MsgSharedList   = 26
+	MsgSharedGet    = 27
 
 	MsgWelcome          = 101
 	MsgWitness          = 102
@@ -58,6 +62,10 @@ const (
 	MsgLegacyData       = 123
 	MsgBoardSummaryData = 124
 	MsgSpecWait         = 125
+	MsgShareState       = 126
+	MsgShared           = 127
+	MsgSharedRows       = 128
+	MsgSharedData       = 129
 
 	StateMenu    = 0
 	StatePlaying = 1

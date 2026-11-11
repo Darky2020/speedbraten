@@ -52,6 +52,8 @@ type Config struct {
 	Thumbs string
 	// Legacy: where flagrun boards' legacy record files are kept (legacy.go); none without it
 	Legacy string
+	// Shared: where shared replays are kept (share.go); players can't share without it
+	Shared string
 	// Feed, if set, hears of joins, leaves, chat, records and the lobbies (feed.go)
 	Feed Feed
 	Now  func() time.Time
@@ -104,6 +106,9 @@ type player struct {
 	boardBusy  bool // a BOARD request is being answered
 	replayBusy bool // a REPLAY request is being answered
 	mapBusy    bool // a GETMAP request is being answered
+	sharedBusy bool // a SHAREDGET request is being answered
+	upload     *upload
+	shares     []time.Time // when this player shared, the last hour
 	out        chan []byte
 	closed     bool
 	fed        bool // the feed was told this connection's player joined
@@ -230,6 +235,8 @@ func (h *Hub) Serve(c net.Conn, addr string) {
 		h.mu.Lock()
 		if typ == MsgPos {
 			h.relayPos(p, msg)
+		} else if typ == MsgShareData {
+			h.shareData(p, msg)
 		} else if !p.msgs.take(h.cfg.Now(), MsgRate, MsgBurst) {
 			h.kick(p, "too many messages")
 		} else if err := h.handle(p, typ, msg); err != nil {
@@ -614,6 +621,12 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 		return h.boardRequest(p, &r)
 	case MsgReplay:
 		return h.replayRequest(p, &r)
+	case MsgShare:
+		return h.shareStart(p, &r)
+	case MsgSharedList:
+		return h.sharedList(p, &r)
+	case MsgSharedGet:
+		return h.sharedGet(p, &r)
 	case MsgGetMap:
 		return h.mapRequest(p, &r)
 	case MsgLegacy:

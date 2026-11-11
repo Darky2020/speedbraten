@@ -146,6 +146,11 @@ func main() {
 	releases := flag.String("releases", "https://api.github.com/repos/Darky2020/speedbraten/releases/latest", "GitHub API URL of the newest client release, \"\" for none")
 	discordBot := flag.String("discordbot", "", "file holding the Discord bot's token")
 	discordChannels := flag.String("discord", "", "Discord channel ids (comma-separated, or @file: one per line) for joins, leaves, chat, records and the lobbies, and whose messages players see")
+	shared := flag.String("shared", "", "dir of the replays players share, \"-\" to turn sharing off; default <data dir>/shared")
+	flag.IntVar(&hub.MaxShare, "sharemax", hub.MaxShare, "largest replay players may share, bytes")
+	flag.IntVar(&hub.ShareKeep, "sharekeep", hub.ShareKeep, "shared replays the hub keeps")
+	flag.DurationVar(&hub.ShareEvery, "shareevery", hub.ShareEvery, "time a player waits between shares")
+	flag.IntVar(&hub.SharesPerHour, "sharehour", hub.SharesPerHour, "shares a player may make in an hour")
 	flag.Parse()
 
 	key, err := loadKey(filepath.Join(*dir, "hub.key"))
@@ -159,6 +164,13 @@ func main() {
 	cfg := hub.Config{Key: key, DB: filepath.Join(*dir, "hub.db"), Admins: adm, Maps: *maps, RaceMaps: *raceMaps, Legacy: *legacy}
 	if *raceMaps != "" {
 		cfg.Thumbs = filepath.Join(*dir, "thumbs")
+	}
+	switch *shared {
+	case "":
+		cfg.Shared = filepath.Join(*dir, "shared")
+	case "-":
+	default:
+		cfg.Shared = *shared
 	}
 	var discordToken string
 	var channels []string

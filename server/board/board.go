@@ -517,6 +517,16 @@ func (s *Store) Name(install string) string {
 	return n
 }
 
+// RunOfContent is the witness's run whose finished file has that content hash (hex).
+func (s *Store) RunOfContent(content string) (int64, bool) {
+	rows, err := s.witness.Query("SELECT id FROM runs WHERE content = ? ORDER BY id LIMIT 1", content)
+	if err != nil || len(rows) != 1 {
+		return 0, false
+	}
+	run, err := strconv.ParseInt(rows[0][0], 10, 64)
+	return run, err == nil
+}
+
 // File is the path of a run's replay as the witness stored it, signatures included.
 func (s *Store) File(run int64) (string, error) {
 	rows, err := s.witness.Query("SELECT IFNULL(file, '') FROM runs WHERE id = ?", run)

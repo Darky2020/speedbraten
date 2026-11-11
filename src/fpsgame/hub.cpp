@@ -116,15 +116,19 @@ namespace game
     static bool downloadwatch = false;
     static string downloadfile = "", downloadlabel = "", downloadmap = "";
     static vector<uchar> downloaddata;
+    static uint downloadshare = 0; // the shared replay being downloaded, 0 for none
 
     static void replaydownloadend()
     {
         downloadrun = 0;
+        downloadshare = 0;
         downloadlegacy = -1;
         downloaddata.setsize(0);
     }
 
-    static bool downloading() { return downloadrun || downloadlegacy >= 0; }
+    static void shareend();
+
+    static bool downloading() { return downloadrun || downloadlegacy >= 0 || downloadshare; }
 
     // adds a piece of the download; true once the whole file is saved
     static bool downloadpiece(int size, int offset, const uchar *data, int len)
@@ -162,6 +166,12 @@ namespace game
         replayinfo info;
         if(!readreplay(file, &run, info)) { conoutf(CON_ERROR, "could not read %s", file); return; }
         viewinputrun(run, file);
+    }
+
+    static void shareddata(uint id, int size, int offset, const uchar *data, int len)
+    {
+        if(!downloadshare || id != downloadshare) return;
+        if(downloadpiece(size, offset, data, len)) useboardreplay(downloadfile, downloadwatch, downloadlabel);
     }
 
     static void replaydata(uint run, int size, int offset, const uchar *data, int len)
@@ -640,6 +650,7 @@ namespace game
         spectateend("lost the connection to the hub");
         curboard = viewboard = hubboard();
         replaydownloadend();
+        shareend();
         mapdownloadend();
         thumbqueue.deletearrays();
         thumbsasked = 0;
@@ -674,6 +685,165 @@ namespace game
         puttext(w, s);
         hubsend(type, p.getbuf(), p.length());
     }
+
+    // Sharing replays through the hub. replayshare sends SHARE with the file's size; once the hub
+    // says go ahead the file goes out in pieces while the send queue has room, and the hub then
+    // tells everyone else online. sharedrefresh / sharedplay read the hub's buffer of recent shares.
+    enum { SHAREPIECE = 48<<10, SHAREQUEUE = 256<<10, SHAREMAX = 10<<20, SHAREWAIT = 10000 };
+    static vector<uchar> sharefile;
+    static int shareoffset = -1; // the next byte to send; -1 while waiting for the go-ahead
+    static int shareasked = 0;   // when SHARE went out while waiting; 0 without a share
+    static string sharename = "";
+
+    struct sharedrow
+    {
+        uint id, at;
+        string sharer, map, runner;
+        int mode, flags, runtimems, size;
+    };
+    static vector<sharedrow> sharedrows;
+
+    static void shareend()
+    {
+        sharefile.setsize(0);
+        shareoffset = -1;
+        shareasked = 0;
+        sharename[0] = '\0';
+    }
+
+    static bool sharing() { return sharefile.length() > 0; }
+
+    static void replayshare(const char *file)
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to share replays"); return; }
+        if(sharing()) { conoutf(CON_ERROR, "a replay is still being shared"); return; }
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) { conoutf(CON_ERROR, "could not open %s", file); return; }
+        stream::offset len = f->size();
+        if(len <= 0 || len > SHAREMAX) { delete f; conoutf(CON_ERROR, "replays over %d MB can't be shared", SHAREMAX>>20); return; }
+        sharefile.growbuf(int(len));
+        sharefile.setsize(int(f->read(sharefile.getbuf(), int(len))));
+        delete f;
+        if(sharefile.length() != int(len)) { shareend(); conoutf(CON_ERROR, "could not read %s", file); return; }
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(sharefile.length());
+        if(!hubsend(HM_SHARE, p.getbuf(), p.length())) { shareend(); return; }
+        const char *base = strrchr(file, '/');
+        copystring(sharename, base ? base+1 : file);
+        shareoffset = -1;
+        shareasked = max(totalmillis, 1);
+        conoutf("sharing %s..", sharename);
+    }
+    ICOMMAND(replayshare, "s", (char *file), replayshare(file));
+
+    static void shareupdate()
+    {
+        if(!sharing()) return;
+        if(shareoffset < 0)
+        {
+            if(shareasked && totalmillis - shareasked > SHAREWAIT) { conoutf(CON_ERROR, "this hub can't share replays yet"); shareend(); }
+            return;
+        }
+        while(shareoffset < sharefile.length() && hubqueued() < SHAREQUEUE)
+        {
+            int n = min(int(SHAREPIECE), sharefile.length() - shareoffset);
+            vector<uchar> p;
+            sbr2::byteswriter w(p);
+            w.var(shareoffset);
+            w.bytes(sharefile.getbuf() + shareoffset, n);
+            if(!hubsend(HM_SHAREDATA, p.getbuf(), p.length())) { shareend(); return; }
+            shareoffset += n;
+        }
+    }
+
+    static void sharestate(int state, uint id)
+    {
+        if(!sharing()) return;
+        if(state == SHARE_SEND) { shareoffset = 0; shareasked = 0; return; }
+        if(state == SHARE_DONE) conoutf("\f0shared %s with the hub", sharename);
+        shareend();
+    }
+
+    static bool getsharedrow(sbr2::bytesreader &r, sharedrow &row)
+    {
+        row.id = uint(r.var());
+        gettext(r, row.sharer, sizeof(row.sharer));
+        row.at = uint(r.var());
+        gettext(r, row.map, sizeof(row.map));
+        row.mode = int(r.svar());
+        row.flags = int(r.var());
+        gettext(r, row.runner, sizeof(row.runner));
+        row.runtimems = int(r.var());
+        row.size = int(r.var());
+        return r.ok;
+    }
+
+    // "Inko's forge flagrun (1:23.456)" or "Inko's forge run (unfinished)"
+    static const char *sharedtitle(const sharedrow &row)
+    {
+        static string s;
+        const char *kind = row.flags & SHARED_RACE ? "race" : row.flags & SHARED_FLAGRUN ? "flagrun" : "run";
+        formatstring(s, "%s's %s %s (%s)", row.runner[0] ? row.runner : "someone", row.map, kind, row.flags & SHARED_FINISHED ? formatruntime(row.runtimems) : "unfinished");
+        return s;
+    }
+
+
+    static void sharedlisted(vector<sharedrow> &rows)
+    {
+        sharedrows.setsize(0);
+        sharedrows.move(rows);
+    }
+
+    static void askshared()
+    {
+        if(hubready()) hubsend(HM_SHAREDLIST, NULL, 0);
+    }
+    static void sharedannounce(const sharedrow &row)
+    {
+        conoutf("\f2%s shared %s: /sharedlist to watch it", row.sharer, sharedtitle(row));
+        askshared();
+    }
+
+    ICOMMAND(sharedrefresh, "", (), askshared());
+    ICOMMAND(sharednum, "", (), intret(sharedrows.length()));
+    ICOMMAND(sharedfield, "is", (int *i, char *field),
+    {
+        if(!sharedrows.inrange(*i)) { result(""); return; }
+        const sharedrow &row = sharedrows[*i];
+        if(!strcmp(field, "title")) result(sharedtitle(row));
+        else if(!strcmp(field, "sharer")) result(row.sharer);
+        else if(!strcmp(field, "map")) result(row.map);
+        else if(!strcmp(field, "runner")) result(row.runner);
+        else if(!strcmp(field, "finished")) intret(row.flags & SHARED_FINISHED ? 1 : 0);
+        else if(!strcmp(field, "time")) result(row.flags & SHARED_FINISHED ? formatruntime(row.runtimems) : "");
+        else if(!strcmp(field, "size")) intret(row.size);
+        else result("");
+    });
+
+    // sharedplay n: watches the n-th replay of the last list (1 = newest), downloading it first
+    static void sharedplay(int n)
+    {
+        if(!sharedrows.inrange(n-1)) { conoutf(CON_ERROR, "no shared replay %d", n); return; }
+        const sharedrow &row = sharedrows[n-1];
+        string file;
+        formatstring(file, "replays/downloaded/shared%u_%s.sbr", row.id, row.map);
+        for(char *c = file + strlen("replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+        if(stream *f = openrawfile(path(file, true), "rb")) { delete f; useboardreplay(file, true, sharedtitle(row)); return; }
+        if(downloading()) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
+        if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download replays"); return; }
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.var(row.id);
+        if(!hubsend(HM_SHAREDGET, p.getbuf(), p.length())) return;
+        downloadshare = row.id;
+        downloadwatch = true;
+        copystring(downloadfile, file);
+        copystring(downloadlabel, sharedtitle(row));
+        downloaddata.setsize(0);
+        conoutf("downloading %s..", sharedtitle(row));
+    }
+    ICOMMAND(sharedplay, "i", (int *n), sharedplay(*n));
 
     // the kind of run the loaded map is played as
     static const char *runkind()
@@ -1293,6 +1463,34 @@ namespace game
                     if(r.ok) thumbdata(name, r.p, r.left());
                     break;
                 }
+                case HM_SHARESTATE:
+                {
+                    int state = int(r.var());
+                    uint id = uint(r.var());
+                    if(r.ok) sharestate(state, id);
+                    break;
+                }
+                case HM_SHARED:
+                {
+                    sharedrow row;
+                    if(getsharedrow(r, row)) sharedannounce(row);
+                    break;
+                }
+                case HM_SHAREDROWS:
+                {
+                    vector<sharedrow> rows;
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 100; i++) getsharedrow(r, rows.add());
+                    if(r.ok) sharedlisted(rows);
+                    break;
+                }
+                case HM_SHAREDDATA:
+                {
+                    uint id = uint(r.var());
+                    int size = int(r.var()), offset = int(r.var());
+                    if(r.ok) shareddata(id, size, offset, r.p, r.left());
+                    break;
+                }
                 case HM_REPLAYDATA:
                 {
                     uint run = uint(r.var());
@@ -1467,6 +1665,7 @@ namespace game
             followupdate();
             sendpos();
             sendruntime();
+            shareupdate();
             boardupdate();
             spectatefollowup();
             spectateupdate();

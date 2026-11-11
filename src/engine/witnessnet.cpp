@@ -365,6 +365,7 @@ bool hubsend(int type, const uchar *data, int len)
     return witnessnet::hub.sendmessage(type, data, len);
 }
 bool hubreceive(int &type, vector<uchar> &payload) { return witnessnet::receive(witnessnet::hub, type, payload); }
+int hubqueued() { return witnessnet::hub.out.length(); }
 
 // The interop check against server/cmd/noiseecho: sends count messages of growing size and
 // expects each one back unchanged. Prints NOISEINTEROP lines.
