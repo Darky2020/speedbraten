@@ -468,7 +468,7 @@ namespace sbr2
         return NULL;
     }
 
-    bool reader::parse(const uchar *buf, int len, const char *known)
+    bool reader::parse(const uchar *buf, int len, const char *known, const char *only)
     {
         chunks.deletecontents();
         heads.setsize(0);
@@ -501,9 +501,11 @@ namespace sbr2
             r.p += stored;
             uint crc = r.u32();
             if(!r.ok) { formatstring(error, "chunk %d (%s) is cut off", chunks.length(), c.type); return false; }
-            if(crc != uint(crc32(crc32(0, Z_NULL, 0), start, int(r.p - 4 - start)))) { formatstring(error, "chunk %d (%s): CRC mismatch", chunks.length(), c.type); return false; }
             if(c.flags & ~FLAG_ZSTD) { formatstring(error, "chunk %d (%s): unknown flags %d", chunks.length(), c.type, c.flags); return false; }
-            if(c.flags & FLAG_ZSTD)
+            bool skip = only && ((c.flags & FLAG_ZSTD) || (!strstr(only, c.type) && !istype(c.type, "SEGE") && !istype(c.type, "END ")));
+            if(!skip && crc != uint(crc32(crc32(0, Z_NULL, 0), start, int(r.p - 4 - start)))) { formatstring(error, "chunk %d (%s): CRC mismatch", chunks.length(), c.type); return false; }
+            if(skip) {}
+            else if(c.flags & FLAG_ZSTD)
             {
                 bytesreader pr(payload, int(stored));
                 unsigned long long raw = pr.var();
@@ -527,15 +529,18 @@ namespace sbr2
             if(ended && !sign) { formatstring(error, "chunk %d (%s) after END", chunks.length(), c.type); return false; }
             if(required(c.type) && !strstr(known, c.type)) { formatstring(error, "unknown required chunk %s", c.type); return false; }
             c.segment = segment;
-            if(!sign && !end) hashchunk(run, c.type, c.data.getbuf(), c.data.length());
+            if(!sign && !end && !only) hashchunk(run, c.type, c.data.getbuf(), c.data.length());
             if(istype(c.type, "SEGE"))
             {
                 bytesreader s(c.data.getbuf(), c.data.length());
                 unsigned long long index = s.var();
                 s.var();
                 if(!s.ok || s.left() || index != (unsigned long long)segment) { formatstring(error, "segment %d: bad SEGE", segment); return false; }
-                advance(head, run, "SBR2-seg");
-                heads.put(head, HASHSIZE);
+                if(!only)
+                {
+                    advance(head, run, "SBR2-seg");
+                    heads.put(head, HASHSIZE);
+                }
                 if(version >= 2 && stream.d) ZSTD_DCtx_reset(stream.d, ZSTD_reset_session_only);
                 segment++;
             }
@@ -548,8 +553,12 @@ namespace sbr2
                 uchar stored[HASHSIZE];
                 s.bytes(stored, HASHSIZE);
                 if(!s.ok || s.left() || count != (unsigned long long)segment) { copystring(error, "bad END chunk"); return false; }
-                contentok = !memcmp(stored, content, HASHSIZE);
-                if(!contentok) { copystring(error, "content hash mismatch"); return false; }
+                if(only) memcpy(content, stored, HASHSIZE);
+                else
+                {
+                    contentok = !memcmp(stored, content, HASHSIZE);
+                    if(!contentok) { copystring(error, "content hash mismatch"); return false; }
+                }
                 ended = true;
             }
             chunk *keep = new chunk;

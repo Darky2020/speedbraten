@@ -136,14 +136,16 @@ namespace sbr2
         vector<chunk *> chunks;
         int version;
         vector<uchar> heads;     // HASHSIZE bytes per closed segment
-        uchar content[HASHSIZE]; // recomputed content hash
+        uchar content[HASHSIZE]; // recomputed content hash (with only: the one END stores)
         bool contentok;          // END holds the recomputed content hash
         string error;
         reader() : version(0) {}
         ~reader() { chunks.deletecontents(); }
         // known: the chunk types this reader understands (4 chars each, concatenated); an unknown
         // required chunk is an error. Returns false with error set on any problem.
-        bool parse(const uchar *buf, int len, const char *known);
+        // only: a quick pass that keeps the data of only these chunk types (SEGE and END always,
+        // compressed chunks never) and hashes nothing, so heads stays empty and contentok false.
+        bool parse(const uchar *buf, int len, const char *known, const char *only = NULL);
         const chunk *find(const char *type, int from = 0) const;
     };
 

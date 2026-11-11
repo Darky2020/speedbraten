@@ -9,6 +9,7 @@
 #include "blake3.h"
 #include "witnessproto.h"
 #include "hubproto.h"
+#include <sys/stat.h>
 
 namespace game
 {
@@ -833,7 +834,9 @@ namespace game
     // to which the last attempt can be played: the start of its last closed segment, as a
     // segment spans a fixed number of ticks and the attempt may end anywhere in its last one
     // (0 before it has closed one).
-    static bool readsbr2chunks(const char *file, const vector<sbr2::chunk *> &chunks, int version, inputrun *run, replayinfo &info, int *known = NULL)
+    // headersonly: the chunks come from a reader::parse with only, so compressed ones are empty
+    // and only their order is checked
+    static bool readsbr2chunks(const char *file, const vector<sbr2::chunk *> &chunks, int version, inputrun *run, replayinfo &info, int *known = NULL, bool headersonly = false)
     {
         info = replayinfo();
         info.version = version;
@@ -848,7 +851,7 @@ namespace game
         {
             const sbr2::chunk &c = *chunks[i];
             sbr2::bytesreader r(c.data.getbuf(), c.data.length());
-            bool ok = true, parsed = true;
+            bool ok = true, parsed = true, skipped = headersonly && (c.flags & sbr2::FLAG_ZSTD);
             if(!memcmp(c.type, "META", 4)) { ok = !meta && i == 0 && readmeta(r, info); meta = true; }
             else if(!memcmp(c.type, "DATA", 4))
             {
@@ -857,7 +860,7 @@ namespace game
             }
             else if(!memcmp(c.type, "ATTM", 4))
             {
-                ok = data && !result && (!v2 || dataforattempt) && int(r.var()) == attempts;
+                ok = data && !result && (!v2 || dataforattempt) && (skipped || int(r.var()) == attempts);
                 dataforattempt = false;
                 attempts++;
                 nexttick = lastlo = 0;
@@ -868,12 +871,13 @@ namespace game
             }
             else if(!memcmp(c.type, "bIND", 4))
             {
-                ok = data && !result && (v2 || (!attempts && binds.empty())) && readbinds(r, binds);
+                ok = data && !result && (v2 || (!attempts && binds.empty())) && (skipped || readbinds(r, binds));
             }
             else if(!memcmp(c.type, "gHST", 4))
             {
                 ok = attempts > 0 && !result;
-                if(v2)
+                if(skipped) parsed = false;
+                else if(v2)
                 {
                     int index = int(r.var());
                     ok = ok && r.ok && index >= 0 && index < attempts;
@@ -1037,6 +1041,26 @@ namespace game
     }
 
     // With run == NULL only the header is read.
+    // The info of a complete replay without decompressing or hashing it: rd keeps its chunks (the
+    // compressed ones empty) for signedverdict, which then trusts the content hash END stores.
+    static bool readreplayheaders(const char *file, sbr2::reader &rd, replayinfo &info, int &size)
+    {
+        stream *f = openrawfile(path(file, true), "rb");
+        if(!f) return false;
+        stream::offset len = f->size();
+        vector<uchar> buf;
+        if(len > 0 && len < (1<<30))
+        {
+            buf.growbuf(int(len));
+            buf.setsize(int(f->read(buf.getbuf(), int(len))));
+        }
+        delete f;
+        size = buf.length();
+        if(buf.length() < 4 || memcmp(buf.getbuf(), "SBR2", 4)) return false;
+        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS, "META" "DATA" "RSLT" "sIGN")) { conoutf(CON_ERROR, "replay %s: %s", file, rd.error); return false; }
+        return readsbr2chunks(file, rd.chunks, rd.version, NULL, info, NULL, true);
+    }
+
     bool readreplay(const char *file, inputrun *run, replayinfo &info)
     {
         stream *f = openrawfile(path(file, true), "rb");
@@ -1132,18 +1156,10 @@ namespace game
         return NULL;
     }
 
-    // the latest verdict a trusted witness signed over the file's content, "" without one
-    static void fileverdict(const char *file, const vector<uchar> &keys, char *out, int outlen)
+    // the latest verdict a trusted witness signed over the parsed file's content, "" without one
+    static void signedverdict(const sbr2::reader &rd, const vector<uchar> &keys, char *out, int outlen)
     {
         out[0] = '\0';
-        stream *f = openrawfile(path(file, true), "rb");
-        if(!f) return;
-        vector<uchar> buf;
-        uchar chunk[65536];
-        for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
-        delete f;
-        sbr2::reader rd;
-        if(!rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) return;
         unsigned long long latestus = 0;
         loopv(rd.chunks)
         {
@@ -2401,12 +2417,51 @@ namespace game
     // Replay browser: replayscan caches the headers of all replay files, newest first.
     struct replayentry
     {
-        string file, verdict; // verdict: the latest a trusted witness signed, "" without one
+        string file;
         bool kept, pb, assisted;
         int size;
         replayinfo info;
     };
     static vector<replayentry> replaylist;
+
+    // what the header read found in each replay file, kept until the file's size or modification
+    // time changes; verdict: the latest a trusted witness signed, "" without one, read when first shown
+    struct replaycacheentry
+    {
+        long long size, mtime;
+        bool ok, verdictread;
+        replayinfo info;
+        string verdict;
+    };
+    static hashtable<const char *, replaycacheentry> replaycache;
+
+    static bool filestamp(const char *file, long long &size, long long &mtime)
+    {
+        struct stat st;
+        // replays are written to the home directory; findfile would first probe the other roots
+        defformatstring(home, "%s%s", homedir, path(file, true));
+        if(stat(home, &st) && stat(findfile(path(file, true), "rb"), &st)) return false;
+        size = st.st_size;
+        mtime = st.st_mtime;
+        return true;
+    }
+
+    static replaycacheentry *cachedreplay(const char *file)
+    {
+        long long size, mtime;
+        if(!filestamp(file, size, mtime)) return NULL;
+        replaycacheentry *c = replaycache.access(file);
+        if(c && c->size == size && c->mtime == mtime) return c;
+        if(!c) c = &replaycache[newstring(file)];
+        c->size = size;
+        c->mtime = mtime;
+        c->verdictread = false;
+        c->verdict[0] = '\0';
+        sbr2::reader rd;
+        int len;
+        c->ok = readreplayheaders(file, rd, c->info, len);
+        return c;
+    }
     static vector<uchar> replaylistkeys;
 
     MOD(SVARP, replayfilter, "");
@@ -2480,16 +2535,15 @@ namespace game
         {
             replayentry e;
             copystring(e.file, files[i]);
-            if(!readreplay(e.file, NULL, e.info) || !containsnocase(e.info.map, replayfilter) || !replaylisted(e.info, kept)) continue;
+            replaycacheentry *c = cachedreplay(e.file);
+            if(!c || !c->ok || !containsnocase(c->info.map, replayfilter) || !replaylisted(c->info, kept)) continue;
+            e.info = c->info;
+            e.size = int(c->size);
             e.pb = listedin(pbfiles, e.file);
             e.assisted = listedin(assistedfiles, e.file);
             if(replayfilterpb && !e.pb) continue;
             if(replayfilterassisted && e.assisted != (replayfilterassisted == 2)) continue;
             e.kept = kept;
-            fileverdict(e.file, replaylistkeys, e.verdict, sizeof(e.verdict));
-            stream *f = openrawfile(path(e.file, true), "rb");
-            e.size = f ? int(f->size()) : 0;
-            delete f;
             replaylist.add(e);
         }
         files.deletearrays();
@@ -2500,6 +2554,8 @@ namespace game
         replaylist.setsize(0);
         replaylistkeys.setsize(0);
         loadwitnesskeys(NULL, replaylistkeys);
+        // the trusted keys may have changed since the verdicts were read
+        enumerate(replaycache, replaycacheentry, c, c.verdictread = false);
         pbfiles.deletearrays();
         statspbreplays(pbfiles);
         assistedfiles.deletearrays();
@@ -2509,6 +2565,64 @@ namespace game
         replaylist.sort(replaysort ? fasterreplay : newerreplay);
         intret(replaylist.length());
     });
+
+    // harness: for every replay the browser lists, the header-only read must give the same info
+    // and verdict as a full read; prints SCANCHECK lines and returns the number of differences
+    static int replayscancheck()
+    {
+        vector<uchar> keys;
+        loadwitnesskeys(NULL, keys);
+        int checked = 0, differ = 0, fullms = 0, headerms = 0;
+        loopk(2)
+        {
+            vector<char *> files;
+            listreplays(k != 0, files);
+            loopv(files)
+            {
+                const char *file = files[i];
+                int start = int(SDL_GetTicks());
+                replayinfo full;
+                string fullverdict = "";
+                bool fullok = readreplay(file, NULL, full);
+                if(fullok)
+                {
+                    stream *f = openrawfile(path(file, true), "rb");
+                    vector<uchar> buf;
+                    uchar chunk[65536];
+                    if(f) for(size_t n; (n = f->read(chunk, sizeof(chunk))) > 0;) buf.put(chunk, int(n));
+                    delete f;
+                    sbr2::reader rd;
+                    if(rd.parse(buf.getbuf(), buf.length(), sbr2::KNOWNCHUNKS)) signedverdict(rd, keys, fullverdict, sizeof(fullverdict));
+                }
+                int mid = int(SDL_GetTicks());
+                replayinfo head;
+                string headverdict = "";
+                int size = 0;
+                sbr2::reader rd;
+                bool headok = readreplayheaders(file, rd, head, size);
+                if(headok) signedverdict(rd, keys, headverdict, sizeof(headverdict));
+                headerms += int(SDL_GetTicks()) - mid;
+                fullms += mid - start;
+                checked++;
+                const char *what = NULL;
+                if(fullok != headok) what = fullok ? "header read failed" : "header read passed a file the full read rejects";
+                else if(!fullok) continue;
+                else if(full.version != head.version || full.simversion != head.simversion || full.date != head.date) what = "version/simversion/date";
+                else if(strcmp(full.client, head.client) || strcmp(full.player, head.player) || strcmp(full.map, head.map)) what = "client/player/map";
+                else if(full.mode != head.mode || full.flagrun != head.flagrun || full.race != head.race) what = "mode/flagrun/race";
+                else if(full.splices != head.splices || full.finished != head.finished || full.runtime != head.runtime) what = "splices/finished/runtime";
+                else if(full.ticks != head.ticks || full.maps != head.maps || full.started != head.started) what = "ticks/maps/started";
+                else if(strcmp(fullverdict, headverdict)) what = "verdict";
+                if(what) { differ++; conoutf(CON_ERROR, "SCANCHECK %s: FAIL %s", file, what); }
+            }
+            files.deletearrays();
+        }
+        int start = int(SDL_GetTicks());
+        execute("replayscan");
+        conoutf("SCANCHECK %d files, %d differ; full reads %d ms, header reads %d ms; replayscan %d ms", checked, differ, fullms, headerms, int(SDL_GetTicks()) - start);
+        return differ;
+    }
+    ICOMMAND(replayscancheck, "", (), intret(replayscancheck()));
 
     static void formatsize(char *buf, double bytes)
     {
@@ -2556,7 +2670,7 @@ namespace game
     ICOMMAND(replayfield, "is", (int *i, char *field),
     {
         if(!replaylist.inrange(*i)) { result(""); return; }
-        const replayentry &e = replaylist[*i];
+        replayentry &e = replaylist[*i];
         const replayinfo &r = e.info;
         if(!strcmp(field, "file")) result(e.file);
         else if(!strcmp(field, "name"))
@@ -2606,7 +2720,19 @@ namespace game
         else if(!strcmp(field, "kept")) intret(e.kept ? 1 : 0);
         else if(!strcmp(field, "pb")) intret(e.pb ? 1 : 0);
         else if(!strcmp(field, "assisted")) intret(e.assisted ? 1 : 0);
-        else if(!strcmp(field, "verdict")) result(e.verdict);
+        else if(!strcmp(field, "verdict"))
+        {
+            replaycacheentry *c = cachedreplay(e.file);
+            if(c && !c->verdictread)
+            {
+                c->verdictread = true;
+                sbr2::reader rd;
+                replayinfo info;
+                int size;
+                if(readreplayheaders(e.file, rd, info, size)) signedverdict(rd, replaylistkeys, c->verdict, sizeof(c->verdict));
+            }
+            result(c ? c->verdict : "");
+        }
         else if(!strcmp(field, "outdated")) intret(r.simversion < REPLAYSIMVERSION ? 1 : 0);
         else result("");
     });
