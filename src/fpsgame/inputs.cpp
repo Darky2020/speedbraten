@@ -762,7 +762,8 @@ namespace game
 
     static void syncrunnername()
     {
-        const char *runner = replaying && replaydata.attempts.inrange(replayattempt) && replaycur().player[0] ? replaycur().player : NULL;
+        // the replay state outlives a disconnect to the menu, where the player is themselves again
+        const char *runner = connected && replaying && replaydata.attempts.inrange(replayattempt) && replaycur().player[0] ? replaycur().player : NULL;
         if(runner)
         {
             if(!runnername) { copystring(ownnamebuf, player1->name); runnername = true; }

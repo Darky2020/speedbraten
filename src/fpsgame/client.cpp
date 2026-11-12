@@ -149,6 +149,8 @@ namespace game
         else result(colorname(player1));
     });
     ICOMMAND(getname, "", (), result(player1->name));
+    // the player's own name, also while a replay or a spectated run shows the runner's: for name fields
+    ICOMMAND(getownname, "", (), result(ownname()));
 
     void switchteam(const char *team)
     {

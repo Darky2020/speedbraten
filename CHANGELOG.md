@@ -17,6 +17,7 @@
 - Practice visualizers mark bounce edges: ledges that cut gravity when risen past, with their gain and approaches.
 - Practice visualizers show the last jump's takeoff and the last bump's numbers.
 - /gamespeed goes down to 1.
+- After spectating or a replay, leaving to the menu no longer keeps the runner's name.
 
 ## v0.3.14
 
