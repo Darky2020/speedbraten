@@ -18,6 +18,7 @@
 - Practice visualizers show the last jump's takeoff and the last bump's numbers.
 - /gamespeed goes down to 1.
 - After spectating or a replay, leaving to the menu no longer keeps the runner's name.
+- Replay input display: the chat/console key no longer stays lit; jumps and moves on a mouse button light that button, not the key boxes.
 
 ## v0.3.14
 

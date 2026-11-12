@@ -56,6 +56,9 @@ namespace game
         }
     }
 
+    // a key that opens the chat or console prompt: its release goes to the prompt and is never recorded
+    static bool opensprompt(const char *bind) { return bindhas(bind, "saycommand") || bindhas(bind, "sayteamcommand"); }
+
     struct heldinput { int code; const char *bind; };
     // a key outside the fixed layout, and when it was last pressed and released
     struct extrakey { int code, down, up; string label; };
@@ -83,14 +86,15 @@ namespace game
             loopvj(a.raw)
             {
                 const rawevent &e = a.raw[j];
-                if((e.kind != rawevent::KEYDOWN && e.kind != rawevent::BUTTONDOWN) || !bindhas(e.bind, actionbinds[i])) continue;
+                if(e.kind != rawevent::KEYDOWN || !bindhas(e.bind, actionbinds[i])) continue;
                 const char *name = getkeyname(inputcode(e));
                 if(name) copystring(st.labels[i], name);
                 break;
             }
         }
 
-        // every other bound key the replay uses, keys in keycode order, then mouse buttons and wheel
+        // every other bound key the replay uses, keys in keycode order, then mouse buttons and wheel; a
+        // mouse button is listed whatever it is bound to, as the layout's action boxes are keyboard keys
         st.extras.setsize(0);
         loopv(a.raw)
         {
@@ -99,7 +103,7 @@ namespace game
             int code = inputcode(e);
             if(code == -1 || code == -3) continue;
             bool known = false;
-            loopj(NUMACTIONS) if(bindhas(e.bind, actionbinds[j])) known = true;
+            if(e.kind != rawevent::BUTTONDOWN) loopj(NUMACTIONS) if(bindhas(e.bind, actionbinds[j])) known = true;
             loopvj(st.extras) if(st.extras[j].code == code) known = true;
             if(known || st.extras.length() >= MAXEXTRAS) continue;
             extrakey &x = st.extras.add();
@@ -154,6 +158,11 @@ namespace game
             {
                 case rawevent::KEYDOWN: case rawevent::BUTTONDOWN:
                 {
+                    if(e.kind == rawevent::KEYDOWN && opensprompt(e.bind))
+                    {
+                        loopv(st.extras) if(st.extras[i].code == code) st.extras[i].up = e.tick;
+                        break;
+                    }
                     bool have = false;
                     loopv(st.held) if(st.held[i].code == code) { st.held[i].bind = e.bind; have = true; }
                     if(!have) { heldinput &h = st.held.add(); h.code = code; h.bind = e.bind; }
@@ -174,7 +183,7 @@ namespace game
 
     static bool actionheld(int action)
     {
-        loopv(st.held) if(bindhas(st.held[i].bind, actionbinds[action])) return true;
+        loopv(st.held) if(st.held[i].code >= 0 && bindhas(st.held[i].bind, actionbinds[action])) return true;
         return action == A_JUMP && st.tick - st.wheeljump < WHEELTICKS;
     }
 
