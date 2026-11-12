@@ -25,6 +25,57 @@ namespace game
     static vec runflagloc(0, 0, 0);
     static float runflagradius = 0;
 
+    // Sub-tick reading of a finished flagrun or race: where inside its tick the finish was crossed,
+    // from player1's positions at the ends of the last ticks, assuming straight motion within a tick.
+    // Shown only; the run's time stays whole ticks.
+    struct runsample { int tick; vec feet, eye; };
+    enum { RUNSAMPLES = 4 };
+    static runsample runsamples[RUNSAMPLES]; // newest first
+    static int numrunsamples = 0;
+    static bool subtickvalid = false;
+    static int subtickmarginus = 0;
+
+    static void clearsubtick()
+    {
+        numrunsamples = 0;
+        subtickvalid = false;
+    }
+
+    static void addrunsample()
+    {
+        if(player1->state != CS_ALIVE) { numrunsamples = 0; return; }
+        memmove(&runsamples[1], &runsamples[0], (RUNSAMPLES-1)*sizeof(runsample));
+        runsample &s = runsamples[0];
+        s.tick = inputtick();
+        s.feet = player1->feetpos();
+        s.eye = player1->o;
+        numrunsamples = min(numrunsamples + 1, int(RUNSAMPLES));
+    }
+
+    // the part of the step from a to b where it crosses the sphere's surface: leaving it if a is inside
+    static float spherecross(const vec &a, const vec &b, const vec &c, float r)
+    {
+        vec d = vec(b).sub(a), ac = vec(a).sub(c);
+        float qa = d.dot(d), qb = 2*d.dot(ac), qc = ac.dot(ac) - r*r, disc = qb*qb - 4*qa*qc;
+        if(qa <= 0 || disc < 0) return 1;
+        float root = sqrtf(disc), t = qc < 0 ? (-qb + root)/(2*qa) : (-qb - root)/(2*qa);
+        return clamp(t, 0.0f, 1.0f);
+    }
+
+    // the part of the step from a (outside) to b where it enters the cube of half-size r around c
+    static float boxenter(const vec &a, const vec &b, const vec &c, float r)
+    {
+        float t = 0;
+        loopi(3)
+        {
+            float lo = c[i] - r, hi = c[i] + r;
+            if(a[i] > lo && a[i] < hi) continue;
+            if(b[i] == a[i]) return 1;
+            t = max(t, ((a[i] <= lo ? lo : hi) - a[i])/(b[i] - a[i]));
+        }
+        return clamp(t, 0.0f, 1.0f);
+    }
+
     void snapruntimer(snapio &s)
     {
         s.i(runkind); s.i(runstate); s.i(runbase); s.i(runstart); s.i(runend); s.i(runflag);
@@ -94,6 +145,7 @@ namespace game
     void runtimermapstart(int mode, bool local)
     {
         suicidepending = false;
+        clearsubtick();
         bool sp = local && m_check(mode, M_DMSP | M_CLASSICSP);
         finishedatmapstart = runstate == RUN_FINISHED;
         bool chained = sp && runkind == RUNTIMER_SP && (runstate == RUN_RUNNING || runstate == RUN_SPLIT) && mapchained(mode);
@@ -117,8 +169,53 @@ namespace game
         if(player1->state == CS_ALIVE && inputrecordinglive()) execute("suicide");
     }
 
+    bool racegoal(const extentity &e, float &r);
+
+    // from the newest positions back, the first step from outside the finish to inside it
+    static void subtickfinish()
+    {
+        subtickvalid = false;
+        if((runkind != RUNTIMER_FLAG && runkind != RUNTIMER_RACE) || player1->state != CS_ALIVE) return;
+        runsample steps[RUNSAMPLES+1];
+        int n = 0;
+        steps[n].tick = inputtick();
+        steps[n].feet = player1->feetpos();
+        steps[n].eye = player1->o;
+        n++;
+        loopi(numrunsamples) if(runsamples[i].tick < steps[n-1].tick) steps[n++] = runsamples[i];
+
+        const vector<extentity *> &ents = entities::getents();
+        const extentity *goal = NULL;
+        float goalr = 0;
+        loopv(ents)
+        {
+            const extentity &e = *ents[i];
+            float r;
+            if(runkind == RUNTIMER_FLAG)
+            {
+                if(e.type != FLAG || e.attr2 <= 0 || steps[0].feet.dist(e.o) >= 16) continue;
+                if(!goal || steps[0].feet.dist(e.o) < steps[0].feet.dist(goal->o)) { goal = &e; goalr = 16; }
+            }
+            else if(racegoal(e, r) && fabs(steps[0].eye.x - e.o.x) < r && fabs(steps[0].eye.y - e.o.y) < r && fabs(steps[0].eye.z - e.o.z) < r) { goal = &e; goalr = r; break; }
+        }
+        if(!goal) return;
+        for(int i = 0; i + 1 < n; i++)
+        {
+            const runsample &in = steps[i], &out = steps[i+1];
+            if(out.tick != in.tick - 1) return;
+            bool outside = runkind == RUNTIMER_FLAG ? out.feet.dist(goal->o) >= goalr :
+                !(fabs(out.eye.x - goal->o.x) < goalr && fabs(out.eye.y - goal->o.y) < goalr && fabs(out.eye.z - goal->o.z) < goalr);
+            if(!outside) continue;
+            float f = runkind == RUNTIMER_FLAG ? spherecross(out.feet, in.feet, goal->o, goalr) : boxenter(out.eye, in.eye, goal->o, goalr);
+            subtickmarginus = int(f*SIMTICK*1000);
+            subtickvalid = true;
+            return;
+        }
+    }
+
     static void finishrun()
     {
+        subtickfinish();
         runend = inputtick();
         runstate = RUN_FINISHED;
         if(finishsuicide && (runkind == RUNTIMER_FLAG || runkind == RUNTIMER_RACE) && inputrecordinglive()) suicidepending = true;
@@ -193,6 +290,7 @@ namespace game
         runstate = RUN_RUNNING;
         runbase = runend = 0;
         runstart = inputtick();
+        clearsubtick();
         inputrunbegan();
     }
 
@@ -257,6 +355,7 @@ namespace game
         {
             runstate = RUN_RUNNING;
             runstart = inputtick();
+            subtickvalid = false;
             inputrunbegan();
         }
         else if(runstate == RUN_RUNNING && flagrunrestart && dist < runflagradius)
@@ -270,6 +369,7 @@ namespace game
     void runtimertick()
     {
         updaterun();
+        addrunsample();
         ghosttick();
         splittick();
         spawntick();
@@ -294,6 +394,8 @@ namespace game
     MOD(HVARP, runtimerfastercolour, 0, 0xFFFF40, 0xFFFFFF);
     MOD(HVARP, runtimerslowercolour, 0, 0xFF8040, 0xFFFFFF);
     MOD(VARP, runtimerrecord, 0, 1, 1);
+    // after a flagrun or race finish: how much earlier the finish would have made the time a tick less
+    MOD(VARP, runtimersubtick, 0, 0, 1);
     MOD(HVARP, runtimerrecordcolour, 0, 0xB0B0B0, 0xFFFFFF);
     ICOMMAND(hexcolour, "i", (int *colour), { defformatstring(hex, "%06X", *colour & 0xFFFFFF); result(hex); });
 
@@ -322,10 +424,25 @@ namespace game
         pophudmatrix();
         hudeditarea("runtimer", offset.x*runtimerscale, offset.y*runtimerscale, (offset.x + tw)*runtimerscale, (offset.y + th)*runtimerscale);
 
+        // right of the timer at half its size: how much earlier the finish would have been a tick less
+        float scale = runtimerscale*0.5f;
+        if(runtimersubtick && runstate == RUN_FINISHED && subtickvalid)
+        {
+            defformatstring(margin, "%.1f ms from %s", subtickmarginus/1000.0f, formatruntime(max(runticks() - 1, 0)*SIMTICK));
+            int mw = 0, mh = 0;
+            text_bounds(margin, mw, mh);
+            vec2 at = vec2((offset.x + tw)*runtimerscale + th*runtimerscale*0.3f, (offset.y + th)*runtimerscale - mh*scale*1.1f).div(scale);
+            pushhudmatrix();
+            hudmatrix.scale(scale, scale, 1);
+            flushhudmatrix();
+            draw_text(margin, int(at.x), int(at.y), (runtimerrecordcolour>>16)&0xFF, (runtimerrecordcolour>>8)&0xFF, runtimerrecordcolour&0xFF, 255);
+            pophudmatrix();
+            hudeditarea("runtimer", at.x*scale, at.y*scale, (at.x + mw)*scale, (at.y + mh)*scale);
+        }
+
         // the board's best under the timer, at half its size
         const char *rec = runtimerrecord ? hubboardhud() : NULL;
         if(!rec) return;
-        float scale = runtimerscale*0.5f;
         int rw = 0, rh = 0;
         text_bounds(rec, rw, rh);
         vec2 at = vec2(runtimerx*w, runtimery*h + th*runtimerscale*0.55f).div(scale);

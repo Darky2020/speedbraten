@@ -14,7 +14,114 @@
 #include "SDL_mixer.h"
 #endif
 
+#include <sys/stat.h>
+#ifndef GL_MAX_RENDERBUFFER_SIZE
+#define GL_MAX_RENDERBUFFER_SIZE 0x84E8
+#endif
+#ifndef WIN32
+#include <signal.h>
+#endif
+
 VAR(dbgmovie, 0, 0, 1);
+
+// with ffmpeg found, frames are piped to it and encoded as H.264; without it (or for a .avi name) the raw I420 AVI is written
+VARP(movieffmpeg, 0, 1, 1);
+SVARP(movieffmpegpath, "");
+VARP(moviequality, 1, 50, 100);
+
+#ifdef WIN32
+#define moviepopen _popen
+#define moviepclose _pclose
+#else
+#define moviepopen popen
+#define moviepclose pclose
+#endif
+
+typedef char cmdline[4096];
+
+static void quotearg(cmdline &dst, const char *arg)
+{
+#ifdef WIN32
+    formatstring(dst, "\"%s\"", arg);
+#else
+    char *d = dst, *end = &dst[sizeof(cmdline)-5];
+    *d++ = '\'';
+    for(const char *c = arg; *c && d < end; c++)
+    {
+        if(*c == '\'') { if(d + 4 >= end) break; memcpy(d, "'\\''", 4); d += 4; }
+        else *d++ = *c;
+    }
+    *d++ = '\'';
+    *d = '\0';
+#endif
+}
+
+static int runffmpeg(const char *args, const char *mode, FILE **pipe = NULL, char *out = NULL, int outlen = 0);
+
+static string ffmpegbin = "";
+static const char *ffmpegencoder = NULL;
+// the last movie rendered through ffmpeg, which a sound pass is added to
+static string lastrender = "";
+// the last rendered movie, also after its sound pass: the full path and the name it was asked for
+static string lastmovie = "", lastmoviename = "";
+static FILE *soundpassfile = NULL;
+
+// finds an ffmpeg with an H.264 encoder, preferring the hardware one on macOS
+static bool findffmpeg()
+{
+    const char *paths[] = { movieffmpegpath, "ffmpeg",
+#ifdef __APPLE__
+        "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg",
+#endif
+    };
+    loopi(sizeof(paths)/sizeof(paths[0]))
+    {
+        if(!paths[i][0]) continue;
+        copystring(ffmpegbin, paths[i]);
+        char encoders[1<<16];
+        if(runffmpeg("-hide_banner -encoders", "r", NULL, encoders, sizeof(encoders)) != 0) continue;
+#ifdef __APPLE__
+        if(strstr(encoders, " h264_videotoolbox ")) { ffmpegencoder = "h264_videotoolbox"; return true; }
+#endif
+        if(strstr(encoders, " libx264 ")) { ffmpegencoder = "libx264"; return true; }
+    }
+    ffmpegbin[0] = '\0';
+    ffmpegencoder = NULL;
+    return false;
+}
+
+// runs ffmpegbin with args: with pipe, leaves it open for writing; with out, reads its output and returns its exit status
+static int runffmpeg(const char *args, const char *mode, FILE **pipe, char *out, int outlen)
+{
+    cmdline bin, cmd, wcmd;
+    quotearg(bin, ffmpegbin);
+    formatstring(cmd, "%s %s", bin, args);
+    // cmd.exe drops the outer quotes of a line that starts with one
+#ifdef WIN32
+    formatstring(wcmd, pipe || dbgmovie ? "\"%s\"" : "\"%s 2>nul\"", cmd);
+#else
+    formatstring(wcmd, pipe || dbgmovie ? "%s" : "%s 2>/dev/null", cmd);
+#endif
+    if(dbgmovie) conoutf(CON_DEBUG, "ffmpeg: %s", wcmd);
+#ifdef WIN32
+    FILE *p = moviepopen(wcmd, mode[0] == 'w' ? "wb" : "rb");
+#else
+    FILE *p = moviepopen(wcmd, mode);
+#endif
+    if(!p) return -1;
+    if(pipe) { *pipe = p; return 0; }
+    int len = 0;
+    if(out && outlen > 0)
+    {
+        for(size_t n; len < outlen-1 && (n = fread(&out[len], 1, outlen-1-len, p)) > 0;) len += n;
+        out[len] = '\0';
+    }
+    char discard[4096];
+    while(fread(discard, 1, sizeof(discard), p) > 0);
+    int status = moviepclose(p);
+    if(dbgmovie) conoutf(CON_DEBUG, "ffmpeg: exit %d", status);
+    return status;
+}
 
 struct aviindexentry
 {
@@ -38,6 +145,8 @@ struct avisegmentinfo
 struct aviwriter
 {
     stream *f;
+    FILE *pipe, *soundf;
+    string videoname, soundname;
     uchar *yuv;
     uint videoframes;
     stream::offset totalsize;
@@ -70,6 +179,11 @@ struct aviwriter
     
     double filespaceguess() 
     {
+        if(pipe)
+        {
+            struct stat st;
+            return stat(videoname, &st) == 0 ? double(st.st_size) + (soundf ? double(ftell(soundf)) : 0) : 0;
+        }
         return double(totalsize);
     }
        
@@ -115,8 +229,46 @@ struct aviwriter
         if(len & 1) { f->putchar(0x00); totalsize++; }
     }
     
+    const char *rawsoundformat()
+    {
+        switch(soundformat)
+        {
+            case AUDIO_U8: case AUDIO_S8: return "s8";
+            case AUDIO_U16LSB: case AUDIO_U16MSB: case AUDIO_S16LSB: case AUDIO_S16MSB: return "s16le";
+            case AUDIO_F32LSB: return "f32le";
+            default: return NULL;
+        }
+    }
+
+    void closepipe()
+    {
+        moviepclose(pipe);
+        pipe = NULL;
+        bool hassound = soundf && ftell(soundf) > 0;
+        if(soundf) { fclose(soundf); soundf = NULL; }
+        if(hassound)
+        {
+            cmdline video, sound, out, args;
+            quotearg(video, videoname);
+            quotearg(sound, soundname);
+            quotearg(out, findfile(filename, "wb"));
+            formatstring(args, "-y -loglevel error -i %s -f %s -ar %d -ac %d -i %s -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart %s",
+                video, rawsoundformat(), soundfrequency, soundchannels, sound, out);
+            if(runffmpeg(args, "r") == 0) remove(videoname);
+            else conoutf(CON_ERROR, "could not add the sound to %s; video only in %s", filename, videoname);
+        }
+        else
+        {
+            const char *out = findfile(filename, "wb");
+            remove(out);
+            rename(videoname, out);
+        }
+        remove(soundname);
+    }
+
     void close()
     {
+        if(pipe) { closepipe(); return; }
         if(!f) return;
         flushsegment();
 
@@ -176,11 +328,13 @@ struct aviwriter
         DELETEP(f);
     }
     
-    aviwriter(const char *name, uint w, uint h, uint fps, bool sound) : f(NULL), yuv(NULL), videoframes(0), totalsize(0), videow(w&~1), videoh(h&~1), videofps(fps), soundfrequency(0),soundchannels(0),soundformat(0)
+    aviwriter(const char *name, uint w, uint h, uint fps, bool sound) : f(NULL), pipe(NULL), soundf(NULL), yuv(NULL), videoframes(0), totalsize(0), videow(w&~1), videoh(h&~1), videofps(fps), soundfrequency(0),soundchannels(0),soundformat(0)
     {
         copystring(filename, name);
         path(filename);
-        if(!strrchr(filename, '.')) concatstring(filename, ".avi");
+        const char *ext = strrchr(filename, '.');
+        if(!movieffmpeg || (ext && !strcasecmp(ext, ".avi")) || !findffmpeg()) ffmpegencoder = NULL;
+        if(!ext) concatstring(filename, ffmpegencoder ? ".mp4" : ".avi");
         
         extern bool nosound; // sound.cpp
         if(sound && !nosound) 
@@ -207,8 +361,39 @@ struct aviwriter
         if(yuv) delete [] yuv;
     }
     
+    bool openpipe()
+    {
+        const char *out = findfile(filename, "wb");
+        formatstring(videoname, "%s.video%s", out, strrchr(filename, '.'));
+        formatstring(soundname, "%s.sound", out);
+        if(soundfrequency > 0 && !rawsoundformat()) soundfrequency = 0;
+        if(soundfrequency > 0)
+        {
+            soundf = fopen(soundname, "wb");
+            if(!soundf) return false;
+        }
+        cmdline video, args;
+        quotearg(video, videoname);
+        string quality;
+        if(!strcmp(ffmpegencoder, "libx264")) formatstring(quality, "-preset veryfast -crf %d", clamp(45 - moviequality/2, 0, 51));
+        else formatstring(quality, "-q:v %d", moviequality);
+        formatstring(args, "-y -loglevel error -nostats -f rawvideo -pix_fmt yuv420p -s %dx%d -r %d -i - -c:v %s %s -pix_fmt yuv420p -colorspace smpte170m -color_primaries smpte170m -color_trc smpte170m -color_range tv -movflags +faststart %s",
+            videow, videoh, videofps, ffmpegencoder, quality, video);
+#ifndef WIN32
+        signal(SIGPIPE, SIG_IGN);
+#endif
+        if(runffmpeg(args, "w", &pipe) != 0 || !pipe)
+        {
+            pipe = NULL;
+            if(soundf) { fclose(soundf); soundf = NULL; remove(soundname); }
+            return false;
+        }
+        return true;
+    }
+
     bool open()
     {
+        if(ffmpegencoder) return openpipe();
         f = openfile(filename, "wb");
         if(!f) return false;
         
@@ -607,6 +792,8 @@ struct aviwriter
                 endianswap((short *)data, framesize/2);
                 break;
         }
+
+        if(pipe) return fwrite(data, 1, framesize, soundf) == framesize;
        
         if(totalsize - segments.last().offset + framesize > 1000*1000*1000 && !nextsegment()) return false;
  
@@ -734,6 +921,12 @@ struct aviwriter
         }
 
         const uint framesize = (videow * videoh * 3) / 2;
+        if(pipe)
+        {
+            const uchar *data = format == VID_YUV420 ? pixels : yuv;
+            for(; videoframes <= frame; videoframes++) if(fwrite(data, 1, framesize, pipe) != framesize) return false;
+            return true;
+        }
         if(totalsize - segments.last().offset + framesize > 1000*1000*1000 && !nextsegment()) return false;
 
         while(videoframes <= frame) addindex(videoframes++, 0, framesize);
@@ -823,6 +1016,15 @@ namespace recorder
     static SDL_mutex *videolock = NULL;
     static SDL_cond *shouldencode = NULL, *shouldread = NULL;
 
+    // rendering: every main-loop frame advances the game by one video frame, whatever wall time passed;
+    // while held, frames advance the clock but aren't captured
+    static bool rendering = false, renderhold = false;
+    static uint renderframes = 0, renderclock = 0;
+    // while rendering, the game draws at the movie's size into renderfb and the window shows it scaled
+    static GLuint renderfb = 0, rendercolor = 0, renderdepth = 0;
+    static int renderw = 0, renderh = 0, windoww = 0, windowh = 0;
+    static void freerendertarget();
+
     bool isrecording() { return file != NULL; }
     
     float calcquality()
@@ -900,7 +1102,7 @@ namespace recorder
         SDL_UnlockMutex(soundlock);
     }
     
-    void start(const char *filename, int videofps, int videow, int videoh, bool sound) 
+    void start(const char *filename, int videofps, int videow, int videoh, bool sound, bool render = false)
     {
         if(file) return;
        
@@ -912,7 +1114,7 @@ namespace recorder
  
         int fps, bestdiff, worstdiff;
         getfps(fps, bestdiff, worstdiff);
-        if(videofps > fps) conoutf(CON_WARN, "frame rate may be too low to capture at %d fps", videofps);
+        if(!render && videofps > fps) conoutf(CON_WARN, "frame rate may be too low to capture at %d fps", videofps);
         
         if(videow%2) videow += 1;
         if(videoh%2) videoh += 1;
@@ -927,6 +1129,8 @@ namespace recorder
         conoutf("movie recording to: %s %dx%d @ %dfps%s", file->filename, file->videow, file->videoh, file->videofps, (file->soundfrequency>0)?" + sound":"");
         
         starttime = gettime();
+        rendering = render;
+        renderframes = renderclock = 0;
         loopi(file->videofps) stats[i] = 0;
         statsindex = 0;
         dps = 0;
@@ -987,9 +1191,18 @@ namespace recorder
  
         static const char * const mesgs[] = { "ok", "stopped", "computer too slow", "file error"};
         conoutf("movie recording halted: %s, %d frames", mesgs[state], file->videoframes);
+        if(rendering && file->pipe && state == REC_USERHALT) copystring(lastrender, findfile(file->filename, "wb"));
+        else lastrender[0] = '\0';
+        if(rendering)
+        {
+            copystring(lastmovie, findfile(file->filename, "wb"));
+            copystring(lastmoviename, file->filename);
+        }
         
         DELETEP(file);
         state = REC_OK;
+        rendering = false;
+        freerendertarget();
     }
  
     void readbuffer(videobuffer &m, uint nextframe)
@@ -1032,11 +1245,11 @@ namespace recorder
                      
             if(tw < (uint)screenw || th < (uint)screenh)
             {
-                glBindFramebuffer_(GL_READ_FRAMEBUFFER, 0);
+                glBindFramebuffer_(GL_READ_FRAMEBUFFER, screenfbo);
                 glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, scalefb);
                 glFramebufferTexture2D_(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scaletex[0], 0);
                 glBlitFramebuffer_(0, 0, screenw, screenh, 0, 0, tw, th, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-                glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, 0);
+                glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, screenfbo);
             }
             else
             {
@@ -1083,7 +1296,7 @@ namespace recorder
                 glBindFramebuffer_(GL_FRAMEBUFFER, scalefb);
                 glReadPixels(0, 0, m.w, m.h, GL_BGRA, GL_UNSIGNED_BYTE, m.video);
             }
-            glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            glBindFramebuffer_(GL_FRAMEBUFFER, screenfbo);
             glViewport(0, 0, screenw, screenh);
 
         }
@@ -1098,9 +1311,11 @@ namespace recorder
             stop();
             return false;
         }
+        if(rendering && renderhold) return true;
         SDL_LockMutex(videolock);
-        if(moviesync && videobuffers.full()) SDL_CondWait(shouldread, videolock);
-        uint nextframe = (max(gettime() - starttime, 0)*file->videofps)/1000;
+        if(rendering) while(videobuffers.full() && state == REC_OK) SDL_CondWait(shouldread, videolock);
+        else if(moviesync && videobuffers.full()) SDL_CondWait(shouldread, videolock);
+        uint nextframe = rendering ? renderframes++ : (max(gettime() - starttime, 0)*file->videofps)/1000;
         if(!videobuffers.full() && (lastframe == ~0U || nextframe > lastframe))
         {
             videobuffer &m = videobuffers.adding();
@@ -1139,11 +1354,193 @@ namespace recorder
         glDisable(GL_BLEND);
     }
 
+    // shown in the window while a render runs, never in the movie
+    static string progresslabel = "", progresshint = "";
+    static float progressfrac = 0;
+
+    // what the movie being rendered takes on disk so far
+    static double moviebytes()
+    {
+        if(file) return file->filespaceguess();
+        double bytes = 0;
+        struct stat st;
+        if(lastmovie[0] && stat(lastmovie, &st) == 0) bytes += st.st_size;
+        if(soundpassfile) bytes += ftell(soundpassfile);
+        return bytes;
+    }
+
+    static void drawprogress(int w, int h)
+    {
+        if(!progresslabel[0]) return;
+        hudmatrix.ortho(0, w, h, 0, -1, 1);
+        resethudmatrix();
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        float bw = w*0.4f, bh = max(h/120.0f, 4.0f), bx = (w - bw)/2, by = h*0.86f, fill = bw*clamp(progressfrac, 0.0f, 1.0f);
+        if(progressfrac >= 0)
+        {
+            hudnotextureshader->set();
+            gle::defvertex(2);
+            gle::colorf(0, 0, 0, 0.6f);
+            gle::begin(GL_TRIANGLE_STRIP);
+            gle::attribf(bx, by); gle::attribf(bx + bw, by); gle::attribf(bx, by + bh); gle::attribf(bx + bw, by + bh);
+            gle::end();
+            gle::colorf(1, 1, 1, 0.9f);
+            gle::begin(GL_TRIANGLE_STRIP);
+            gle::attribf(bx, by); gle::attribf(bx + fill, by); gle::attribf(bx, by + bh); gle::attribf(bx + fill, by + bh);
+            gle::end();
+        }
+        string text;
+        if(progressfrac >= 0) formatstring(text, "%s %d%%   %.1f MB", progresslabel, int(min(progressfrac, 1.0f)*100), moviebytes()/1e6);
+        else formatstring(text, "%s   %.1f MB", progresslabel, moviebytes()/1e6);
+        float scale = h/(FONTH*36.0f);
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        hudshader->set();
+        gle::colorf(1, 1, 1);
+        int tw = 0, th = 0;
+        text_bounds(text, tw, th);
+        draw_text(text, int((w/scale - tw)/2), int(by/scale) - th - th/4);
+        if(progresshint[0])
+        {
+            int hw = 0, hh = 0;
+            text_bounds(progresshint, hw, hh);
+            draw_text(progresshint, int((w/scale - hw)/2), int((by + bh)/scale) + hh/4, 255, 255, 255, 170);
+        }
+        pophudmatrix();
+        glDisable(GL_BLEND);
+    }
+
+    static void drawpreview()
+    {
+        float scale = min(windoww/float(renderw), windowh/float(renderh));
+        int pw = int(renderw*scale), ph = int(renderh*scale), px = (windoww - pw)/2, py = (windowh - ph)/2;
+        glBindFramebuffer_(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, windoww, windowh);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glBindFramebuffer_(GL_READ_FRAMEBUFFER, renderfb);
+        glBlitFramebuffer_(0, 0, renderw, renderh, px, py, px + pw, py + ph, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        drawprogress(windoww, windowh);
+        glClearColor(0, 0, 0, 0);
+    }
+
     void capture(bool overlay)
     {
-        if(readbuffer() && overlay) drawhud();
+        // loading screens (swapped without overlay) are shown in the window but not put in a rendered movie
+        if(rendering && !overlay) return;
+        if(readbuffer() && overlay && !rendering) drawhud();
+        if(rendering && renderfb) drawpreview();
+        else if(!rendering) drawprogress(screenw, screenh);
+    }
+
+    static void freerendertarget()
+    {
+        if(!renderfb) return;
+        screenw = windoww;
+        screenh = windowh;
+        screenfbo = 0;
+        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers_(1, &renderfb);
+        glDeleteRenderbuffers_(1, &rendercolor);
+        glDeleteRenderbuffers_(1, &renderdepth);
+        renderfb = rendercolor = renderdepth = 0;
+        gl_resize();
+    }
+
+    static bool makerendertarget(int w, int h)
+    {
+        GLint maxsize = 0;
+        glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxsize);
+        if(!hasFBB || w > maxsize || h > maxsize) return false;
+        glGenFramebuffers_(1, &renderfb);
+        glGenRenderbuffers_(1, &rendercolor);
+        glGenRenderbuffers_(1, &renderdepth);
+        glBindFramebuffer_(GL_FRAMEBUFFER, renderfb);
+        glBindRenderbuffer_(GL_RENDERBUFFER, rendercolor);
+        glRenderbufferStorage_(GL_RENDERBUFFER, GL_RGBA8, w, h);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rendercolor);
+        glBindRenderbuffer_(GL_RENDERBUFFER, renderdepth);
+        glRenderbufferStorage_(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, renderdepth);
+        glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, renderdepth);
+        glBindRenderbuffer_(GL_RENDERBUFFER, 0);
+        windoww = screenw;
+        windowh = screenh;
+        renderw = screenw = w;
+        renderh = screenh = h;
+        screenfbo = renderfb;
+        if(glCheckFramebufferStatus_(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) { freerendertarget(); return false; }
+        gl_resize();
+        return true;
+    }
+
+    int renderstep()
+    {
+        if(!file || !rendering) return 0;
+        // the window's framebuffer stays bound through the swap, or macOS shows nothing
+        if(renderfb)
+        {
+            glBindFramebuffer_(GL_FRAMEBUFFER, renderfb);
+            glViewport(0, 0, renderw, renderh);
+        }
+        if(renderfb && (screenw != renderw || screenh != renderh))
+        {
+            windoww = screenw;
+            windowh = screenh;
+            screenw = renderw;
+            screenh = renderh;
+            gl_resize();
+        }
+        uint n = renderclock++, fps = file->videofps;
+        return int(((n+1)*1000ULL)/fps - (n*1000ULL)/fps);
     }
 }
+
+GLuint screenfbo = 0;
+
+bool movierender(const char *name, int fps, int w, int h, bool hold)
+{
+    if(recorder::isrecording()) return false;
+    if(w <= 0 || h <= 0) { w = screenw; h = screenh; }
+    w = (w + 1)&~1;
+    h = (h + 1)&~1;
+    if(!recorder::makerendertarget(w, h)) { conoutf(CON_ERROR, "can't render at %dx%d", w, h); return false; }
+    recorder::renderhold = hold;
+    recorder::start(name, fps, w, h, false, true);
+    if(!recorder::isrecording()) recorder::freerendertarget();
+    return recorder::isrecording();
+}
+
+void movierenderstop() { if(recorder::rendering) recorder::stop(); }
+
+void moviehudres(int &w, int &h)
+{
+    if(!recorder::renderfb || recorder::windowh <= 0 || h <= 0) return;
+    w = int(w*(long long)recorder::windowh/h);
+    h = recorder::windowh;
+}
+bool movierendering() { return recorder::rendering; }
+void movierenderhold(bool on) { recorder::renderhold = on; }
+
+void movieprogress(const char *label, float frac, const char *hint)
+{
+    copystring(recorder::progresslabel, label ? label : "");
+    copystring(recorder::progresshint, hint ? hint : "");
+    recorder::progressfrac = frac;
+}
+
+const char *movielastname() { return lastmoviename; }
+
+void moviediscard()
+{
+    if(lastmovie[0]) remove(lastmovie);
+    lastmovie[0] = lastmoviename[0] = lastrender[0] = '\0';
+}
+int movierenderstep() { return recorder::renderstep(); }
+uint movierenderframes() { return recorder::rendering ? recorder::renderframes : 0; }
 
 VARP(moview, 0, 320, 10000);
 VARP(movieh, 0, 240, 10000);
@@ -1157,5 +1554,103 @@ void movie(char *name)
 }
 
 COMMAND(movie, "s");
+
+// The sound of a rendered movie is recorded in a second, real-time pass, as the mixer plays it.
+static SDL_atomic_t soundpassbytes, soundpassmarkbytes;
+static string soundpassname = "";
+static int soundpassfreq = 0, soundpasschannels = 0;
+static const char *soundpassformat = NULL;
+
+static void soundpassmix(void *udata, Uint8 *stream, int len)
+{
+    if(!soundpassfile) return;
+    SDL_AtomicCAS(&soundpassmarkbytes, -2, SDL_AtomicGet(&soundpassbytes));
+    if(fwrite(stream, 1, len, soundpassfile) == size_t(len)) SDL_AtomicAdd(&soundpassbytes, len);
+}
+
+bool moviesoundstart()
+{
+    extern bool nosound;
+    if(!lastrender[0] || nosound || !moviesound || soundpassfile) return false;
+    Uint16 format = 0;
+    if(!Mix_QuerySpec(&soundpassfreq, &format, &soundpasschannels)) return false;
+    switch(format)
+    {
+        case AUDIO_U8: soundpassformat = "u8"; break;
+        case AUDIO_S8: soundpassformat = "s8"; break;
+        case AUDIO_U16LSB: soundpassformat = "u16le"; break;
+        case AUDIO_U16MSB: soundpassformat = "u16be"; break;
+        case AUDIO_S16LSB: soundpassformat = "s16le"; break;
+        case AUDIO_S16MSB: soundpassformat = "s16be"; break;
+        case AUDIO_F32LSB: soundpassformat = "f32le"; break;
+        default: return false;
+    }
+    formatstring(soundpassname, "%s.sound", lastrender);
+    soundpassfile = fopen(soundpassname, "wb");
+    if(!soundpassfile) return false;
+    SDL_AtomicSet(&soundpassbytes, 0);
+    SDL_AtomicSet(&soundpassmarkbytes, -1);
+    Mix_SetPostMix(soundpassmix, NULL);
+    return true;
+}
+
+bool moviesoundrecording() { return soundpassfile != NULL; }
+
+void moviesoundmark() { if(soundpassfile) SDL_AtomicSet(&soundpassmarkbytes, -2); }
+
+int moviesoundmarkms()
+{
+    int bytes = SDL_AtomicGet(&soundpassmarkbytes);
+    if(!soundpassfile || bytes < 0) return -1;
+    int samplesize = soundpasschannels * (!strcmp(soundpassformat, "f32le") ? 4 : soundpassformat[1] == '8' ? 1 : 2);
+    return int(bytes * 1000LL / (samplesize * soundpassfreq));
+}
+
+// mux: add what was recorded to the movie, padded or cut to its length; else drop it. The movie is put
+// together from n pieces of the recording, piece i starting at startms[i] in it and lasting lengthms[i]
+// (the last: to the end); a negative start begins that piece with silence.
+void moviesoundstop(bool mux, const int *startms, const int *lengthms, int n)
+{
+    if(!soundpassfile) return;
+    Mix_SetPostMix(NULL, NULL);
+    bool hassound = ftell(soundpassfile) > 0;
+    fclose(soundpassfile);
+    soundpassfile = NULL;
+    if(mux && hassound)
+    {
+        string tmpname;
+        formatstring(tmpname, "%s.tmp.mp4", lastrender);
+        cmdline video, sound, out, args;
+        quotearg(video, lastrender);
+        quotearg(sound, soundpassname);
+        quotearg(out, tmpname);
+        cmdline filter;
+        formatstring(filter, "[1:a]asplit=%d", n);
+        loopi(n) concformatstring(filter, "[in%d]", i);
+        loopi(n)
+        {
+            int start = startms[i];
+            concformatstring(filter, ";[in%d]", i);
+            if(start >= 0) concformatstring(filter, "atrim=start=%d.%03d", start/1000, start%1000);
+            else concformatstring(filter, "adelay=delays=%d:all=1", -start);
+            if(i < n-1) concformatstring(filter, ",atrim=duration=%d.%03d", lengthms[i]/1000, lengthms[i]%1000);
+            concformatstring(filter, ",asetpts=PTS-STARTPTS[piece%d]", i);
+        }
+        concatstring(filter, ";");
+        loopi(n) concformatstring(filter, "[piece%d]", i);
+        concformatstring(filter, "concat=n=%d:v=0:a=1,apad[sound]", n);
+        cmdline graph, mapsound;
+        quotearg(graph, filter);
+        quotearg(mapsound, "[sound]");
+        formatstring(args, "-y -loglevel error -i %s -f %s -ar %d -ac %d -i %s -filter_complex %s -map 0:v -map %s -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart %s",
+            video, soundpassformat, soundpassfreq, soundpasschannels, sound, graph, mapsound, out);
+        bool muxed = runffmpeg(args, "r") == 0;
+        if(muxed) remove(lastrender);
+        if(muxed && !rename(tmpname, lastrender)) { if(dbgmovie) conoutf(CON_DEBUG, "movie with sound: %s", lastrender); }
+        else { conoutf(CON_ERROR, "could not add the sound to %s", lastrender); remove(tmpname); }
+    }
+    remove(soundpassname);
+    lastrender[0] = '\0';
+}
 ICOMMAND(movierecording, "", (), intret(recorder::isrecording() ? 1 : 0));
 

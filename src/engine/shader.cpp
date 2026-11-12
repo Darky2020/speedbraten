@@ -1351,7 +1351,7 @@ void renderpostfx()
         int tex = -1;
         if(!postfxpasses.inrange(i+1))
         {
-            if(postfxpasses.length() > 1) glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+            if(postfxpasses.length() > 1) glBindFramebuffer_(GL_FRAMEBUFFER, screenfbo);
         }
         else
         {

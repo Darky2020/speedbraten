@@ -1597,7 +1597,14 @@ int main(int argc, char **argv)
         static int frames = 0, lastdrawmillis = 0;
         int millis = getclockmillis();
         bool draw = false;
-        if(fixedframe)
+        static bool wasrendering = false;
+        if(movierendering() != wasrendering) { wasrendering = !wasrendering; clockreset(); millis = getclockmillis(); }
+        if(int step = movierenderstep())
+        {
+            millis = totalmillis + step;
+            draw = true;
+        }
+        else if(fixedframe)
         {
             static int framessincedraw = 0;
             millis = totalmillis + fixedframe;
@@ -1637,7 +1644,7 @@ int main(int argc, char **argv)
         updateparticles();
         updatesounds();
 
-        if(minimized && !minimizedframes)
+        if(minimized && !minimizedframes && !movierendering())
         {
             if(display) game::enddisplay();
             continue;

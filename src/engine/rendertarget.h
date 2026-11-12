@@ -79,7 +79,7 @@ struct rendertarget
             glRenderbufferStorage_(GL_RENDERBUFFER, depthfmt, texw, texh);
             glFramebufferRenderbuffer_(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, blurdb);
         }
-        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        glBindFramebuffer_(GL_FRAMEBUFFER, screenfbo);
     }
 
     void setup(int w, int h)
@@ -122,7 +122,7 @@ struct rendertarget
             if(!depthfmt) depthfmt = depthfmts[find];
         }
  
-        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        glBindFramebuffer_(GL_FRAMEBUFFER, screenfbo);
 
         texw = w;
         texh = h;
@@ -384,7 +384,7 @@ struct rendertarget
             if(blursize) doblur(blursize, blursigma, blurysize ? blurysize : blursize);
         }
 
-        glBindFramebuffer_(GL_FRAMEBUFFER, 0);
+        glBindFramebuffer_(GL_FRAMEBUFFER, screenfbo);
         glViewport(0, 0, screenw, screenh);
     }
 

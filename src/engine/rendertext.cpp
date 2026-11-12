@@ -128,6 +128,7 @@ bool popfont()
 
 void gettextres(int &w, int &h)
 {
+    moviehudres(w, h);
     if(w < MINRESW || h < MINRESH)
     {
         if(MINRESW > w*MINRESH/h)

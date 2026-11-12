@@ -10,11 +10,38 @@ extern bool mapguiontop();
 enum { INPUTSRC_OTHER = 0, INPUTSRC_KEY, INPUTSRC_MOUSE, INPUTSRC_CONSOLE, INPUTSRC_MENU, INPUTSRC_HARNESS, INPUTSRC_RECORDER, INPUTSRC_MAP };
 extern int inputsource;
 extern int fixedframe;
+extern int screenw, screenh;
 extern int practicevisualizers;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);
 extern int simspeedpercent;
+// a movie on its own clock: each frame advances the game by exactly one video frame and none is dropped
+// hold: the clock runs on video frames already, but nothing is captured until movierenderhold(false)
+extern bool movierender(const char *name, int fps, int w, int h, bool hold = false);
+extern void movierenderhold(bool on);
+// a bar, label and hint line over the window (not the movie) while a render runs; frac < 0: no bar;
+// a NULL label hides it
+extern void movieprogress(const char *label, float frac, const char *hint = NULL);
+// the last rendered movie's name; moviediscard deletes it
+extern const char *movielastname();
+extern void moviediscard();
+// a real-time pass that records the mixer's output and, on stop with mux, adds it to the last rendered movie
+extern bool moviesoundstart();
+extern bool moviesoundrecording();
+// marks the recording where a sound started now would be mixed in; moviesoundmarkms: that place, -1 until then
+extern void moviesoundmark();
+extern int moviesoundmarkms();
+// mux: put together from n pieces of the recording, piece i from startms[i] (negative: that much
+// silence first) for lengthms[i] (the last: to the end), one piece per map of the movie
+extern void moviesoundstop(bool mux, const int *startms, const int *lengthms, int n);
+extern void movierenderstop();
+// while a movie renders off-screen: the HUD's text resolution, as tall as the window's, so the HUD
+// keeps the window's proportions at any movie size
+extern void moviehudres(int &w, int &h);
+extern bool movierendering();
+extern int movierenderstep();
+extern uint movierenderframes();
 // set while a map's script runs: its binds last until restoremapbinds, at the next map load
 // console lines only the full console shows (left out of the top left one and the mini console)
 enum { CON_QUIET = 1<<15 };

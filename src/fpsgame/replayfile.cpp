@@ -2667,6 +2667,57 @@ namespace game
         result(buf);
     });
 
+    // About the run a replay holds, for a rendered movie's console at its finish: one line per '\n'.
+    void replayrunsummary(const char *file, char *out, int outlen)
+    {
+        out[0] = '\0';
+        char summary[1024] = "";
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info)) return;
+        string maps, kind = "", when = "";
+        copystring(maps, info.map);
+        if(info.maps > 1) concformatstring(maps, " +%d maps", info.maps - 1);
+        if(info.flagrun) copystring(kind, ", flagrun");
+        else if(info.race) copystring(kind, ", race");
+        time_t t = time_t(info.date);
+        tm *lt = info.date ? localtime(&t) : NULL;
+        if(lt) strftime(when, sizeof(when), "%Y-%m-%d %H:%M", lt);
+        concformatstring(summary, "\f7%s on %s (%s%s), %s %s\n", info.player, maps, server::modename(info.mode, "?"), kind,
+            info.finished ? "run time" : "not finished,", info.finished ? formatruntime(info.runtime) : formatruntime(info.ticks*SIMTICK));
+
+        string verdict = "";
+        sbr2::reader rd;
+        replayinfo hinfo;
+        int size;
+        if(readreplayheaders(file, rd, hinfo, size))
+        {
+            vector<uchar> keys;
+            loadwitnesskeys(NULL, keys);
+            signedverdict(rd, keys, verdict, sizeof(verdict));
+        }
+        concformatstring(summary, "\f7played %s, witness: %s", when[0] ? when : "?", verdict[0] && strcmp(verdict, "none") ? verdict : "not witnessed");
+        if(info.splices) concformatstring(summary, ", segmented (%d state loads)", info.splices);
+        concatstring(summary, "\n");
+
+        const runchunk *client = findtells(run, "cLNT");
+        if(client)
+        {
+            string build = "", commit = "", platform = "", cpu = "";
+            long long dirty = 0;
+            sbr2::kvfind(client->data, "build", NULL, build, sizeof(build));
+            sbr2::kvfind(client->data, "commit", NULL, commit, sizeof(commit));
+            sbr2::kvfind(client->data, "dirty", &dirty);
+            sbr2::kvfind(client->data, "platform", NULL, platform, sizeof(platform));
+            sbr2::kvfind(client->data, "cpu", NULL, cpu, sizeof(cpu));
+            concformatstring(summary, "\f7%s %s (%s%s), %s, %s\n", info.client[0] ? info.client : "client", build[0] ? build : "?", commit[0] ? commit : "?",
+                dirty ? ", modified" : "", platform[0] ? platform : "?", cpu[0] ? cpu : "?");
+        }
+        const char *name = strrchr(file, '/');
+        concformatstring(summary, "\f7replay %s", name ? name+1 : file);
+        copystring(out, summary, outlen);
+    }
+
     ICOMMAND(replayfield, "is", (int *i, char *field),
     {
         if(!replaylist.inrange(*i)) { result(""); return; }

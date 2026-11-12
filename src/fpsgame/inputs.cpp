@@ -15,6 +15,8 @@ extern string picname;
 extern Texture *textureload(const char *name, int clamp, bool mipit, bool msg);
 extern void renderbackground(const char *caption, Texture *mapshot, const char *mapname, const char *mapinfo, bool restore, bool force);
 
+extern int fullconsole;
+
 namespace game
 {
     static vector<inputevent> pending;
@@ -652,8 +654,11 @@ namespace game
         runsaved = true;
     }
 
+    static void renderrunfinished();
+
     void inputrunfinished(int runtime)
     {
+        if(replaying) renderrunfinished();
         if(replaying || recordingoff || recording.empty()) return;
         if(!saveliferun(true, runtime)) saverunreplay(recording, true, runtime, true);
         else if(lifesaved && (chainfrom = witnesstakefinished()) >= 0) chainpending = true;
@@ -789,9 +794,35 @@ namespace game
     // harness scripts, whose sleeps only run while the simulation ticks
     VAR(replayendhold, 0, 1, 1);
 
+    // seconds a rendered replay goes on after its last tick, with no input
+    VARP(replayrendertail, 0, 3, 30);
+    // replayrender's defaults. size: 0 the window's, 1-4 720p/1080p/1440p/4K, 5 replayrendercustomw x replayrendercustomh
+    VARP(replayrenderfps, 1, 60, 1000);
+    VARP(replayrendersize, 0, 0, 5);
+    VARP(replayrendercustomw, 16, 1920, 16384);
+    VARP(replayrendercustomh, 16, 1080, 16384);
+    ICOMMAND(replayrenderwindow, "", (), { defformatstring(size, "%dx%d", (screenw+1)&~1, (screenh+1)&~1); result(size); });
+    // the input display, the replay bar and the race ghost in the movie; the full console from the finish on
+    VARP(replayrenderinputs, 0, 1, 1);
+    VARP(replayrenderbar, 0, 1, 1);
+    VARP(replayrenderghosts, 0, 1, 1);
+    VARP(replayrenderconsole, 0, 0, 1);
+    // the run's player, date, witness verdict and client in the console at the finish
+    VARP(replayrenderinfo, 0, 1, 1);
+    static char rendersummary[1024] = "";
+    static bool renderbusy();
+
+    // the tick the replay stops at: its last, or later while rendering
+    static int replayendtick()
+    {
+        int ticks = replaycur().ticks;
+        if(renderbusy() && replayattempt == replaydata.attempts.length()-1) ticks += replayrendertail*1000/SIMTICK;
+        return ticks;
+    }
+
     static bool replayviewended()
     {
-        return replayviewing && replaying && replayendhold && replayattempt == replaydata.attempts.length()-1 && curtick >= replaycur().ticks;
+        return replayviewing && replaying && replayendhold && replayattempt == replaydata.attempts.length()-1 && curtick >= replayendtick();
     }
 
     static bool replayviewhold() { return replayviewing && (replayviewpaused || replayviewended()); }
@@ -888,6 +919,61 @@ namespace game
         else replayseektarget = max(curtick + ticks, 0);
     }
 
+    // replayrender's passes; the replay view's keys are off while one runs
+    enum { RENDER_NONE = 0, RENDER_VIDEOWAIT, RENDER_VIDEO, RENDER_SOUNDWAIT, RENDER_SOUND, RENDER_DONE };
+    static int renderstate = RENDER_NONE;
+    // Where each map of a rendered replay begins: in the video pass, its first frame's time in the movie
+    // and the game time it shows; in the sound pass, the game time when the recording was marked and
+    // where the mark landed in it. A map's sound is the recording's piece that lines up with its video.
+    struct rendermark { int videoms, videomillis, soundmillis, soundms; };
+    static vector<rendermark> rendermarks;
+    static int rendermarking = -1, rendervideotick = 0, renderfps = 60;
+
+    static void markvideo()
+    {
+        rendermark &m = rendermarks.add();
+        m.videoms = int(movierenderframes()*1000LL/renderfps);
+        m.videomillis = lastmillis;
+        m.soundmillis = m.soundms = INT_MIN;
+    }
+
+    static void marksound()
+    {
+        if(rendermarking >= 0)
+        {
+            int ms = moviesoundmarkms();
+            if(ms < 0) return;
+            rendermarks[rendermarking].soundms = ms;
+            rendermarking = -1;
+        }
+        int next = 0;
+        while(next < rendermarks.length() && rendermarks[next].soundmillis != INT_MIN) next++;
+        if(next >= rendermarks.length() || next != replayattempt) return;
+        if(next ? curtick < 1 : lastmillis < rendermarks[0].videomillis) return;
+        rendermarks[next].soundmillis = lastmillis;
+        rendermarking = next;
+        moviesoundmark();
+    }
+
+    static void finishsound(bool mux)
+    {
+        vector<int> starts, lengths;
+        loopv(rendermarks)
+        {
+            const rendermark &m = rendermarks[i];
+            if(m.soundms == INT_MIN) { mux = false; break; }
+            starts.add(m.soundms + m.videomillis - m.soundmillis);
+            lengths.add(i+1 < rendermarks.length() ? rendermarks[i+1].videoms - m.videoms : 0);
+        }
+        if(starts.empty()) mux = false;
+        moviesoundstop(mux, starts.getbuf(), lengths.getbuf(), starts.length());
+    }
+    // the viewer's own replay HUD, do not disturb, ghost and console settings, put back after a render
+    static int renderviewinputs = -1, renderviewhud = -1, renderviewdnd = -1, renderviewghost = -1, renderviewconsole = -1;
+    extern int donotdisturb, ghost;
+
+    static bool renderbusy() { return renderstate != RENDER_NONE; }
+
     static void restartreplayview()
     {
         if(!replayviewing) return;
@@ -904,7 +990,7 @@ namespace game
         if(!replayviewing) return false;
         switch(code)
         {
-            case SDLK_SPACE: case SDLK_LSHIFT: case SDLK_RSHIFT: case SDLK_p: case SDLK_r: case SDLK_i:
+            case SDLK_SPACE: case SDLK_LSHIFT: case SDLK_RSHIFT: case SDLK_p: case SDLK_r: case SDLK_i: case SDLK_v:
             case SDLK_LEFT: case SDLK_RIGHT: case SDLK_BACKSPACE:
                 return true;
         }
@@ -913,6 +999,7 @@ namespace game
 
     static void replayviewkey(int keycode)
     {
+        if(renderbusy() && keycode != SDLK_BACKSPACE) return;
         switch(keycode)
         {
             case SDLK_p: if(replaying && !replayviewended()) replayviewpaused = !replayviewpaused; break;
@@ -921,6 +1008,7 @@ namespace game
             case SDLK_RIGHT: seekreplay(replayseekstep); break;
             case SDLK_BACKSPACE: leavereplayview(); break;
             case SDLK_i: replayinputs = !replayinputs; break;
+            case SDLK_v: if(replayviewfile[0]) execute("sb_renderview"); break;
         }
     }
 
@@ -936,6 +1024,168 @@ namespace game
         simfastforward(ms);
     }
 
+    // replayrender: the replay is drawn into a movie from its first tick to its end, then played again
+    // in real time to record its sound. The render clock starts before the map loads, so the frames
+    // line up with the ticks the same way every time.
+    // set at the run's finish while rendering with replayrenderconsole: the full console stays open from
+    // then on, also over the scoreboard an intermission brings up (which would close it)
+    static bool renderconsoleopen = false;
+
+    static void renderclearconsole()
+    {
+        renderconsoleopen = false;
+        showscores(false);
+        fullconsole = 0;
+    }
+
+    static void renderrunfinished()
+    {
+        if(replayrenderconsole && (renderstate == RENDER_VIDEO || renderstate == RENDER_SOUND)) renderconsoleopen = true;
+        if(replayrenderinfo && (renderstate == RENDER_VIDEO || renderstate == RENDER_SOUND) && rendersummary[0])
+        {
+            for(const char *line = rendersummary; *line;)
+            {
+                const char *end = strchr(line, '\n');
+                int len = end ? int(end - line) : int(strlen(line));
+                conoutf(CON_INFO, "%.*s", len, line);
+                line += len + (end ? 1 : 0);
+            }
+        }
+    }
+
+    static void replayrender(const char *file, int fps, int w, int h)
+    {
+        if(multiplayer(false) || renderbusy() || movierendering()) return;
+        inputrun run;
+        replayinfo info;
+        if(!readreplay(file, &run, info) || run.empty()) { conoutf(CON_ERROR, "could not read %s", file); return; }
+        replayrunsummary(file, rendersummary, sizeof(rendersummary));
+        string base;
+        const char *name = strrchr(file, '/');
+        copystring(base, name ? name+1 : file);
+        char *ext = strrchr(base, '.');
+        if(ext) *ext = '\0';
+        defformatstring(movie, "movies/%s", base);
+        if(w <= 0 || h <= 0)
+        {
+            static const int sizes[][2] = { { 0, 0 }, { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 }, { 3840, 2160 } };
+            if(replayrendersize >= 5) { w = replayrendercustomw; h = replayrendercustomh; }
+            else { w = sizes[replayrendersize][0]; h = sizes[replayrendersize][1]; }
+        }
+        renderfps = clamp(fps > 0 ? fps : replayrenderfps, 1, 1000);
+        if(!movierender(movie, renderfps, w, h, true)) { conoutf(CON_ERROR, "could not render %s", movie); return; }
+        viewinputrun(run, file);
+        renderstate = RENDER_VIDEOWAIT;
+        renderviewinputs = replayinputs;
+        renderviewhud = replayviewhud;
+        replayinputs = replayrenderinputs;
+        replayviewhud = replayrenderbar;
+        renderviewdnd = donotdisturb;
+        donotdisturb = 1;
+        renderviewghost = ghost;
+        ghost = replayrenderghosts;
+        renderviewconsole = fullconsole;
+        fullconsole = 0;
+    }
+    ICOMMAND(replayrender, "siii", (char *file, int *fps, int *w, int *h), replayrender(file, *fps, *w, *h));
+    ICOMMAND(replayrendering, "", (), intret(renderstate));
+    ICOMMAND(replayviewfile, "", (), result(replayviewing ? replayviewfile : ""));
+    ICOMMAND(replayviewname, "", (),
+    {
+        string name;
+        const char *base = strrchr(replayviewfile, '/');
+        copystring(name, base ? base+1 : replayviewfile);
+        char *ext = strrchr(name, '.');
+        if(ext) *ext = '\0';
+        result(name);
+    });
+
+    // leaving the replay view (Backspace) during a pass aborts the render and deletes the movie
+    static void replayrenderframe()
+    {
+        // a pass begins once the replay plays from its first tick, after any start state it begins from
+        bool started = replayviewing && replaying && !replaypending && !replaystartstate, ended = !replaying || replayviewended();
+        switch(renderstate)
+        {
+            case RENDER_VIDEOWAIT:
+                if(!replayviewing || !movierendering()) { movierenderstop(); moviediscard(); renderstate = RENDER_NONE; }
+                else if(started)
+                {
+                    replayviewpaused = replayviewfast = replayviewslow = false;
+                    movierenderhold(false);
+                    rendermarks.setsize(0);
+                    markvideo();
+                    rendervideotick = curtick;
+                    renderstate = RENDER_VIDEO;
+                }
+                break;
+            case RENDER_VIDEO:
+                if(!movierendering()) renderstate = RENDER_NONE;
+                else if(!replayviewing) { movierenderstop(); moviediscard(); renderstate = RENDER_NONE; }
+                else if(replayattempt == rendermarks.length() && replaying && !replaypending && curtick >= 1) markvideo();
+                if(renderstate == RENDER_VIDEO && replayviewing && ended)
+                {
+                    movierenderstop();
+                    renderclearconsole();
+                    restartreplayview();
+                    renderstate = RENDER_SOUNDWAIT;
+                }
+                break;
+            case RENDER_SOUNDWAIT:
+                if(!replayviewing) { moviediscard(); renderstate = RENDER_NONE; }
+                else if(started)
+                {
+                    rendermarking = -1;
+                    loopv(rendermarks) rendermarks[i].soundmillis = rendermarks[i].soundms = INT_MIN;
+                    renderstate = moviesoundstart() ? RENDER_SOUND : RENDER_DONE;
+                }
+                break;
+            case RENDER_SOUND:
+                if(replaying && !replaypending) marksound();
+                if(!replayviewing) { finishsound(false); moviediscard(); renderstate = RENDER_NONE; }
+                else if(ended)
+                {
+                    finishsound(true);
+                    renderstate = RENDER_DONE;
+                }
+                break;
+            case RENDER_DONE:
+                if(!replayviewing) renderstate = RENDER_NONE;
+                break;
+        }
+        if(renderconsoleopen && !fullconsole)
+        {
+            showscores(false);
+            fullconsole = 1;
+        }
+        float frac = 0;
+        if(replaying && !replaypending && (renderstate == RENDER_VIDEO || renderstate == RENDER_SOUND))
+        {
+            int done = curtick - rendervideotick, total = replayendtick() - replaycur().ticks - rendervideotick;
+            loopv(replaydata.attempts)
+            {
+                total += replaydata.attempts[i]->ticks;
+                if(i < replayattempt) done += replaydata.attempts[i]->ticks;
+            }
+            frac = done/float(max(total, 1));
+        }
+        if(renderstate == RENDER_VIDEOWAIT || renderstate == RENDER_VIDEO) movieprogress("rendering video", frac, "Backspace: abort");
+        else if(renderstate == RENDER_SOUNDWAIT || renderstate == RENDER_SOUND) movieprogress("recording sound", frac, "Backspace: abort");
+        else if(renderstate == RENDER_DONE)
+        {
+            defformatstring(label, "saved %s", movielastname());
+            movieprogress(label, -1, "Backspace: leave replay");
+        }
+        else
+        {
+            movieprogress(NULL, 0);
+            if(renderviewinputs >= 0) { replayinputs = renderviewinputs; replayviewhud = renderviewhud; renderviewinputs = renderviewhud = -1; }
+            if(renderviewdnd >= 0) { donotdisturb = renderviewdnd; renderviewdnd = -1; }
+            if(renderviewghost >= 0) { ghost = renderviewghost; renderviewghost = -1; }
+            if(renderviewconsole >= 0) { renderclearconsole(); fullconsole = renderviewconsole; renderviewconsole = -1; }
+        }
+    }
+
     static void drawreplayview(int w, int h)
     {
         if(!replayviewing || !replayviewhud || !replaying) return;
@@ -948,7 +1198,7 @@ namespace game
         else if(replayviewfast) formatstring(state, "\f0x%d", replayfastspeed);
         else if(replayviewslow) copystring(state, "\f0x0.5");
         else copystring(state, "\f7playing");
-        formatstring(keys, "\f7P %s   \f7left/right %ds   \f7hold space x%d   \f7hold shift x0.5   \f7I inputs   \f7R restart   \f7Backspace leave", replayviewpaused ? "play" : "pause", replayseekstep, replayfastspeed);
+        formatstring(keys, "\f7P %s   \f7left/right %ds   \f7hold space x%d   \f7hold shift x0.5   \f7I inputs   \f7R restart   %s\f7Backspace leave", replayviewpaused ? "play" : "pause", replayseekstep, replayfastspeed, replayviewfile[0] ? "\f7V video   " : "");
         defformatstring(line, "\f7replay %s   %s", pos, state);
         const float scale = 0.4f;
         int lw = 0, lh = 0, kw = 0, kh = 0;
@@ -959,7 +1209,7 @@ namespace game
         flushhudmatrix();
         int y = int(h*0.78f/scale) - lh;
         draw_text(line, int(w/2.0f/scale - lw/2.0f), y, 255, 255, 255, 230);
-        if(replayviewkeys) draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
+        if(replayviewkeys && !renderbusy()) draw_text(keys, int(w/2.0f/scale - kw/2.0f), y + lh, 255, 255, 255, 170);
         pophudmatrix();
     }
 
@@ -1324,7 +1574,13 @@ namespace game
         if(replaying && replaychainhook && replayattempt == replaydata.attempts.length()-1 && curtick+1 > replaycur().ticks) replaychainhook();
         curtick++;
         tickhash h;
-        if(replaying && curtick > replaycur().ticks)
+        if(replaying && curtick == replaycur().ticks+1 && replayendtick() > replaycur().ticks)
+        {
+            lastcontrols.move = lastcontrols.strafe = lastcontrols.vertical = 0;
+            lastcontrols.jumping = lastcontrols.attacking = false;
+            releasecontrols();
+        }
+        if(replaying && curtick > replayendtick())
         {
             replaying = false;
             recordingoff = true;
@@ -1643,9 +1899,10 @@ namespace game
         if(replayviewing && !(e.flags&rawevent::TEXT))
         {
             bool shift = e.keycode == SDLK_LSHIFT || e.keycode == SDLK_RSHIFT;
-            if(e.kind == rawevent::KEYDOWN && e.keycode == SDLK_SPACE) replayviewfast = true;
+            if(renderbusy()) replayviewfast = replayviewslow = false;
+            if(e.kind == rawevent::KEYDOWN && e.keycode == SDLK_SPACE) replayviewfast = !renderbusy();
             else if((e.kind == rawevent::KEYUP && e.keycode == SDLK_SPACE) || e.kind == rawevent::FOCUS) replayviewfast = replayviewslow = false;
-            else if(shift) replayviewslow = e.kind == rawevent::KEYDOWN;
+            else if(shift) replayviewslow = e.kind == rawevent::KEYDOWN && !renderbusy();
             else if(e.kind == rawevent::KEYDOWN) replayviewkey(e.keycode);
         }
         if(!simticking || replaying || recordingoff || recording.attempts.empty() || !connected) return;
@@ -1675,6 +1932,7 @@ namespace game
     void frametimed(int us, int ticks, bool drawn)
     {
         syncrunnername();
+        replayrenderframe();
         replayfastframe(us);
         spectateframe(us);
         runtimerframe();

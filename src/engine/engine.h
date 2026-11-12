@@ -34,6 +34,8 @@ extern bool inbetweenframes, renderedframe;
 
 extern SDL_Window *screen;
 extern int screenw, screenh;
+// what binding framebuffer 0 stands for: the window, or the off-screen target a movie renders into
+extern GLuint screenfbo;
 extern int zpass;
 
 extern vector<int> entgroup;

@@ -12,13 +12,17 @@
 - Following a player right as a demo starts no longer leaves the view stuck under the map.
 - Spectating or watching a replay shows the runner's name, not yours (scoreboard, dialogue).
 - Share a replay in the hub from its replay menu; others see it in the console and watch it with /sharedlist.
+- The shared replays list shows each replay's mode, size, when and by whom it was shared; downloads are named map_time_runner.
 - The speedrun menu and the replay browser open without a freeze.
 - Custom menu backgrounds show from the loading screen on, in full quality.
 - Practice visualizers mark bounce edges: ledges that cut gravity when risen past, with their gain and approaches.
 - Practice visualizers show the last jump's takeoff and the last bump's numbers.
 - /gamespeed goes down to 1.
 - After spectating or a replay, leaving to the menu no longer keeps the runner's name.
+- Render a replay to an .mp4 video with sound (needs ffmpeg): "render video" in its replay menu, V while watching it, or /replayrender; any size and fps.
+- /movie records a compact .mp4 when ffmpeg is installed.
 - Replay input display: the chat/console key no longer stays lit; jumps and moves on a mouse button light that button, not the key boxes.
+- Run timer option "sub-tick": after a flagrun or race finish, how many ms earlier the finish would have made the time a tick less.
 
 ## v0.3.14
 

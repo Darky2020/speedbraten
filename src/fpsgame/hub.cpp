@@ -789,6 +789,37 @@ namespace game
     }
 
 
+    // "effic ctf, 15.4 KB, 5 min ago, shared by Inko"
+    static const char *sharedinfo(const sharedrow &row)
+    {
+        static string s;
+        string size, ago;
+        if(row.size >= 1000*1000) formatstring(size, "%.1f MB", row.size/1e6);
+        else formatstring(size, "%.1f KB", row.size/1e3);
+        long long secs = max((long long)time(NULL) - (long long)row.at, 0LL);
+        if(secs < 60) copystring(ago, "just now");
+        else if(secs < 3600) formatstring(ago, "%d min ago", int(secs/60));
+        else if(secs < 86400) formatstring(ago, "%d h ago", int(secs/3600));
+        else formatstring(ago, "%d days ago", int(secs/86400));
+        formatstring(s, "%s, %s, %s, shared by %s", server::modename(row.mode, "?"), size, ago, row.sharer);
+        return s;
+    }
+
+    // where a shared replay is saved: "replays/downloaded/forge_0-04-830_Inko_shared12.sbr"
+    static void sharedfile(const sharedrow &row, char *file, int len)
+    {
+        string runtime, runner;
+        if(row.flags & SHARED_FINISHED) copystring(runtime, formatruntime(row.runtimems));
+        else copystring(runtime, "dnf");
+        for(char *c = runtime; *c; c++) if(*c == ':' || *c == '.') *c = '-';
+        int n = 0;
+        for(const char *c = row.runner; *c && n < MAXSTRLEN-1; c++) if(isalnum(uchar(*c)) || *c == '-' || *c == '_') runner[n++] = *c;
+        runner[n] = '\0';
+        if(!n) copystring(runner, "someone");
+        nformatstring(file, len, "replays/downloaded/%s_%s_%s_shared%u.sbr", row.map, runtime, runner, row.id);
+        for(char *c = file + strlen("replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+    }
+
     static void sharedlisted(vector<sharedrow> &rows)
     {
         sharedrows.setsize(0);
@@ -818,6 +849,7 @@ namespace game
         else if(!strcmp(field, "finished")) intret(row.flags & SHARED_FINISHED ? 1 : 0);
         else if(!strcmp(field, "time")) result(row.flags & SHARED_FINISHED ? formatruntime(row.runtimems) : "");
         else if(!strcmp(field, "size")) intret(row.size);
+        else if(!strcmp(field, "info")) result(sharedinfo(row));
         else result("");
     });
 
@@ -827,8 +859,7 @@ namespace game
         if(!sharedrows.inrange(n-1)) { conoutf(CON_ERROR, "no shared replay %d", n); return; }
         const sharedrow &row = sharedrows[n-1];
         string file;
-        formatstring(file, "replays/downloaded/shared%u_%s.sbr", row.id, row.map);
-        for(char *c = file + strlen("replays/downloaded/"); *c; c++) if(*c == '/' || *c == '\\') *c = '_';
+        sharedfile(row, file, sizeof(file));
         if(stream *f = openrawfile(path(file, true), "rb")) { delete f; useboardreplay(file, true, sharedtitle(row)); return; }
         if(downloading()) { conoutf(CON_ERROR, "a replay is already downloading"); return; }
         if(!hubready()) { conoutf(CON_ERROR, "connect to the hub to download replays"); return; }
