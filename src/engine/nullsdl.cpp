@@ -103,6 +103,12 @@ int SDLCALL SDL_GetCPUCount(void)
 #endif
 }
 
+// single-threaded: plain reads and writes
+int SDLCALL SDL_AtomicGet(SDL_atomic_t *a) { return a->value; }
+int SDLCALL SDL_AtomicSet(SDL_atomic_t *a, int v) { int old = a->value; a->value = v; return old; }
+int SDLCALL SDL_AtomicAdd(SDL_atomic_t *a, int v) { int old = a->value; a->value += v; return old; }
+SDL_bool SDLCALL SDL_AtomicCAS(SDL_atomic_t *a, int oldval, int newval) { if(a->value != oldval) return SDL_FALSE; a->value = newval; return SDL_TRUE; }
+
 void *SDLCALL SDL_malloc(size_t size) { return malloc(size); }
 void SDLCALL SDL_free(void *mem) { free(mem); }
 void *SDLCALL SDL_memcpy(void *dst, const void *src, size_t len) { return memcpy(dst, src, len); }

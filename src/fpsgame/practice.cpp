@@ -92,9 +92,9 @@ namespace game
             const bounceedge &e = edges[i];
             vec mid = vec(e.a).add(e.b).mul(0.5f);
             if(camera1->o.dist(mid) > 96) continue;
-            bool near = false;
-            loopvj(placed) if(placed[j].dist(mid) < 16) { near = true; break; }
-            if(near) continue;
+            bool crowded = false;
+            loopvj(placed) if(placed[j].dist(mid) < 16) { crowded = true; break; }
+            if(crowded) continue;
             placed.add(mid);
             out.add(i);
         }
@@ -690,11 +690,11 @@ namespace game
         {
             // one label per stretch: none within 16 units of one already placed
             const vector<bounceedge> &edges = bounceedges(practicebouncespeed);
-            vector<int> near;
-            nearbounceedges(near);
-            loopv(near)
+            vector<int> nearby;
+            nearbounceedges(nearby);
+            loopv(nearby)
             {
-                const bounceedge &e = edges[near[i]];
+                const bounceedge &e = edges[nearby[i]];
                 vec mid = vec(e.a).add(e.b).mul(0.5f);
                 float gain = bouncegain(e.height);
                 string label;
