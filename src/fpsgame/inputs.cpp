@@ -1549,6 +1549,8 @@ namespace game
             }
             else
             {
+                // a life played from its state starts alive: the scoreboard a death opened closes as on a respawn
+                showscores(false);
                 if(lifecheck && !strcmp(replaylifecheckresult, "skipped"))
                     lifestartcompare(a.lifeseeds, lifeseed(a.seed, player1->lifesequence), replaylifecheckresult, sizeof(replaylifecheckresult));
                 replaypos = 0;

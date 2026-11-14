@@ -4,6 +4,7 @@
 
 - Practice visualizers: "stuck exits" — while stuck building fall speed, where letting go of W (or adding a key) throws you, and whether through a wall.
 - Practice visualizers: "stuck spots" — `/practicestuckmapscan` finds the spots where holding W gets you stuck, green where a release can clip through a wall; saved per map.
+- Spectating: the scoreboard no longer opens on every reset of the player you watch.
 
 ## v0.3.15
 
