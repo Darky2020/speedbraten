@@ -15,6 +15,11 @@ extern int practicevisualizers;
 extern bool minimized;
 // a key, mouse or focus event as SDL delivered it, before the game handles it
 extern void simfastforward(int ms);
+// one tick of a player's movement on a copy of it, which doesn't collide with ignore; path gets every sub-step
+extern void simulatetick(physent *pl, physent *ignore, vector<vec> *path = NULL);
+// false: collisions test the map and its mapmodels only, not players, monsters or movables
+extern bool collidedynents;
+extern const float GRAVITY;
 extern int simspeedpercent;
 // a movie on its own clock: each frame advances the game by exactly one video frame and none is dropped
 // hold: the clock runs on video frames already, but nothing is captured until movierenderhold(false)

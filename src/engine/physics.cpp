@@ -752,9 +752,14 @@ static inline bool plcollide(physent *d, const vec &dir, physent *o)
     }
 }
 
+// the player a simulated copy is made from: the copy doesn't collide with it (simulatetick)
+static physent *simignore = NULL;
+
+bool collidedynents = true;
+
 bool plcollide(physent *d, const vec &dir, bool insideplayercol)    // collide with player or monster
 {
-    if(d->type==ENT_CAMERA || d->state!=CS_ALIVE) return false;
+    if(d->type==ENT_CAMERA || d->state!=CS_ALIVE || !collidedynents) return false;
     int lastinside = collideinside;
     physent *insideplayer = NULL;
     loopdynentcache(x, y, d->o, d->radius)
@@ -763,7 +768,7 @@ bool plcollide(physent *d, const vec &dir, bool insideplayercol)    // collide w
         loopv(dynents)
         {
             physent *o = dynents[i];
-            if(o==d || d->o.reject(o->o, d->radius+o->radius)) continue;
+            if(o==d || o==simignore || d->o.reject(o->o, d->radius+o->radius)) continue;
             if(plcollide(d, dir, o))
             {
                 collideplayer = o;
@@ -1876,6 +1881,32 @@ bool moveplayer(physent *pl, int moveres, bool local, int curtime)
     if(pl->state==CS_ALIVE && (pl->o.z < 0 || material&MAT_DEATH)) game::suicide(pl);
 
     return true;
+}
+
+// One tick of moveplayer for a copy of a player, without its sounds or death checks: gravity, the held
+// keys and the sub-steps. Its collision tests fill the dynent cache as the real tick's do. ignore is the
+// player the copy was made from. path gets the position after every sub-step.
+void simulatetick(physent *pl, physent *ignore, vector<vec> *path)
+{
+    simignore = ignore;
+    int material = lookupmaterial(vec(pl->o.x, pl->o.y, pl->o.z + (3*pl->aboveeye - pl->eyeheight)/4));
+    bool water = isliquid(material&MATF_VOLUME);
+    pl->vertical = 0;
+    modifygravity(pl, water, PHYSFRAMETIME);
+    modifyvelocity(pl, true, water, false, PHYSFRAMETIME);
+    vec d(pl->vel);
+    if(water) d.mul(0.5f);
+    d.add(pl->falling);
+    d.mul(PHYSFRAMETIME/1000.f);
+    pl->blocked = false;
+    d.mul(1.0f/10);
+    int collisions = 0;
+    loopi(10)
+    {
+        if(!move(pl, d) && ++collisions<5) i--;
+        if(path) path->add(pl->o);
+    }
+    simignore = NULL;
 }
 
 // a standing jump rising to height: the gravity built up when the feet get there and how long that

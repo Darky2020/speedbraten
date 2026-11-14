@@ -32,6 +32,7 @@ namespace game
     MOD(VARP, practicebouncespeed, 50, 165, 1000); // the horizontal speed approaches and zones are for
     MOD(VARP, practicelastjump, 0, 1, 1);       // where the last jump left the ground
     MOD(VARP, practicelastbump, 0, 1, 1);       // what the last bump did, on the HUD for a few seconds
+    MOD(VARP, practicestuckexits, 0, 1, 1);     // while stuck building fall speed: where letting go of the keys throws you
 
     enum
     {
@@ -142,6 +143,685 @@ namespace game
         return looked;
     }
 
+    // Collision tests fill the engine's dynent cache, which belongs to the simulation (states save it, replay
+    // hashes check it): simulations for the visuals run inside one of these, which puts the cache back.
+    struct keepdynentcache
+    {
+        vector<int> cache;
+        bool saved;
+        keepdynentcache() { saved = savedynentcache(cache); }
+        ~keepdynentcache() { if(saved) loaddynentcache(cache); }
+    };
+
+    // the stuck finder's simulations: monsters and other movers come and go, so only the map holds a spot
+    struct mapcollisionsonly
+    {
+        mapcollisionsonly() { collidedynents = false; }
+        ~mapcollisionsonly() { collidedynents = true; }
+    };
+
+    // Stuck: wedged somewhere the game never sees a floor it can stand on (falling, or sliding on a steep
+    // surface, where gravity runs along it and builds sideways speed too), so the player doesn't move while
+    // gravity keeps adding to the fall speed. Letting go of the keys that hold it there finds the floor, and that tick's
+    // remaining sub-steps keep the fall speed's length but point along whatever velocity is left: a throw
+    // of a few long hops, each checked for collisions only where it ends. Each exit is simulated on a copy
+    // of the player with the keys that could be held at the release.
+    // A release a tick earlier or later can land a hop shorter or longer, so the landings of releases on
+    // each of the next STUCKSPREAD ticks are shown too.
+    enum { STUCKMINFALL = 800, STUCKPATHTICKS = 100, STUCKSPREADTICKS = 40, STUCKSETTLE = 20, NUMSTUCKKEYS = 8, STUCKSPREAD = 10, STUCKREFRESH = 500 };
+    static const struct { int move, strafe; const char *name; } stuckkeys[NUMSTUCKKEYS] =
+    {
+        { 0, 0, "none" }, { 0, 1, "A" }, { 0, -1, "D" }, { -1, 0, "S" }, { -1, 1, "S+A" }, { -1, -1, "S+D" },
+        { 1, 1, "W+A" }, { 1, -1, "W+D" } // adding a key to the held W: often enough to come loose
+    };
+
+    // wall: a hop of the throw crosses map geometry (mapmodels aren't in it); hold: holding W with these
+    // keys keeps the player stuck, so they can be pressed before W is let go
+    struct stuckexit { vector<vec> path; bool out, wall, hold; };
+    static stuckexit stuckexits[NUMSTUCKKEYS][1];
+    static vec stucklandings[NUMSTUCKKEYS][STUCKSPREAD];
+    static bool stuckspreadout[NUMSTUCKKEYS][STUCKSPREAD];
+    static vec stuckpos(0, 0, 0);
+    static int stucksince = -1, stuckcomputed = -1;
+    // the simulations are jobs run a few per frame within a time budget; a full round every STUCKREFRESH ms
+    enum { STUCKJOBS = NUMSTUCKKEYS*(1 + STUCKSPREAD), STUCKBUDGETUS = 2000 };
+    static int stuckcursor = 0;
+
+    static bool isstuck()
+    {
+        if(!practicevisualizers || !practicestuckexits || editmode || player1->state != CS_ALIVE) { stucksince = -1; return false; }
+        bool falls = player1->physstate == PHYS_FALL || player1->physstate == PHYS_SLIDE || player1->physstate == PHYS_SLOPE;
+        if(!falls || player1->falling.magnitude() < STUCKMINFALL || player1->o.dist(stuckpos) > 0.01f)
+        {
+            stuckpos = player1->o;
+            stucksince = -1;
+            return false;
+        }
+        if(stucksince < 0) { stucksince = lastmillis; stuckcomputed = -1; stuckcursor = 0; loopi(NUMSTUCKKEYS) stuckexits[i][0].path.setsize(0); }
+        return true;
+    }
+
+    // a copy of the player that keeps its keys for hold ticks, then lets go to keys k; false if it leaves the map
+    static bool simulateexit(fpsent &sim, const physent &base, int hold, int k, int extrafall, vector<vec> *path, int ticks)
+    {
+        (physent &)sim = base;
+        sim.jumping = false;
+        sim.falling.z -= extrafall;
+        loopi(hold) simulatetick(&sim, player1);
+        sim.move = stuckkeys[k].move;
+        sim.strafe = stuckkeys[k].strafe;
+        if(path) path->add(sim.o);
+        vec last = sim.o;
+        int still = 0;
+        loopi(ticks)
+        {
+            simulatetick(&sim, player1, path && i < 2 ? path : NULL);
+            if(path && i >= 2) path->add(sim.o);
+            if(sim.o.z < 0 || lookupmaterial(sim.o)&MAT_DEATH) return false;
+            if(sim.physstate >= PHYS_SLOPE && vec(sim.vel).add(sim.falling).magnitude() < 50) break;
+            // stuck again: nothing more will happen
+            if(sim.o.dist(last) > 0.01f) { last = sim.o; still = 0; }
+            else if(++still >= STUCKSETTLE) break;
+        }
+        return true;
+    }
+
+    // whether a hop of the throw crosses map geometry, the player's middle taken as the ray's start
+    static bool throughwall(const vector<vec> &path)
+    {
+        vec mid(0, 0, player1->eyeheight - (player1->eyeheight + player1->aboveeye)/2);
+        for(int i = 1; i < path.length(); i++)
+        {
+            vec a = vec(path[i-1]).sub(mid), ray = vec(path[i]).sub(path[i-1]);
+            float len = ray.magnitude();
+            if(len < 1e-3f) continue;
+            ray.div(len);
+            float d = raycube(a, ray, len, RAY_CLIPMAT);
+            if(d > 0.01f && d < len - 0.01f) return true;
+        }
+        return false;
+    }
+
+    // holding W together with keys k for a while, the player stays where it is
+    static bool holdsstuck(fpsent &sim, int k)
+    {
+        (physent &)sim = *player1;
+        sim.jumping = false;
+        sim.move = 1;
+        sim.strafe = stuckkeys[k].strafe;
+        loopi(40)
+        {
+            simulatetick(&sim, player1);
+            if(sim.physstate >= PHYS_FLOOR || sim.o.dist(player1->o) > 0.01f) return false;
+        }
+        return true;
+    }
+
+    static void computestuckexits()
+    {
+        if(stuckcursor >= STUCKJOBS)
+        {
+            if(stuckcomputed >= 0 && lastmillis - stuckcomputed < STUCKREFRESH) return;
+            stuckcursor = 0;
+        }
+        if(!stuckcursor) stuckcomputed = lastmillis;
+        keepdynentcache keep;
+        static fpsent sim;
+        Uint64 start = SDL_GetPerformanceCounter(), budget = SDL_GetPerformanceFrequency()*STUCKBUDGETUS/1000000;
+        while(stuckcursor < STUCKJOBS && SDL_GetPerformanceCounter() - start < budget)
+        {
+            int job = stuckcursor++, i = job/(1 + STUCKSPREAD), j = job%(1 + STUCKSPREAD);
+            if(!j)
+            {
+                stuckexit &x = stuckexits[i][0];
+                x.path.setsize(0);
+                x.out = !simulateexit(sim, *player1, 0, i, 0, &x.path, STUCKPATHTICKS);
+                x.wall = throughwall(x.path);
+                x.hold = stuckkeys[i].move >= 0 && stuckkeys[i].strafe && holdsstuck(sim, i);
+                // W with another key that keeps the player stuck is no exit
+                if(stuckkeys[i].move > 0 && x.hold) x.path.setsize(0);
+            }
+            else
+            {
+                stuckspreadout[i][j-1] = !simulateexit(sim, *player1, j-1, i, 0, NULL, STUCKSPREADTICKS);
+                stucklandings[i][j-1] = sim.o;
+            }
+        }
+    }
+
+    // the key sets whose throws land together (within STUCKMERGE units) share one marker, path and label
+    enum { STUCKMERGE = 4 };
+    struct stuckgroup { int first; string keys; float lo, hi; bool out, wall; };
+    static vector<stuckgroup> stuckgroups;
+
+    static void groupstuckexits()
+    {
+        stuckgroups.setsize(0);
+        loopi(NUMSTUCKKEYS)
+        {
+            const stuckexit &x = stuckexits[i][0];
+            if(x.path.length() < 2) continue;
+            const vec &end = x.path[x.path.length()-1];
+            float lo = 1e16f, hi = 0;
+            bool out = x.out;
+            loopj(STUCKSPREAD)
+            {
+                float d = stucklandings[i][j].dist(x.path[0]);
+                lo = min(lo, d);
+                hi = max(hi, d);
+                out = out || stuckspreadout[i][j];
+            }
+            string keys;
+            copystring(keys, stuckkeys[i].name);
+            if(stuckkeys[i].strafe && !stuckkeys[i].move) concatstring(keys, x.hold ? " (press first)" : " (same moment)");
+            stuckgroup *g = NULL;
+            loopvj(stuckgroups)
+            {
+                const stuckexit &y = stuckexits[stuckgroups[j].first][0];
+                if(y.path[y.path.length()-1].dist(end) <= STUCKMERGE) { g = &stuckgroups[j]; break; }
+            }
+            if(g)
+            {
+                concformatstring(g->keys, ", %s", keys);
+                g->lo = min(g->lo, lo);
+                g->hi = max(g->hi, hi);
+                g->out = g->out || out;
+                g->wall = g->wall || x.wall;
+                continue;
+            }
+            g = &stuckgroups.add();
+            g->first = i;
+            copystring(g->keys, keys);
+            g->lo = lo;
+            g->hi = hi;
+            g->out = out;
+            g->wall = x.wall;
+        }
+    }
+
+    static void drawstuckexits()
+    {
+        if(!isstuck()) return;
+        computestuckexits();
+        groupstuckexits();
+        // the throws go through walls, so they show through them
+        glDisable(GL_DEPTH_TEST);
+        vec feet(0, 0, player1->eyeheight - 0.5f);
+        // the throw of letting go of every key (key 0, always the first of its group) is drawn bold: parallel
+        // strips, as GL lines are one pixel wide
+        static const vec bold[5] = { vec(0, 0, 0), vec(0.35f, 0, 0), vec(-0.35f, 0, 0), vec(0, 0.35f, 0), vec(0, -0.35f, 0) };
+        loopv(stuckgroups)
+        {
+            const stuckgroup &g = stuckgroups[i];
+            const stuckexit &x = stuckexits[g.first][0];
+            int strips = g.first == 0 ? 5 : 1;
+            color(g.out ? 0xFF2020 : g.wall ? 0x40FF60 : 0x909090);
+            gle::defvertex();
+            loopj(strips)
+            {
+                gle::begin(GL_LINE_STRIP);
+                loopvk(x.path) gle::attrib(vec(x.path[k]).sub(feet).add(bold[j]));
+                gle::end();
+            }
+            vec end = vec(x.path[x.path.length()-1]).sub(feet);
+            ring(end, 3);
+            if(g.first == 0) { ring(end, 3.5f); ring(end, 4); }
+        }
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    static void stuckexitlabels()
+    {
+        if(stucksince < 0 || stuckcomputed < 0) return;
+        loopv(stuckgroups)
+        {
+            const stuckgroup &g = stuckgroups[i];
+            const stuckexit &x = stuckexits[g.first][0];
+            const vec &end = x.path[x.path.length()-1];
+            defformatstring(label, "%s %d", g.keys, int(end.dist(x.path[0]) + 0.5f));
+            if(g.hi - g.lo >= 1) concformatstring(label, " (%d-%d)", int(g.lo + 0.5f), int(g.hi + 0.5f));
+            if(g.out) concatstring(label, " out of the map");
+            else if(g.wall) concatstring(label, " through wall");
+            particle_textcopy(vec(end).sub(vec(0, 0, player1->eyeheight - 4)), label, PART_TEXT, 1, g.out ? 0xFF2020 : g.wall ? 0x40FF60 : 0xB0B0B0, g.first == 0 ? 2.8f : 2.0f);
+        }
+    }
+
+    // Stuck finder: spots where a player holding W comes to rest without standing and keeps building fall
+    // speed. Candidates (from the whole-map scan) are free points with a crack close by; each is tested by
+    // holding W facing into it. Some spots hold the player until a key is let go, others only for a moment
+    // before it slides on. How high in the crack the player wedges depends on how it got in, so a holding
+    // spot keeps the stuck states found up to STUCKLIFTS*STUCKLIFTSTEP units above it; it is marked green when letting go
+    // of every key in any of them, at any fall speed from STUCKMINWALLFALL to STUCKMAXWALLFALL, throws the
+    // player across geometry without killing it. Spots within STUCKSHOWN are drawn.
+    MOD(VARP, practicestuckspots, 0, 1, 1);
+    enum { STUCKGRID = 4, STUCKTESTTICKS = 80, STUCKHOLDTICKS = 200, STUCKWANDER = 20, STUCKSTANDING = 10, STUCKWALLTICKS = 200, STUCKSHOWN = 96 };
+    enum { STUCKLIFTS = 48, STUCKMAXSTATES = 48, STUCKMINWALLFALL = 1000, STUCKMAXWALLFALL = 16000, STUCKWALLFALLSTEP = 250, STUCKWALLFALLS = (STUCKMAXWALLFALL - STUCKMINWALLFALL)/STUCKWALLFALLSTEP + 1 };
+    enum { STUCK_NONE = 0, STUCK_MOMENT, STUCK_HOLDS };
+    // the wall check is done a step at a time: first a stuck test per lift (step 1..STUCKLIFTS), then per
+    // stuck state and fall speed
+    struct stuckspot { vec o; vector<float> yaws; int kind; vector<physent> states; bool checked, wall, lifted, builds; int step; };
+    static vector<stuckspot> stuckspots;
+    static string stuckspotsmap = "";
+
+    // a copy of the player at start holding W facing yaw: whether it gets stuck and, if so, whether it stays
+    // for STUCKHOLDTICKS more (STUCK_HOLDS) or slides on (STUCK_MOMENT); stuck is the state it got stuck in
+    static int stucktest(fpsent &sim, const vec &start, float yaw, physent &stuck)
+    {
+        (physent &)sim = *player1;
+        sim.o = start;
+        sim.vel = sim.falling = vec(0, 0, 0);
+        sim.physstate = PHYS_FALL;
+        sim.timeinair = 0;
+        sim.floor = vec(0, 0, 1);
+        sim.yaw = yaw;
+        sim.pitch = 0;
+        sim.move = 1;
+        sim.strafe = 0;
+        sim.jumping = false;
+        vec last = sim.o;
+        int still = 0, standing = 0;
+        vec standpos = sim.o;
+        loopi(STUCKTESTTICKS)
+        {
+            float before = sim.falling.magnitude();
+            simulatetick(&sim, player1);
+            // gone from where it started: a spot further on is another candidate's to find
+            if(vec(sim.o.x - start.x, sim.o.y - start.y, 0).squaredlen() > STUCKWANDER*STUCKWANDER) return STUCK_NONE;
+            // standing (or shuffling) on the ground against a wall: that's not being stuck
+            if(sim.physstate >= PHYS_FLOOR)
+            {
+                still = 0;
+                last = sim.o;
+                if(sim.o.dist(standpos) > 1) { standpos = sim.o; standing = 0; }
+                else if(++standing >= STUCKSTANDING) return STUCK_NONE;
+                continue;
+            }
+            standing = 0;
+            if(sim.o.dist(last) > 0.01f) { last = sim.o; still = 0; continue; }
+            if(sim.falling.magnitude() <= before) { still = 0; continue; }
+            if(++still < STUCKSETTLE) continue;
+            stuck = sim;
+            loopj(STUCKHOLDTICKS)
+            {
+                simulatetick(&sim, player1);
+                if(sim.o.dist(last) > 0.01f) return STUCK_MOMENT;
+            }
+            return STUCK_HOLDS;
+        }
+        return STUCK_NONE;
+    }
+
+    // Being stuck needs the player's box against at least two surfaces it can't stand on, facing different
+    // ways (a sharp corner, a crack, a model against a wall). The box is nudged a little in 8 directions
+    // across and 5 downwards from o; true if those bumps meet two such surfaces STUCKANGLE apart.
+    enum { STUCKPROBE = 4 };
+    enum { STUCKBUILDTICKS = 400, STUCKSTAYTICKS = 20 };
+    static const float STUCKLIFTSTEP = 0.25f, STUCKBUILDGROWTH = 0.85f;
+    static const float STUCKFLOORZ = 0.867f, STUCKANGLE = 0.94f; // cos 20 degrees
+    static bool nearcrack(fpsent &sim, const vec &o, vec *walls = NULL)
+    {
+        static const vec dirs[13] =
+        {
+            vec(1, 0, 0), vec(0.7071f, 0.7071f, 0), vec(0, 1, 0), vec(-0.7071f, 0.7071f, 0),
+            vec(-1, 0, 0), vec(-0.7071f, -0.7071f, 0), vec(0, -1, 0), vec(0.7071f, -0.7071f, 0),
+            vec(0, 0, -1), vec(0.7071f, 0, -0.7071f), vec(-0.7071f, 0, -0.7071f), vec(0, 0.7071f, -0.7071f), vec(0, -0.7071f, -0.7071f)
+        };
+        vec found[2];
+        int n = 0;
+        loopi(13)
+        {
+            sim.o = vec(dirs[i]).mul(STUCKPROBE).add(o);
+            if(!collide(&sim, dirs[i]) || collideinside || collidewall.iszero() || collidewall.z >= STUCKFLOORZ) continue;
+            vec w = vec(collidewall).normalize();
+            bool same = false;
+            loopj(n) if(found[j].dot(w) > STUCKANGLE) same = true;
+            if(same) continue;
+            if(n >= 1)
+            {
+                sim.o = o;
+                if(walls) { walls[0] = found[0]; walls[1] = w; }
+                return true;
+            }
+            found[n++] = w;
+        }
+        sim.o = o;
+        return false;
+    }
+
+    static void addyaw(vector<float> &yaws, float yaw)
+    {
+        loopv(yaws) { float d = fabs(fmodf(yaws[i] - yaw + 540, 360) - 180); if(d < 15) return; }
+        yaws.add(yaw);
+    }
+
+    // a stuck state of a spot unless one at about the same height is kept already; a spot whose wall check
+    // is done goes on with it for the new state
+    static void addstuckstate(stuckspot &p, const physent &stuck)
+    {
+        if(p.states.length() >= STUCKMAXSTATES) return;
+        loopv(p.states) if(fabs(p.states[i].o.z - stuck.o.z) < STUCKLIFTSTEP/2) return;
+        p.states.add(stuck);
+        if(p.checked && !p.wall && p.lifted)
+        {
+            p.checked = false;
+            p.step = STUCKLIFTS + (p.states.length() - 1)*STUCKWALLFALLS;
+        }
+    }
+
+    static void addstuckspot(const physent &stuck, float yaw, int kind)
+    {
+        loopv(stuckspots)
+        {
+            stuckspot &p = stuckspots[i];
+            if(vec(p.o.x - stuck.o.x, p.o.y - stuck.o.y, 0).magnitude() >= 2 || fabs(p.o.z - stuck.o.z) >= 8) continue;
+            addyaw(p.yaws, yaw);
+            if(kind > p.kind)
+            {
+                p.kind = kind;
+                p.states.setsize(0);
+                p.states.add(stuck);
+                p.checked = p.wall = p.lifted = p.builds = false;
+                p.step = 0;
+            }
+            else if(kind == STUCK_HOLDS) addstuckstate(p, stuck);
+            return;
+        }
+        stuckspot &p = stuckspots.add();
+        p.o = stuck.o;
+        p.yaws.add(yaw);
+        p.kind = kind;
+        p.states.add(stuck);
+        p.checked = p.wall = p.lifted = p.builds = false;
+        p.step = 0;
+    }
+
+    // where a throw ended is not a death on its way: inside the map, with ground under it that does not kill
+    // (ending inside geometry, partly through a wall, counts)
+    static bool notfallingout(const vec &o)
+    {
+        if(!insideworld(o)) return false;
+        float d = raycube(o, vec(0, 0, -1), o.z, RAY_CLIPMAT);
+        if(d < 0 || d >= o.z - 0.5f) return false;
+        return !(lookupmaterial(vec(o).sub(vec(0, 0, d + 1)))&MAT_DEATH) && !(lookupmaterial(vec(o).sub(vec(0, 0, max(d - 1, 0.0f))))&MAT_DEATH);
+    }
+
+    // holding W from a stuck state for ticks: it stays where it is and the fall speed grows by at least
+    // growth of what gravity adds (a spot whose fall speed levels off, or that lets go by itself, is no use)
+    static bool keepsbuilding(fpsent &sim, const physent &state, int ticks, float growth)
+    {
+        (physent &)sim = state;
+        sim.jumping = false;
+        float before = sim.falling.magnitude();
+        loopi(ticks)
+        {
+            simulatetick(&sim, player1);
+            if(sim.o.dist(state.o) > 0.05f) return false;
+        }
+        return sim.falling.magnitude() - before >= growth*GRAVITY*ticks*SIMTICK/1000.0f;
+    }
+
+    // one step of a holding spot's wall check: a stuck test from a lift above the spot; or, for one stuck
+    // state at one fall speed (lowest first), holding on there and then letting go of every key. A state
+    // stops at the first speed it can't be held at; a spot where no state builds speed is dropped.
+    static void stepstuckwall(stuckspot &p)
+    {
+        static fpsent sim;
+        if(p.step < STUCKLIFTS)
+        {
+            vec from = vec(p.o).add(vec(0, 0, (p.step + 1)*STUCKLIFTSTEP));
+            (physent &)sim = *player1;
+            sim.o = from;
+            if(!collide(&sim) && !collideinside) loopv(p.yaws)
+            {
+                physent stuck;
+                if(stucktest(sim, from, p.yaws[i], stuck) == STUCK_HOLDS && vec(stuck.o.x - p.o.x, stuck.o.y - p.o.y, 0).magnitude() < 2)
+                    addstuckstate(p, stuck);
+            }
+            if(++p.step >= STUCKLIFTS) p.lifted = true;
+            return;
+        }
+        int i = p.step - STUCKLIFTS, state = i/STUCKWALLFALLS;
+        if(state >= p.states.length())
+        {
+            p.checked = true;
+            if(!p.builds) p.kind = STUCK_NONE;
+            return;
+        }
+        if(i%STUCKWALLFALLS == 0)
+        {
+            if(!keepsbuilding(sim, p.states[state], STUCKBUILDTICKS, STUCKBUILDGROWTH)) { p.step += STUCKWALLFALLS; return; }
+            p.builds = true;
+        }
+        physent base = p.states[state];
+        float fall = base.falling.magnitude(), want = STUCKMINWALLFALL + (i%STUCKWALLFALLS)*STUCKWALLFALLSTEP;
+        if(fall > 0) base.falling.mul(want/fall);
+        if(!keepsbuilding(sim, base, STUCKSTAYTICKS, 0)) { p.step = STUCKLIFTS + (state + 1)*STUCKWALLFALLS; return; }
+        vector<vec> path;
+        if(simulateexit(sim, base, 0, 0, 0, &path, STUCKWALLTICKS) && throughwall(path) && notfallingout(sim.o)) { p.wall = p.checked = true; return; }
+        p.step++;
+    }
+
+    // a found spot not yet given its wall check: one step of it; false if there is none
+    static bool checkpendingspot()
+    {
+        loopv(stuckspots) if(!stuckspots[i].checked)
+        {
+            // only holding spots can build up the speed a wall clip needs
+            if(stuckspots[i].kind == STUCK_HOLDS) stepstuckwall(stuckspots[i]);
+            else stuckspots[i].checked = true;
+            return true;
+        }
+        return false;
+    }
+
+    static void testcandidate(const vec &start)
+    {
+        static fpsent sim;
+        (physent &)sim = *player1;
+        sim.o = start;
+        if(collide(&sim) || collideinside) return;
+        vec walls[2];
+        if(!nearcrack(sim, start, walls)) return;
+        // The way into a wedge is narrow (a few units), so the points around a crack are tried too, each
+        // facing into the corner between the two surfaces and straight into each of them.
+        vec aims[3] = { vec(walls[0]).add(walls[1]).neg(), vec(walls[0]).neg(), vec(walls[1]).neg() };
+        float yaws[3];
+        loopi(3) yaws[i] = atan2f(-aims[i].x, aims[i].y)/RAD;
+        loopk(9)
+        {
+            vec from(start.x + (k%3 - 1)*STUCKGRID/2, start.y + (k/3 - 1)*STUCKGRID/2, start.z);
+            sim.o = from;
+            if(k != 4 && (collide(&sim) || collideinside)) continue;
+            loopi(3)
+            {
+                if(aims[i].x == 0 && aims[i].y == 0) continue;
+                physent stuck;
+                int kind = stucktest(sim, from, yaws[i], stuck);
+                if(kind) addstuckspot(stuck, yaws[i], kind);
+            }
+        }
+    }
+
+    // Whole-map scan (practicestuckmapscan): every STUCKGRID column of the map, top to bottom, gives the
+    // points just above each surface in it (geometry and mapmodels) as candidates. It runs within
+    // STUCKMAPBUDGETUS per frame; the spots it finds are saved per map (by its CRC) and loaded with it.
+    enum { STUCKMAPBUDGETUS = 20000, STUCKMAPLAYERS = 10, STUCKMAPLAYERSTEP = 4, STUCKMAPMAXSURFACES = 32 };
+    static bool stuckmapscanning = false;
+    static int stuckmapcolumn = 0, stuckmapcolumns = 0, stuckmapstart = 0;
+    static vector<vec> stuckmapcands;
+    static int stuckmapcandpos = 0;
+
+    static const char *stuckmapfile()
+    {
+        static string file;
+        formatstring(file, "stuckspots/%s_%08x.txt", getclientmap(), getmapcrc());
+        return path(file, true);
+    }
+
+    static void savestuckspots()
+    {
+        stream *f = openutf8file(stuckmapfile(), "w");
+        if(!f) { conoutf(CON_ERROR, "could not write %s", stuckmapfile()); return; }
+        f->printf("stuckspots 5\n");
+        loopv(stuckspots)
+        {
+            const stuckspot &p = stuckspots[i];
+            if(p.kind == STUCK_NONE) continue;
+            f->printf("%.2f %.2f %.2f %d %d", p.o.x, p.o.y, p.o.z, p.kind, p.wall ? 1 : 0);
+            loopvj(p.yaws) f->printf(" %.1f", p.yaws[j]);
+            f->printf("\n");
+        }
+        delete f;
+    }
+
+    static bool loadstuckspots()
+    {
+        stream *f = openutf8file(stuckmapfile(), "r");
+        if(!f) return false;
+        char line[512];
+        bool ok = f->getline(line, sizeof(line)) && !strncmp(line, "stuckspots 5", 12);
+        while(ok && f->getline(line, sizeof(line)))
+        {
+            stuckspot &p = stuckspots.add();
+            int wall = 0, n = 0;
+            char *c = line;
+            p.kind = STUCK_NONE;
+            if(sscanf(c, "%f %f %f %d %d%n", &p.o.x, &p.o.y, &p.o.z, &p.kind, &wall, &n) < 5) { stuckspots.pop(); continue; }
+            p.wall = wall != 0;
+            p.checked = p.lifted = p.builds = true;
+            p.step = 0;
+            for(c += n;;)
+            {
+                float yaw;
+                int m = 0;
+                if(sscanf(c, "%f%n", &yaw, &m) < 1) break;
+                p.yaws.add(yaw);
+                c += m;
+            }
+        }
+        delete f;
+        return ok;
+    }
+
+    static void mapcolumncandidates(int column)
+    {
+        int n = getworldsize()/STUCKGRID;
+        float x = (column%n)*STUCKGRID + STUCKGRID/2.0f, y = (column/n)*STUCKGRID + STUCKGRID/2.0f, z = getworldsize();
+        loopi(STUCKMAPMAXSURFACES)
+        {
+            float d = raycube(vec(x, y, z), vec(0, 0, -1), z, RAY_CLIPMAT|RAY_POLY);
+            if(d < 0 || d >= z - 0.5f) break;
+            float hit = z - d;
+            loopk(STUCKMAPLAYERS) stuckmapcands.add(vec(x, y, hit + player1->eyeheight + 2 + k*STUCKMAPLAYERSTEP));
+            // through whatever is under the surface to the space below it
+            float below = hit - 1;
+            while(below > 0 && raycube(vec(x, y, below), vec(0, 0, -1), 1, RAY_CLIPMAT|RAY_POLY) < 0.01f) below -= STUCKGRID;
+            if(below <= 0) break;
+            z = below;
+        }
+    }
+
+    static bool stepmapscan()
+    {
+        if(checkpendingspot()) return true;
+        if(stuckmapcandpos < stuckmapcands.length()) { testcandidate(stuckmapcands[stuckmapcandpos++]); return true; }
+        if(stuckmapcolumn >= stuckmapcolumns)
+        {
+            stuckmapscanning = false;
+            savestuckspots();
+            int found = 0;
+            loopv(stuckspots) if(stuckspots[i].kind != STUCK_NONE) found++;
+            conoutf("stuck spots: %d on %s in %d s, saved", found, getclientmap(), (totalmillis - stuckmapstart)/1000);
+            return false;
+        }
+        stuckmapcands.setsize(0);
+        stuckmapcandpos = 0;
+        mapcolumncandidates(stuckmapcolumn++);
+        return true;
+    }
+
+    static void startmapscan()
+    {
+        stuckspots.setsize(0);
+        stuckmapcands.setsize(0);
+        stuckmapcandpos = 0;
+        stuckmapcolumn = 0;
+        int n = getworldsize()/STUCKGRID;
+        stuckmapcolumns = n*n;
+        stuckmapstart = totalmillis;
+        stuckmapscanning = true;
+    }
+
+    // practicestuckmapscan: scans the whole map for stuck spots, or stops a scan that is running
+    ICOMMAND(practicestuckmapscan, "", (),
+    {
+        if(stuckmapscanning) { stuckmapscanning = false; conoutf("stuck spot scan stopped"); return; }
+        startmapscan();
+        conoutf("scanning %s for stuck spots...", getclientmap());
+    });
+    ICOMMAND(practicestuckscanning, "", (), intret(stuckmapscanning ? 1 : 0));
+
+    static void stuckspotsmapchanged()
+    {
+        if(!strcmp(stuckspotsmap, getclientmap())) return;
+        copystring(stuckspotsmap, getclientmap());
+        stuckspots.setsize(0);
+        stuckmapscanning = false;
+        if(getclientmap()[0]) loadstuckspots();
+    }
+
+    static void updatemapscan()
+    {
+        stuckspotsmapchanged();
+        if(!stuckmapscanning) return;
+        Uint64 start = SDL_GetPerformanceCounter(), budget = SDL_GetPerformanceFrequency()*STUCKMAPBUDGETUS/1000000;
+        keepdynentcache keep;
+        mapcollisionsonly maponly;
+        while(SDL_GetPerformanceCounter() - start < budget && stepmapscan());
+    }
+
+    static void drawstuckspots()
+    {
+        if(!practicestuckspots) return;
+        stuckspotsmapchanged();
+        vec feet(0, 0, player1->eyeheight - 0.3f);
+        // wedges are inside cracks, so the markers show through the geometry around them
+        glDisable(GL_DEPTH_TEST);
+        loopv(stuckspots)
+        {
+            const stuckspot &p = stuckspots[i];
+            if(p.kind == STUCK_NONE || p.o.dist(player1->o) > STUCKSHOWN) continue;
+            vec at = vec(p.o).sub(feet);
+            if(p.kind != STUCK_HOLDS)
+            {
+                color(0xFFC030);
+                ring(at, 1.5f);
+                continue;
+            }
+            color(p.wall ? 0x40FF60 : 0xF0F0F0);
+            ring(at, 3);
+            gle::defvertex();
+            gle::begin(GL_LINES);
+            gle::attrib(at);
+            gle::attrib(vec(at).add(vec(0, 0, 10)));
+            loopvj(p.yaws)
+            {
+                vec dir(-sinf(p.yaws[j]*RAD), cosf(p.yaws[j]*RAD), 0), tip = vec(dir).mul(8).add(at);
+                gle::attrib(at);
+                gle::attrib(tip);
+                loopk(2)
+                {
+                    float side = (k ? 150 : -150)*RAD;
+                    vec head(dir.x*cosf(side) - dir.y*sinf(side), dir.x*sinf(side) + dir.y*cosf(side), 0);
+                    gle::attrib(tip);
+                    gle::attrib(head.mul(2.5f).add(tip));
+                }
+            }
+            gle::end();
+        }
+        glEnable(GL_DEPTH_TEST);
+    }
+
     static bool lastjumpshown()
     {
         static string map = "";
@@ -173,8 +853,42 @@ namespace game
 
     // the last bump's numbers under the crosshair until the next one; dying or respawning fades
     // them out over a second
+    static void drawstuckhud(int w, int h)
+    {
+        if(stucksince < 0 || !isstuck()) return;
+        float fall = player1->falling.magnitude(), side = vec(player1->falling.x, player1->falling.y, 0).magnitude();
+        defformatstring(line, "stuck %.1f s: fall %d u/s", (lastmillis - stucksince)/1000.0f, int(fall + 0.5f));
+        if(side >= 1) concformatstring(line, " (%d sideways)", int(side + 0.5f));
+        concformatstring(line, ", hop %.2f units", fall*(SIMTICK/1000.0f)/10);
+        const float scale = 0.4f;
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        int tw = 0, th = 0;
+        text_bounds(line, tw, th);
+        draw_text(line, int(w/scale/2 - tw/2), int(0.55f*h/scale), 255, 255, 255, 255);
+        pophudmatrix();
+    }
+
+    static void drawmapscanhud(int w, int h)
+    {
+        updatemapscan();
+        if(!stuckmapscanning) return;
+        defformatstring(line, "scanning the map for stuck spots: %d%% (%d found)", stuckmapcolumns ? stuckmapcolumn*100/stuckmapcolumns : 0, stuckspots.length());
+        const float scale = 0.4f;
+        pushhudmatrix();
+        hudmatrix.scale(scale, scale, 1);
+        flushhudmatrix();
+        int tw = 0, th = 0;
+        text_bounds(line, tw, th);
+        draw_text(line, int(w/scale/2 - tw/2), int(0.2f*h/scale), 255, 255, 255, 255);
+        pophudmatrix();
+    }
+
     void drawpracticehud(int w, int h)
     {
+        drawmapscanhud(w, h);
+        drawstuckhud(w, h);
         static string map = "";
         static int life = -1, bump = -1, fadestart = -1;
         if(strcmp(map, getclientmap())) { copystring(map, getclientmap()); lastbump.millis = -1; }
@@ -567,6 +1281,8 @@ namespace game
             loopv(flags) sphere(flags[i], fr);
         }
         if(practicebounceedges) { drawbounceedges(); drawbounceapproaches(); }
+        drawstuckexits();
+        drawstuckspots();
         if(lastjumpshown())
         {
             color(0x60E0FF);
@@ -602,6 +1318,7 @@ namespace game
         static int lastframe = -1;
         if(!practicevisualizers || editmode || lastframe == totalmillis || !canaddparticles()) return;
         lastframe = totalmillis;
+        stuckexitlabels();
         if(practicegroups || practicehealth) loopi(nummonsterslots())
         {
             int tag, maxhealth;
