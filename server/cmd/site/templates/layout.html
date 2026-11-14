@@ -1,9 +1,25 @@
 {{define "top"}}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · speedbraten</title>
+<script>try { var t = localStorage.getItem("theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
 <style>
 :root { --bg: #f4f6fa; --card: #fff; --fg: #1f2937; --dim: #6b7280; --faint: #9ca3af; --line: #e5e7eb; --head: #f9fafb;
-  --accent: #2563eb; --gold: #d97706; --ctf: #9333ea; --ictf: #16a34a; --ectf: #dc2626; --race: #0284c7; --sp: #ea580c; }
+  --accent: #2563eb; --gold: #d97706; --ctf: #9333ea; --ictf: #16a34a; --ectf: #dc2626; --race: #0284c7; --sp: #ea580c;
+  --silver: #64748b; --bronze: #b4652d; --live: #16a34a; --tip: #1f2937;
+  --green-bg: #dcfce7; --green-fg: #15803d; --red-bg: #fee2e2; --red-fg: #b91c1c; --blue-bg: #dbeafe; --blue-fg: #1d4ed8;
+  --purple-bg: #f3e8ff; --purple-fg: #7e22ce; --orange-bg: #ffedd5; --orange-fg: #c2410c; --yellow-bg: #fef9c3; --yellow-fg: #a16207; color-scheme: light; }
+:root[data-theme="dark"] { --bg: #0f1218; --card: #171b23; --fg: #e5e7eb; --dim: #9ca3af; --faint: #6b7280; --line: #2a303c; --head: #1c212b;
+    --accent: #60a5fa; --gold: #f59e0b; --ctf: #a855f7; --ictf: #22c55e; --ectf: #ef4444; --race: #0ea5e9; --sp: #f97316;
+    --silver: #94a3b8; --bronze: #d08a52; --live: #22c55e; --tip: #374151;
+    --green-bg: #14532d; --green-fg: #86efac; --red-bg: #7f1d1d; --red-fg: #fca5a5; --blue-bg: #1e3a8a; --blue-fg: #93c5fd;
+    --purple-bg: #4c1d95; --purple-fg: #d8b4fe; --orange-bg: #7c2d12; --orange-fg: #fdba74; --yellow-bg: #713f12; --yellow-fg: #fde68a; color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0f1218; --card: #171b23; --fg: #e5e7eb; --dim: #9ca3af; --faint: #6b7280; --line: #2a303c; --head: #1c212b;
+    --accent: #60a5fa; --gold: #f59e0b; --ctf: #a855f7; --ictf: #22c55e; --ectf: #ef4444; --race: #0ea5e9; --sp: #f97316;
+    --silver: #94a3b8; --bronze: #d08a52; --live: #22c55e; --tip: #374151;
+    --green-bg: #14532d; --green-fg: #86efac; --red-bg: #7f1d1d; --red-fg: #fca5a5; --blue-bg: #1e3a8a; --blue-fg: #93c5fd;
+    --purple-bg: #4c1d95; --purple-fg: #d8b4fe; --orange-bg: #7c2d12; --orange-fg: #fdba74; --yellow-bg: #713f12; --yellow-fg: #fde68a; color-scheme: dark; } }
+.theme { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); font-size: 15px; line-height: 1; padding: 5px 8px; cursor: pointer; }
+.theme:hover { color: var(--fg); } .online + .theme { margin-left: 0; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
@@ -12,7 +28,7 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .logo { font-weight: 800; font-size: 18px; color: var(--fg); letter-spacing: -0.02em; }
 .logo span { color: var(--accent); }
 .online { margin-left: auto; color: var(--dim); font-size: 13px; white-space: nowrap; }
-.online i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 6px; vertical-align: 1px; }
+.online i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 6px; vertical-align: 1px; }
 .online i.pulse { animation: pulse 0.9s ease-out; }
 @keyframes pulse { from { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } to { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); } }
 @media (prefers-reduced-motion: reduce) { .online i.pulse { animation: none; } }
@@ -40,7 +56,7 @@ table.sortable th.down::after { content: " \25BE"; } table.sortable th.up::after
 .dim { color: var(--dim); } .faint { color: var(--faint); }
 .small { font-size: 13px; }
 .rank1 { color: var(--gold); font-weight: 700; }
-.silver { color: #64748b; font-weight: 700; } .bronze { color: #b4652d; font-weight: 700; }
+.silver { color: var(--silver); font-weight: 700; } .bronze { color: var(--bronze); font-weight: 700; }
 .thumb { width: 64px; height: 36px; border-radius: 4px; object-fit: cover; vertical-align: middle; margin-right: 10px; background: var(--line); }
 .mapcell { display: flex; align-items: center; }
 .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #fff; letter-spacing: 0.03em; vertical-align: middle; }
@@ -79,7 +95,7 @@ h2.section { font-size: 18px; margin: 8px 0 12px; }
 .apinav a { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; color: var(--dim); font-size: 14px; border-left: 2px solid transparent; }
 .apinav a:hover { background: var(--card); color: var(--fg); text-decoration: none; }
 .apinav a.on { background: var(--card); color: var(--fg); border-left-color: var(--accent); font-weight: 600; }
-.apinav .m { background: #dcfce7; color: #15803d; border-radius: 4px; padding: 0 5px; font: 700 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.apinav .m { background: var(--green-bg); color: var(--green-fg); border-radius: 4px; padding: 0 5px; font: 700 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .apidoc { max-width: 900px; }
 @media (max-width: 860px) { .apiwrap { display: block; } .apinav { display: none; } }
 .apidoc h1 { font-size: 28px; }
@@ -103,11 +119,11 @@ h2.section { font-size: 18px; margin: 8px 0 12px; }
 .path { font: 600 18px ui-monospace, SFMono-Regular, Menlo, monospace; }
 button.copy { margin-left: auto; border: 1px solid var(--line); background: var(--bg); color: var(--dim); border-radius: 6px; padding: 4px 10px; font: 500 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
 button.copy:hover { color: var(--fg); border-color: var(--accent); }
-button.copy.done { color: #15803d; border-color: #16a34a; background: #dcfce7; }
+button.copy.done { color: var(--green-fg); border-color: var(--live); background: var(--green-bg); }
 .pill { display: inline-block; border-radius: 999px; padding: 0 8px; font: 600 11px/18px ui-monospace, SFMono-Regular, Menlo, monospace; vertical-align: 1px; }
-.req { background: #fee2e2; color: #b91c1c; } .opt { background: var(--head); color: var(--dim); border: 1px solid var(--line); line-height: 16px; }
-.t-string { background: #dcfce7; color: #15803d; } .t-number { background: #dbeafe; color: #1d4ed8; } .t-bool { background: #f3e8ff; color: #7e22ce; }
-.t-list { background: #ffedd5; color: #c2410c; } .t-object { background: #fef9c3; color: #a16207; }
+.req { background: var(--red-bg); color: var(--red-fg); } .opt { background: var(--head); color: var(--dim); border: 1px solid var(--line); line-height: 16px; }
+.t-string { background: var(--green-bg); color: var(--green-fg); } .t-number { background: var(--blue-bg); color: var(--blue-fg); } .t-bool { background: var(--purple-bg); color: var(--purple-fg); }
+.t-list { background: var(--orange-bg); color: var(--orange-fg); } .t-object { background: var(--yellow-bg); color: var(--yellow-fg); }
 .params { width: 100%; border: 1px solid var(--line); border-radius: 8px; border-collapse: separate; border-spacing: 0; background: var(--card); overflow: hidden; }
 .params td { white-space: normal; vertical-align: top; padding: 9px 14px; }
 .params td:first-child { white-space: nowrap; width: 1%; }
@@ -158,9 +174,17 @@ button:hover { border-color: var(--accent); }
 <div class="bar"><div class="in"><a class="logo" href="/">speed<span>braten</span></a>
 <nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/admin/legacy"{{if eq .Tab "legacy"}} class="on"{{end}}>Legacy</a><a href="/admin/server"{{if eq .Tab "server"}} class="on"{{end}}>Server</a><a href="/">Public site</a>
 {{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav>
-{{with online}}{{if .Shown}}<span class="online"{{if .Names}} title="{{.Names}}"{{end}}><i></i>{{.Count}} online</span>{{end}}{{end}}</div></div>
+{{with online}}{{if .Shown}}<span class="online"{{if .Names}} title="{{.Names}}"{{end}}><i></i>{{.Count}} online</span>{{end}}{{end}}<button class="theme" type="button" title="dark / light">◐</button></div></div>
 <main>{{end}}
 {{define "bottom"}}</main>
+<script>
+document.querySelector(".theme").addEventListener("click", function () {
+  var root = document.documentElement, set = root.getAttribute("data-theme");
+  var dark = set ? set === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", dark ? "light" : "dark");
+  try { localStorage.setItem("theme", dark ? "light" : "dark"); } catch (e) {}
+});
+</script>
 <footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a> · <a href="/api">API</a></footer>
 <script>
 // table.sortable: clicking a header with data-sort orders the rows by that column, then the other way

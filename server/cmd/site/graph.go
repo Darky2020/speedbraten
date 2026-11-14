@@ -35,11 +35,11 @@ func recordGraph(history []board.Record) template.HTML {
 	fmt.Fprintf(&b, `<svg class="graph" viewBox="0 0 %.0f %.0f" role="img" aria-label="record over time">`, w, h)
 	for i := 0; i <= 3; i++ {
 		ms := lo + (hi-lo)*int64(i)/3
-		fmt.Fprintf(&b, `<line x1="%.0f" x2="%.0f" y1="%.1f" y2="%.1f" stroke="#e5e7eb"/>`, left, w-right, y(ms), y(ms))
-		fmt.Fprintf(&b, `<text x="%.0f" y="%.1f" font-size="13" fill="#6b7280" text-anchor="end" dominant-baseline="middle">%s</text>`, left-6, y(ms), board.Time(ms))
+		fmt.Fprintf(&b, `<line x1="%.0f" x2="%.0f" y1="%.1f" y2="%.1f" style="stroke:var(--line)"/>`, left, w-right, y(ms), y(ms))
+		fmt.Fprintf(&b, `<text x="%.0f" y="%.1f" font-size="13" style="fill:var(--dim)" text-anchor="end" dominant-baseline="middle">%s</text>`, left-6, y(ms), board.Time(ms))
 	}
-	fmt.Fprintf(&b, `<text x="%.0f" y="%.0f" font-size="13" fill="#6b7280">%s</text>`, left, h-8, start.UTC().Format("2 Jan 2006"))
-	fmt.Fprintf(&b, `<text x="%.0f" y="%.0f" font-size="13" fill="#6b7280" text-anchor="end">now</text>`, w-right, h-8)
+	fmt.Fprintf(&b, `<text x="%.0f" y="%.0f" font-size="13" style="fill:var(--dim)">%s</text>`, left, h-8, start.UTC().Format("2 Jan 2006"))
+	fmt.Fprintf(&b, `<text x="%.0f" y="%.0f" font-size="13" style="fill:var(--dim)" text-anchor="end">now</text>`, w-right, h-8)
 	var path strings.Builder
 	for i, r := range history {
 		px, py := x(r.When), y(r.MS)
@@ -50,7 +50,7 @@ func recordGraph(history []board.Record) template.HTML {
 		}
 	}
 	fmt.Fprintf(&path, " H%.1f", x(end))
-	fmt.Fprintf(&b, `<path d="%s" fill="none" stroke="#2563eb" stroke-width="2"/>`, path.String())
+	fmt.Fprintf(&b, `<path d="%s" fill="none" style="stroke:var(--accent)" stroke-width="2"/>`, path.String())
 	// each point's label shows while the pointer is over the point (CSS only); it sits right of
 	// the point and above it, or flips to stay inside the graph
 	b.WriteString(`<style>.pt .tip{opacity:0;pointer-events:none;transition:opacity .1s}.pt:hover .tip{opacity:1}.pt:hover .dot{r:5}</style>`)
@@ -64,8 +64,8 @@ func recordGraph(history []board.Record) template.HTML {
 		if ty < 0 {
 			ty = py + 10
 		}
-		fmt.Fprintf(&b, `<g class="pt"><circle cx="%.1f" cy="%.1f" r="12" fill="transparent"/><circle class="dot" cx="%.1f" cy="%.1f" r="3.5" fill="#2563eb"/>`, px, py, px, py)
-		fmt.Fprintf(&b, `<g class="tip"><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="5" fill="#1f2937"/>`, tx, ty, tipw, tiph)
+		fmt.Fprintf(&b, `<g class="pt"><circle cx="%.1f" cy="%.1f" r="12" fill="transparent"/><circle class="dot" cx="%.1f" cy="%.1f" r="3.5" style="fill:var(--accent)"/>`, px, py, px, py)
+		fmt.Fprintf(&b, `<g class="tip"><rect x="%.1f" y="%.1f" width="%.0f" height="%.0f" rx="5" style="fill:var(--tip)"/>`, tx, ty, tipw, tiph)
 		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" font-size="13" font-weight="600" fill="#fff">%s %s</text>`, tx+10, ty+17, board.Time(r.MS), template.HTMLEscapeString(r.Name))
 		fmt.Fprintf(&b, `<text x="%.1f" y="%.1f" font-size="12" fill="#d1d5db">%s</text></g></g>`, tx+10, ty+32, r.When.UTC().Format("2 Jan 2006"))
 	}

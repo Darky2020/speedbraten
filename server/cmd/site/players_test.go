@@ -101,3 +101,16 @@ func TestSortableTables(t *testing.T) {
 		}
 	}
 }
+
+func TestThemeToggle(t *testing.T) {
+	store, _ := fixture(t)
+	s := newSite(store)
+	for _, path := range []string{"/", "/players", "/api"} {
+		_, body := get(t, s, path)
+		for _, want := range []string{`<button class="theme"`, `:root[data-theme="dark"]`, `prefers-color-scheme: dark`, `localStorage.getItem("theme")`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s lacks %q", path, want)
+			}
+		}
+	}
+}
