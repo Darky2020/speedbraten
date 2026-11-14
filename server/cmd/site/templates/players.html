@@ -1,0 +1,15 @@
+{{template "top" .}}
+<h1>Players</h1>
+<div class="card scroll"><table id="players" class="sortable">
+<thead>
+<tr class="bands"><th colspan="6"></th>{{range .Groups}}<th colspan="2" class="sep">{{template "badge" .Badge}}</th>{{end}}</tr>
+<tr><th class="num">#</th><th data-sort="text">player</th><th class="num" data-sort="num">records</th><th class="num" data-sort="num">runs</th><th class="num" data-sort="num" title="boards with a time, of every category's boards">maps</th><th class="num" data-sort="num" title="legacy records this player was the first to beat">legacy</th>
+{{range .Groups}}<th class="num sep" data-sort="num" title="{{.Label}}: records">records</th><th class="num" data-sort="num" title="{{.Label}}: maps finished, of {{.Of}}">maps</th>{{end}}</tr>
+</thead>
+<tbody>
+{{range $i, $p := .Players}}<tr><td class="num dim">{{inc $i}}</td><td data-v="{{$p.SortName}}"><a href="{{playerURL $p.Install}}">{{template "pname" $p}}</a></td><td class="num{{if $p.Records}} rank1{{end}}">{{$p.Records}}</td><td class="num">{{$p.Runs}}</td><td class="num" data-v="{{$p.Done}}" title="{{$p.Done}} of {{$p.Of}}">{{$p.Percent}}%</td><td class="num{{if not $p.Legacy}} faint{{end}}">{{$p.Legacy}}</td>
+{{range $p.Categories}}<td class="num sep{{if not .Records}} faint{{end}}">{{.Records}}</td><td class="num dim">{{.Done}}</td>{{end}}</tr>
+{{else}}<tr><td colspan="16" class="dim">No players yet.</td></tr>{{end}}
+</tbody>
+</table></div>
+{{template "bottom" .}}

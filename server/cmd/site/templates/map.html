@@ -5,11 +5,11 @@
 {{with .Legacy}}<div class="card legacy"><div class="body"><span class="dim">Legacy record (not witnessed):</span> <span class="time">{{runtime .MS}}</span> {{.Player}} <span class="dim">· {{.Source}}{{with .Date}} · {{.}}{{end}}</span>{{with .Link}} <a href="{{.}}" rel="nofollow noopener" target="_blank">↗</a>{{end}}{{if $.LegacyDiff}} <span class="small {{if $.LegacyBeaten}}faster{{else}}slower{{end}}" title="this record against the witnessed #1">vs #1 {{$.LegacyDiff}}</span>{{end}}</div></div>{{end}}
 {{if not .Board.Entries}}<div class="card"><div class="body dim">No runs in this mode yet. Be the first to set a time.</div></div>
 {{else}}<div class="cols">
-<div class="card scroll"><header><h2>Leaderboard</h2></header><table>
-<tr><th class="num">#</th><th>player</th><th class="num">time</th><th class="num wide">gap</th><th class="wide">date</th><th></th></tr>
+<div class="card scroll"><header><h2>Leaderboard</h2></header><table class="sortable">
+<tr><th class="num" data-sort="low">#</th><th data-sort="text">player</th><th class="num" data-sort="low">time</th><th class="num wide" data-sort="low">gap</th><th class="wide" data-sort="num">date</th><th></th></tr>
 {{$best := (index .Board.Entries 0).MS}}
-{{range .Board.Entries}}<tr><td class="num{{if eq .Rank 1}} rank1{{end}}">{{.Rank}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td><td class="num time">{{runtime .MS}}</td>
-<td class="num small wide slower">{{if gt .Rank 1}}+{{gap .MS $best}}{{end}}</td><td class="dim small wide">{{date .When}}</td><td>{{with index $.Locks .Run}}<span class="small dim" title="replay public on {{.Full}}">🔒 {{.Short}}</span>{{else}}<a class="small" href="/replay?run={{.Run}}">replay</a>{{end}}</td></tr>{{end}}
+{{range .Board.Entries}}<tr><td class="num{{if eq .Rank 1}} rank1{{end}}">{{.Rank}}</td><td><a href="{{playerURL .Install}}">{{template "pname" .}}</a></td><td class="num time" data-v="{{.MS}}">{{runtime .MS}}</td>
+<td data-v="{{sub .MS $best}}" class="num small wide slower">{{if gt .Rank 1}}+{{gap .MS $best}}{{end}}</td><td class="dim small wide" data-v="{{.When.UnixMilli}}">{{date .When}}</td><td>{{with index $.Locks .Run}}<span class="small dim" title="replay public on {{.Full}}">🔒 {{.Short}}</span>{{else}}<a class="small" href="/replay?run={{.Run}}">replay</a>{{end}}</td></tr>{{end}}
 </table></div>
 <div>
 <div class="card"><header><h2>Record history</h2><span class="dim small">{{len .History}} records</span></header><div class="body">{{.Graph}}</div></div>

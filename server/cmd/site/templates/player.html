@@ -1,7 +1,7 @@
 {{template "top" .}}
 <h1>{{template "pname" .}}</h1>
 <div class="tiles">
-<div class="tile"><div class="k">records</div><div class="v">{{.Records}}</div></div>
+<div class="tile"><div class="k">records</div><div class="v">{{.Records}}</div><div class="small dim">{{.Legacy}} legacy broken</div></div>
 <div class="tile"><div class="k">podiums</div><div class="v">{{.Podiums}}</div><div class="small dim"><span class="rank1">{{index .Medals 1}} gold</span> · <span class="silver">{{index .Medals 2}} silver</span> · <span class="bronze">{{index .Medals 3}} bronze</span></div></div>
 <div class="tile"><div class="k">runs</div><div class="v">{{.Runs}}</div><div class="small dim">on {{.Maps}} maps</div></div>
 <div class="tile"><div class="k">playing since</div><div class="v">{{if .Runs}}{{date .Since}}{{else}}—{{end}}</div></div>
@@ -14,15 +14,15 @@
 </div>
 {{define "timecell"}}{{with index .Locks .Run}}<span class="time" title="replay public on {{.Full}}">{{runtime $.MS}}</span>{{else}}<a class="time" href="/replay?run={{.Run}}" title="replay">{{runtime .MS}}</a>{{end}}{{end}}
 {{define "rank"}}<span class="{{if eq .Rank 1}}rank1{{else if eq .Rank 2}}silver{{else if eq .Rank 3}}bronze{{end}}">#{{.Rank}}</span>{{end}}
-{{if .Flagruns}}<div class="card scroll"><header><h2>Flagruns</h2><span class="dim small">{{len .Flagruns}} maps</span></header><table>
-<tr><th>map</th>{{range .FlagModes}}<th>{{template "badge" .}}</th>{{end}}</tr>
+{{if .Flagruns}}<div class="card scroll"><header><h2>Flagruns</h2><span class="dim small">{{len .Flagruns}} maps</span></header><table class="sortable">
+<tr><th data-sort="text">map</th>{{range .FlagModes}}<th data-sort="low" title="sorts by rank">{{template "badge" .}}</th>{{end}}</tr>
 {{range .Flagruns}}<tr><td>{{template "mapcell" .Key}}</td>
-{{range .Cells}}<td>{{with .Place}}{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}} <span class="small">{{template "rank" .Entry}}</span><span class="faint small"> / {{.Of}}</span>{{if gt .Entry.Rank 1}}<div class="small slower">+{{gap .Entry.MS .Best}}</div>{{end}}{{else}}<span class="faint">—</span>{{end}}</td>{{end}}</tr>{{end}}
+{{range .Cells}}<td data-v="{{with .Place}}{{.Entry.Rank}}{{end}}">{{with .Place}}{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}} <span class="small">{{template "rank" .Entry}}</span><span class="faint small"> / {{.Of}}</span>{{if gt .Entry.Rank 1}}<div class="small slower">+{{gap .Entry.MS .Best}}</div>{{end}}{{else}}<span class="faint">—</span>{{end}}</td>{{end}}</tr>{{end}}
 </table></div>{{end}}
-{{range .Sections}}<div class="card scroll"><header><h2>{{.Title}}</h2><span class="dim small">{{len .Places}} maps</span></header><table>
-<tr><th>map</th><th class="num">rank</th><th class="num">time</th><th class="num wide">gap to #1</th><th class="wide">date</th></tr>
-{{range .Places}}<tr><td>{{template "mapcell" .Key}}</td><td class="num">{{template "rank" .Entry}}<span class="faint small"> / {{.Of}}</span></td>
-<td class="num">{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}}</td><td class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide">{{date .Entry.When}}</td></tr>{{end}}
+{{range .Sections}}<div class="card scroll"><header><h2>{{.Title}}</h2><span class="dim small">{{len .Places}} maps</span></header><table class="sortable">
+<tr><th data-sort="text">map</th><th class="num" data-sort="low">rank</th><th class="num" data-sort="low">time</th><th class="num wide" data-sort="low">gap to #1</th><th class="wide" data-sort="num">date</th></tr>
+{{range .Places}}<tr><td>{{template "mapcell" .Key}}</td><td class="num" data-v="{{.Entry.Rank}}">{{template "rank" .Entry}}<span class="faint small"> / {{.Of}}</span></td>
+<td class="num" data-v="{{.Entry.MS}}">{{template "timecell" (dict "Run" .Entry.Run "MS" .Entry.MS "Locks" $.Locks)}}</td><td data-v="{{sub .Entry.MS .Best}}" class="num small wide slower">{{if gt .Entry.Rank 1}}+{{gap .Entry.MS .Best}}{{end}}</td><td class="dim small wide" data-v="{{.Entry.When.UnixMilli}}">{{date .Entry.When}}</td></tr>{{end}}
 </table></div>{{end}}
 {{if not .Places}}<div class="card"><div class="body dim">No runs yet.</div></div>{{end}}
 {{template "bottom" .}}

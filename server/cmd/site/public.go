@@ -90,6 +90,7 @@ var funcs = template.FuncMap{
 	"mapURL":    mapURL,
 	"boardURL":  mapURL,
 	"mapImage":  func(m string) string { return "/mapimg/" + url.PathEscape(m) },
+	"sub":       func(a, b int64) int64 { return a - b },
 	"playerURL": func(install string) string { return "/player?id=" + url.QueryEscape(install) },
 	"short":     shortKey,
 	"bytes":     bytesize,
@@ -183,6 +184,7 @@ func newSite(store *board.Store) *site {
 	})
 	s.mux.HandleFunc("/player", s.player)
 	s.mux.HandleFunc("/records", s.records)
+	s.mux.HandleFunc("/players", s.players)
 	s.mux.HandleFunc("/info", s.info)
 	s.mux.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
 		render(w, apiPage, "api.html", map[string]any{"Title": "API", "Tab": "info"})
@@ -620,8 +622,13 @@ func (s *site) player(w http.ResponseWriter, r *http.Request) {
 	for _, p := range rows {
 		runs = append(runs, p.Entry.Run)
 	}
+	legacy, err := s.legacyFirstBeaten()
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	render(w, playerPage, "player.html", map[string]any{"Locks": s.replayLocks(runs), "Title": name, "Tab": "", "Name": name, "Registered": s.store.Registered(id), "Places": rows, "Records": medals[1],
-		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Maps": len(maps), "Runs": total, "Since": first,
+		"Podiums": medals[1] + medals[2] + medals[3], "Medals": medals, "Legacy": legacy[id], "Maps": len(maps), "Runs": total, "Since": first,
 		"Completion": completion, "Recent": recent, "Flagruns": flagruns, "FlagModes": flagModes, "Sections": sections})
 }
 

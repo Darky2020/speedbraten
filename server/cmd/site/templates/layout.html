@@ -34,6 +34,8 @@ th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em
 td { padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
 tr:last-child td { border-bottom: 0; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.sortable th[data-sort] { cursor: pointer; user-select: none; } table.sortable th[data-sort]:hover { color: var(--fg); }
+table.sortable th.down::after { content: " \25BE"; } table.sortable th.up::after { content: " \25B4"; } #players th, #players td { padding-left: 9px; padding-right: 9px; } table.sortable .sep { border-left: 1px solid var(--line); } tr.bands th { padding-top: 6px; padding-bottom: 0; border-bottom: 0; text-align: center; }
 .time { font-variant-numeric: tabular-nums; font-weight: 600; }
 .dim { color: var(--dim); } .faint { color: var(--faint); }
 .small { font-size: 13px; }
@@ -155,11 +157,52 @@ button:hover { border-color: var(--accent); }
 </style></head><body>
 <div class="bar"><div class="in"><a class="logo" href="/">speed<span>braten</span></a>
 <nav class="tabs">{{if .Admin}}<a href="/admin/runs"{{if eq .Tab "runs"}} class="on"{{end}}>Runs</a><a href="/admin/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/admin/flags"{{if eq .Tab "flags"}} class="on"{{end}}>Flags</a><a href="/admin/moderation"{{if eq .Tab "moderation"}} class="on"{{end}}>Moderation</a><a href="/admin/legacy"{{if eq .Tab "legacy"}} class="on"{{end}}>Legacy</a><a href="/admin/server"{{if eq .Tab "server"}} class="on"{{end}}>Server</a><a href="/">Public site</a>
-{{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav>
+{{else}}<a href="/"{{if eq .Tab "home"}} class="on"{{end}}>Home</a><a href="/races"{{if eq .Tab "races"}} class="on"{{end}}>Races</a><a href="/flagruns"{{if eq .Tab "flagruns"}} class="on"{{end}}>Flagruns</a><a href="/singleplayer"{{if eq .Tab "sp"}} class="on"{{end}}>Singleplayer</a><a href="/players"{{if eq .Tab "players"}} class="on"{{end}}>Players</a><a href="/info"{{if eq .Tab "info"}} class="on"{{end}}>Info</a>{{end}}</nav>
 {{with online}}{{if .Shown}}<span class="online"{{if .Names}} title="{{.Names}}"{{end}}><i></i>{{.Count}} online</span>{{end}}{{end}}</div></div>
 <main>{{end}}
 {{define "bottom"}}</main>
 <footer>Every time here was witnessed while it was played. · <a href="/info">How it works</a> · <a href="/api">API</a></footer>
+<script>
+// table.sortable: clicking a header with data-sort orders the rows by that column, then the other way
+// round, then back to the page's own order. data-sort is "num" (high first), "low" (low first: times,
+// ranks) or "text" (A to Z first); a cell's data-v, when it has one, is the value sorted by, and an
+// empty data-v (no time yet) always goes last.
+document.querySelectorAll("table.sortable").forEach(function (table) {
+  var head = table.tHead ? table.tHead.rows[table.tHead.rows.length - 1] : table.rows[0];
+  var body = table.tBodies[table.tBodies.length - 1];
+  var rows = Array.prototype.filter.call(body.rows, function (r) { return r !== head && r.cells.length > 1; });
+  if (rows.length < 2) return;
+  var current = null, dir = 0;
+  function value(row, col, text) {
+    var td = row.cells[col];
+    var v = td.hasAttribute("data-v") ? td.getAttribute("data-v") : td.textContent.trim();
+    if (v === "") return null;
+    return text ? v.toLowerCase() : parseFloat(v) || 0;
+  }
+  function apply() {
+    var order = rows.slice();
+    if (current && dir) {
+      var kind = current.getAttribute("data-sort"), text = kind === "text", col = current.cellIndex;
+      var flip = (kind === "num" ? -1 : 1) * (dir > 0 ? 1 : -1);
+      order.sort(function (a, b) {
+        var x = value(a, col, text), y = value(b, col, text);
+        if (x === null || y === null) return x === y ? rows.indexOf(a) - rows.indexOf(b) : x === null ? 1 : -1;
+        return (x < y ? -flip : x > y ? flip : 0) || rows.indexOf(a) - rows.indexOf(b);
+      });
+    }
+    order.forEach(function (r) { r.parentNode.appendChild(r); });
+    head.querySelectorAll("th[data-sort]").forEach(function (th) { th.classList.remove("down", "up"); });
+    if (current && dir) current.classList.add(dir > 0 ? "down" : "up");
+  }
+  head.querySelectorAll("th[data-sort]").forEach(function (th) {
+    th.addEventListener("click", function () {
+      if (current !== th || !dir) { current = th; dir = 1; }
+      else dir = dir === 1 ? -1 : 0;
+      apply();
+    });
+  });
+});
+</script>
 {{if not .Admin}}<script>
 (function () {
   var bar = document.querySelector('.bar .in');
@@ -182,7 +225,6 @@ button:hover { border-color: var(--accent); }
 {{define "filters"}}<form class="filters" method="get" action="{{.Path}}">
 <input type="search" name="q" value="{{.F.Q}}" placeholder="search map or player">
 {{if .F.Modes}}<select name="mode">{{range .F.Modes}}<option value="{{.Value}}"{{if eq .Value $.F.Mode}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
-<select name="sort">{{range .F.Sorts}}<option value="{{.Value}}"{{if eq .Value $.F.Sort}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 <button>apply</button>{{if or .F.Q .F.Mode}} <a class="small" href="{{.Path}}">clear</a>{{end}}</form>{{end}}
 
 {{define "pname"}}{{.Name}}{{if not .Registered}}<span class="unreg" title="not a registered name: anyone can play under it">?</span>{{end}}{{end}}
