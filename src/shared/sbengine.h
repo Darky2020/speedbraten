@@ -168,4 +168,5 @@ namespace game
     extern void parsepacketlocal(int chan, packetbuf &p);
     extern void lifeenter();
     extern void lifeleave();
+    extern void untickedframe();
 }

@@ -1939,6 +1939,13 @@ namespace game
         return mask;
     }
 
+    // a frame of a game played on a server (no life): no sim ticks, but the witness and hub connections go on
+    void untickedframe()
+    {
+        witnessupdate();
+        hubupdate();
+    }
+
     void frametimed(int us, int ticks, bool drawn)
     {
         syncrunnername();

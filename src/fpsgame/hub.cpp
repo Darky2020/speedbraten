@@ -26,6 +26,8 @@ namespace game
         int state, mode;
         string name, map, kind;
         int away; // AWAY_ flags
+        string server, serverhost; // the listed game server it is on, "" none
+        int serverport, servercn; // servercn: its client number there
         bool running;
         int ms, best, pb, statat; // best, pb: -1 none; statat: totalmillis ms arrived at
     };
@@ -82,6 +84,7 @@ namespace game
     static int hubsentaway = -1, lastinputat = 0;
     enum { AFKMILLIS = 30000 };
     static string hubsentmap = "", hubsentkind = "";
+    static string hubsentserver = ""; // "host port cn" of the listed server last told the hub, "" none
     static bool hubasking = false, hubchecking = false, hubkeychanged = false, hubwelcomed = false, hubreported = false;
     // The players the hub lists right after its welcome were already online: joins and leaves are told from
     // HUBLISTED ms after it on. How many are online is told once a game.
@@ -651,6 +654,7 @@ namespace game
         hubmyname[0] = hubaskedname[0] = hubsentmap[0] = hubrefusal[0] = '\0';
         hubsentstate = -1;
         hubsentaway = -1;
+        hubsentserver[0] = '\0';
         hubwelcomed = hublisted = false;
         autolobbydue = true;
         rejoinlobby = 0;
@@ -957,6 +961,63 @@ namespace game
         lobbyghostsclear();
     }
 
+    // the listed server the player is on (the server world's connection), NULL none
+    static const hubserver *onserver()
+    {
+        const ENetAddress *a = remote ? connectedpeer() : NULL;
+        if(a) loopv(hubservers) if(hubservers[i].ok && hubservers[i].addr.host == a->host && hubservers[i].addr.port == a->port) return &hubservers[i];
+        return NULL;
+    }
+
+    static void sendserver()
+    {
+        const hubserver *s = player1->clientnum >= 0 ? onserver() : NULL;
+        string cur = "";
+        if(s) formatstring(cur, "%s %d %d", s->host, s->addr.port, player1->clientnum);
+        if(!strcmp(cur, hubsentserver)) return;
+        vector<uchar> p;
+        sbr2::byteswriter w(p);
+        w.str(s ? s->host : "");
+        w.var(s ? s->addr.port : 0);
+        w.svar(s ? player1->clientnum : 0);
+        if(hubsend(HM_SERVER, p.getbuf(), p.length())) copystring(hubsentserver, cur);
+    }
+
+    // Spectating a hub player on a game server: join it, go spectator, follow them.
+    static struct { bool active; uint id; string name, label; int since, askedat; } serverspec = { false };
+    static const int SERVERSPECMILLIS = 20000;
+
+    bool hubjoiningtospectate() { return serverspec.active; }
+
+    static void serverspecupdate()
+    {
+        if(!serverspec.active) return;
+        hubplayer *p = findplayer(serverspec.id);
+        if(!p || !p->server[0] || totalmillis - serverspec.since > SERVERSPECMILLIS)
+        {
+            conoutf(CON_ERROR, "couldn't spectate %s on %s", serverspec.name, serverspec.label);
+            serverspec.active = false;
+            return;
+        }
+        const hubserver *s = onserver();
+        if(!s || strcmp(s->host, p->serverhost) || s->addr.port != p->serverport || player1->clientnum < 0) return;
+        if(player1->state != CS_SPECTATOR)
+        {
+            if(totalmillis - serverspec.askedat >= 1000) { serverspec.askedat = totalmillis; execute("spectator 1"); }
+            return;
+        }
+        fpsent *d = getclient(p->servercn);
+        if(!d || strcmp(d->name, serverspec.name))
+        {
+            d = NULL;
+            loopv(players) if(players[i] != player1 && !strcmp(players[i]->name, serverspec.name)) { d = players[i]; break; }
+        }
+        if(!d) return;
+        defformatstring(cmd, "follow %d", d->clientnum);
+        execute(cmd);
+        serverspec.active = false;
+    }
+
     static void mapmessage(int type, const char *map, int mode)
     {
         vector<uchar> p;
@@ -1235,6 +1296,15 @@ namespace game
                     q.lobby = uint(r.var());
                     gettext(r, q.kind, sizeof(q.kind));
                     q.away = r.left() ? int(r.var()) : 0;
+                    q.server[0] = q.serverhost[0] = '\0';
+                    q.serverport = q.servercn = 0;
+                    if(r.left())
+                    {
+                        gettext(r, q.server, sizeof(q.server));
+                        gettext(r, q.serverhost, sizeof(q.serverhost));
+                        q.serverport = int(r.var());
+                        q.servercn = int(r.svar());
+                    }
                     if(!r.ok) break;
                     hubplayer *old = findplayer(q.id);
                     if(old)
@@ -1719,6 +1789,8 @@ namespace game
             if(spectating() && remote) hubspectateleave();
             sendviewend();
             sendstatus();
+            sendserver();
+            serverspecupdate();
             sendaway();
             askthumbs();
             autolobby();
@@ -1981,7 +2053,7 @@ namespace game
     }
 
     // the game being played goes to the hub for spectators: on a run map, not a replay
-    bool hubstreaming() { return hubready() && !remote && !inputreplayactive() && runkind()[0]; }
+    bool hubstreaming() { return hubready() && !remote && !lifesession && !inputreplayactive() && runkind()[0]; }
 
     static void sendchat(int scope, const char *text)
     {
@@ -2076,6 +2148,7 @@ namespace game
         else if(!strcmp(field, "away")) result(p->away & AWAY_DND ? "dnd" : p->away & AWAY_AFK ? "afk" : "");
         else if(!strcmp(field, "lobby")) intret(int(p->lobby));
         else if(!strcmp(field, "playing")) intret(p->state != HUBSTATE_MENU ? 1 : 0);
+        else if(!strcmp(field, "server")) result(p->server);
         else if(!strcmp(field, "lobbysize")) { hublobby *l = findlobby(p->lobby); intret(l ? l->members.length() : 0); }
         else if(!strcmp(field, "following")) { hublobby *l = findlobby(p->lobby); result(l && l->host != p->id ? playername(l->host) : ""); }
         else result("");
@@ -2333,6 +2406,23 @@ namespace game
         autolobbydue = true;
     }
 
+    ICOMMAND(hubserverspectate, "i", (int *id),
+    {
+        if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }
+        hubplayer *p = findplayer(uint(*id));
+        if(!p || p->id == hubmyid || !p->server[0]) { conoutf(CON_ERROR, "no such player on a server"); return; }
+        serverspec.active = true;
+        serverspec.id = p->id;
+        copystring(serverspec.name, p->name);
+        copystring(serverspec.label, p->server);
+        serverspec.since = totalmillis;
+        serverspec.askedat = 0;
+        const hubserver *s = onserver();
+        if(s && !strcmp(s->host, p->serverhost) && s->addr.port == p->serverport) return;
+        conoutf("\f2joining %s to spectate %s", p->server, p->name);
+        defformatstring(cmd, "connect %s %d", p->serverhost, p->serverport);
+        execute(cmd);
+    });
     ICOMMAND(hubspectate, "i", (int *id),
     {
         if(!hubready()) { conoutf(CON_ERROR, "not connected to the hub"); return; }

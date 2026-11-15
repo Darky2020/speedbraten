@@ -160,3 +160,4 @@ extern void onlinelifegrenadegone(fpsent *owner, int id);
 extern void onlinelifespawncheck();
 extern bool onlinelifehidepos();
 extern const char *hubserverlabel(const ENetAddress &a);
+extern bool hubjoiningtospectate();

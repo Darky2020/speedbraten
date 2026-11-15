@@ -265,7 +265,7 @@ namespace game
 
     bool lifewanted(const char *name, int mode)
     {
-        if(!onlinelife || !remote || lifesession || !m_check(mode, M_EDIT) || player1->state == CS_SPECTATOR || !name[0]) return false;
+        if(!onlinelife || !remote || lifesession || !m_check(mode, M_EDIT) || player1->state == CS_SPECTATOR || hubjoiningtospectate() || !name[0]) return false;
         string server;
         if(!listedserver(server)) return false;
         return !lifeworldsent && lifemapfile(name);

@@ -92,6 +92,9 @@ void simupdate(bool draw)
         checksleep(lastmillis);
 
         serverslice(false, 0);
+#ifndef HEADLESS
+        game::untickedframe();
+#endif
     }
 }
 
