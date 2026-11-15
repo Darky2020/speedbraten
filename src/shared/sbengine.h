@@ -155,3 +155,17 @@ struct inputsourcescope
 extern void hudfillrect(float x0, float y0, float x1, float y1, int colour, int alpha = 255);
 extern void hudoutlinerect(float x0, float y0, float x1, float y1, float width, int colour, int alpha = 255);
 extern void hudfilldisc(float cx, float cy, float r, int colour, int alpha = 255);
+
+// online life (fpsgame/onlinelife.cpp): lifesession, the client plays its own life on the in-process
+// server beside its server connection; lifelocal, that life's world is the active one, so traffic
+// goes in-process. lifeconnect/lifedisconnect (engine/server.cpp) attach the in-process client.
+extern bool lifesession, lifelocal;
+extern void lifeconnect();
+extern void lifedisconnect();
+namespace game
+{
+    extern void parsepacketremote(int chan, packetbuf &p);
+    extern void parsepacketlocal(int chan, packetbuf &p);
+    extern void lifeenter();
+    extern void lifeleave();
+}

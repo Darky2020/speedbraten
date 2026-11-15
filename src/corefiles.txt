@@ -29,6 +29,7 @@ fpsgame/hudedit.cpp
 fpsgame/inputdisplay.cpp
 fpsgame/inputs.cpp
 fpsgame/inputs.h
+fpsgame/onlinelife.cpp
 fpsgame/replayfile.cpp
 fpsgame/replayio.cpp
 fpsgame/replayio.h

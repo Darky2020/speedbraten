@@ -156,6 +156,7 @@ CLIENT_OBJS= \
 	fpsgame/weapon.o \
 	fpsgame/dethash.o \
 	fpsgame/inputs.o \
+	fpsgame/onlinelife.o \
 	fpsgame/runtimer.o \
 	fpsgame/speedometer.o \
 	fpsgame/replayfile.o \

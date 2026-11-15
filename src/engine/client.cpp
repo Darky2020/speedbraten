@@ -5,7 +5,6 @@
 ENetHost *clienthost = NULL;
 ENetPeer *curpeer = NULL, *connpeer = NULL;
 int connmillis = 0, connattempts = 0, discmillis = 0;
-bool lifesession = false, lifelocal = false;
 
 bool multiplayer(bool msg)
 {

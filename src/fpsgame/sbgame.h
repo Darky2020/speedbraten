@@ -134,3 +134,21 @@ extern bool flagrunrules();
 extern int flagrunminimap;
 extern bool racerules();
 extern bool mapchained(int mode);
+
+// online life (onlinelife.cpp)
+extern int onlinelife;
+extern string lifesentfile, lifesentmap;
+extern bool lifeworldsent;
+extern bool lifepaused();
+extern int lifegamespeed();
+extern bool lifebeside();
+extern void lifekilled();
+extern void lifedropsent();
+extern bool lifemapfile(const char *name);
+extern bool lifewanted(const char *name, int mode);
+extern void onlinelifestart(const char *mapname, int mode);
+extern void lifeend(const char *why);
+extern void lifequeuemsg(int type, const uchar *buf, int len, int mcn, bool reliable);
+extern bool onlinelifemapchange(const char *name, int mode, bool items);
+extern bool onlinelifedied(fpsent *victim, fpsent *actor, int frags);
+extern bool onlinelifesentmap(const char *file, const char *name);
