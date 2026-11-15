@@ -245,6 +245,10 @@ func TestAway(t *testing.T) {
 		m.r.u()
 		m.r.str(16)
 		flags := m.r.u()
+		m.r.str(100)
+		m.r.str(255)
+		m.r.u()
+		m.r.s()
 		if err := m.r.done(); err != nil {
 			t.Fatal(err)
 		}

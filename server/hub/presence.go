@@ -21,7 +21,8 @@ type PresenceDetail struct {
 	Lobby      uint64 `json:"lobby"` // 0: in none
 	Host       string `json:"host"`  // the lobby's host
 	Spectating string `json:"spectating"`
-	Away       string `json:"away"` // "", dnd or afk
+	Away       string `json:"away"`             // "", dnd or afk
+	Server     string `json:"server,omitempty"` // the label of the listed game server it is on
 }
 
 var stateNames = map[int]string{StateMenu: "menu", StatePlaying: "playing", StateRun: "run"}
@@ -39,6 +40,9 @@ func (h *Hub) PresenceTick() {
 		d := PresenceDetail{Name: p.name, State: stateNames[p.state], Map: p.mapname, Mode: p.mode, Kind: p.kind}
 		if p.lobby != nil {
 			d.Lobby, d.Host = p.lobby.id, p.lobby.host.name
+		}
+		if p.server != nil {
+			d.Server = p.server.Label
 		}
 		if p.spec != nil {
 			d.Spectating = p.spec.target.name

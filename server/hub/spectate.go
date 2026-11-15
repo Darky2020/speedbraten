@@ -71,6 +71,8 @@ func (h *Hub) startSpectating(p *player, id uint64) {
 		h.notice(p, "that player is gone")
 	case q == p:
 		h.notice(p, "you can't spectate yourself")
+	case q.server != nil:
+		h.notice(p, q.name+" is on "+q.server.Label+": join it to spectate")
 	case len(h.spectatorsOf(q)) >= MaxSpectators:
 		h.notice(p, q.name+" has too many spectators")
 	default:

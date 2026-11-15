@@ -36,6 +36,7 @@ const (
 	MsgShareData    = 25
 	MsgSharedList   = 26
 	MsgSharedGet    = 27
+	MsgServer       = 28
 
 	MsgWelcome          = 101
 	MsgWitness          = 102

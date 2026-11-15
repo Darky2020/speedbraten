@@ -96,7 +96,9 @@ type player struct {
 	mapname    string
 	mode       int64
 	kind       string
-	away       uint64 // AwayDND, AwayAFK
+	away       uint64  // AwayDND, AwayAFK
+	server     *Server // the listed game server it is on; nil: none
+	servercn   int64   // its client number there
 	lobby      *lobby
 	watching   bool // in lobby as a spectator of the one it spectates
 	admin      bool
@@ -335,6 +337,14 @@ func (h *Hub) playerMsg(p *player) []byte {
 	w.u(lid)
 	w.str(p.kind)
 	w.u(p.away)
+	var s Server
+	if p.server != nil {
+		s = *p.server
+	}
+	w.str(s.Label)
+	w.str(s.Host)
+	w.u(uint64(s.Port))
+	w.s(p.servercn)
 	return w.b
 }
 
@@ -617,6 +627,8 @@ func (h *Hub) handle(p *player, typ byte, msg []byte) error {
 			return err
 		}
 		h.viewEnd(p)
+	case MsgServer:
+		return h.serverStatus(p, &r)
 	case MsgViewData:
 		return h.viewData(p, &r)
 	case MsgRunTime:
