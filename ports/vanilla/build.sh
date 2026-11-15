@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Usage: ports/vanilla/build.sh <zig target> <out dir> [version]
-# Builds speedbraten on plain Sauerbraten (SVN r6880): exports that source, lays the core files
+# Builds speedbraten on plain Sauerbraten 2020 (SVN r6488, the 2020_12_21 release): exports that source, lays the core files
 # (src/corefiles.txt) over it, applies ports/vanilla/shell.patch, checks the core with
 # tools/corecheck.sh and builds it with tools/clientbuild.sh. Run from the repo root.
-# Env: VANILLA_SRC=<dir> copies an existing export of r6880's src/ instead of running svn;
+# Env: VANILLA_SRC=<dir> copies an existing export of r6488's src/ instead of running svn;
 # WORK=<dir> is the build tree (default build/vanilla, replaced on every run).
 set -eu
-rev=6880
+rev=6488
 repo=$(pwd)
 target=$1; out=$2; version=${3:-}
 mkdir -p "$out"; out=$(cd "$out" && pwd)
