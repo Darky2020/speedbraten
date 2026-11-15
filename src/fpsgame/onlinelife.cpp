@@ -98,11 +98,11 @@ namespace game
     {
         switch(type)
         {
-            case N_SPAWN: case N_ITEMPICKUP:
+            case N_SPAWN:
             case N_ADDBOT: case N_DELBOT: case N_BOTLIMIT: case N_BOTBALANCE:
                 return LIFEMSG_HERE;
             case N_SUICIDE: case N_TRYSPAWN: case N_GUNSELECT: case N_SOUND: case N_TAUNT:
-            case N_SHOOT: case N_EXPLODE:
+            case N_SHOOT: case N_EXPLODE: case N_ITEMPICKUP:
                 return LIFEMSG_BOTH;
             default:
                 return LIFEMSG_OTHER;
