@@ -2384,7 +2384,30 @@
          totalmillis = millis;
          updatetime();
      }
-@@ -979,7 +980,7 @@
+@@ -717,6 +718,22 @@
+     game::gameconnect(false);
+     server::localconnect(c.num);
+ }
++
++void lifeconnect()
++{
++    client &c = addclient(ST_LOCAL);
++    copystring(c.hostname, "local");
++    server::localconnect(c.num);
++}
++
++void lifedisconnect()
++{
++    loopv(clients) if(clients[i]->type==ST_LOCAL)
++    {
++        server::localdisconnect(i);
++        delclient(clients[i]);
++    }
++}
+ #endif
+ 
+ #ifdef WIN32
+@@ -979,7 +996,7 @@
          line.buf[line.len] = '\0';
          if(outhandle) writeline(line);
      }
@@ -2884,7 +2907,7 @@
 +    return buf;
 +}
 +
-+static void addmapdatafile(int role, const char *name)
++static void addmapdatafile(int role, const char *name, const char *recordas = NULL)
 +{
 +    size_t len = 0;
 +    char *buf = loadmapfile(name, len, role == 1);
@@ -2893,7 +2916,7 @@
 +    f.role = role;
 +    f.size = uint(len);
 +    // the path with '/' on every platform (path() turns them into '\' on Windows)
-+    copystring(f.path, name);
++    copystring(f.path, recordas ? recordas : name);
 +    for(char *s = f.path; *s; s++) if(*s == '\\') *s = '/';
 +    blake3_hasher h;
 +    blake3_hasher_init(&h);
@@ -2915,16 +2938,24 @@
  bool load_world(const char *mname, const char *cname)        // still supports all map formats that have existed since the earliest cube betas!
  {
      int loadingstart = SDL_GetTicks();
-@@ -1239,6 +1286,8 @@
+@@ -1239,6 +1286,16 @@
      }
  
      mapcrc = f->getcrc();
 +    mapdatafiles.setsize(0);
-+    addmapdatafile(0, ogzname);
++    if(cname)
++    {
++        // a map loaded from another file, one a server sent, is recorded as the map it stands for
++        string pakname, mapname, mcfgname, realogz;
++        getmapfilenames(cname, NULL, pakname, mapname, mcfgname);
++        formatstring(realogz, "packages/%s.ogz", mapname);
++        addmapdatafile(0, ogzname, realogz);
++    }
++    else addmapdatafile(0, ogzname);
      delete f;
  
      conoutf("read map %s (%.1f seconds)", ogzname, (SDL_GetTicks()-loadingstart)/1000.0f);
-@@ -1248,6 +1297,9 @@
+@@ -1248,6 +1305,9 @@
      identflags |= IDF_OVERRIDDEN;
      execfile("data/default_map_settings.cfg", false);
      execfile(cfgname, false);
@@ -3160,7 +3191,7 @@
          loopv(authkeys) if(!strcmp(authkeys[i]->desc, desc)) return authkeys[i];
          return NULL;
      }
-@@ -255,7 +266,7 @@
+@@ -255,12 +266,13 @@
  
      void writeclientinfo(stream *f)
      {
@@ -3169,7 +3200,13 @@
      }
  
      bool allowedittoggle()
-@@ -271,6 +282,7 @@
+     {
+         if(editmode) return true;
++        lifeend("edit mode");
+         if(isconnected() && multiplayer(false) && !m_edit)
+         {
+             conoutf(CON_ERROR, "editing in multiplayer requires coop edit mode (1)");
+@@ -271,6 +283,7 @@
  
      void edittoggled(bool on)
      {
@@ -3177,7 +3214,7 @@
          addmsg(N_EDITMODE, "ri", on ? 1 : 0);
          if(player1->state==CS_DEAD) deathstate(player1, true);
          else if(player1->state==CS_EDITING && player1->editstate==CS_DEAD) showscores(false);
-@@ -510,6 +522,8 @@
+@@ -510,6 +523,8 @@
  
      void changemapserv(const char *name, int mode)        // forced map change from the server
      {
@@ -3186,7 +3223,7 @@
          if(multiplayer(false) && !m_mp(mode))
          {
              conoutf(CON_ERROR, "mode %s (%d) not supported in multiplayer", server::modename(gamemode), gamemode);
-@@ -518,8 +532,13 @@
+@@ -518,9 +533,15 @@
  
          gamemode = mode;
          nextmode = mode;
@@ -3194,21 +3231,36 @@
 +        setclientmode();
          if(editmode) toggleedit();
          if(m_demo) { entities::resetspawns(); return; }
+-        if((m_edit && !name[0]) || !load_world(name))
 +        // the player spawns during the load, and must not collide with the old map's monsters
 +        removemonsters();
 +        removemovables();
-         if((m_edit && !name[0]) || !load_world(name))
++        bool sent = lifesentmap[0] && !strcmp(name, lifesentmap);
++        if((m_edit && !name[0]) || !(sent ? load_world(lifesentfile, name) : load_world(name)))
          {
              emptymap(0, true, name);
-@@ -574,6 +593,7 @@
+             senditemstoserver = false;
+@@ -572,8 +593,9 @@
+ 
+     void changemap(const char *name, int mode) // request map change, server may ignore
      {
-         if(!remote)
+-        if(!remote)
++        if(!remote && !lifesession)
          {
 +            if(hubfetchmap(name, mode)) return;
              server::forcemap(name, mode);
              if(!isconnected()) localconnect();
          }
-@@ -623,6 +643,7 @@
+@@ -587,7 +609,7 @@
+ 
+     void forceintermission()
+     {
+-        if(!remote && !hasnonlocalclients()) server::startintermission();
++        if(!remote && !lifesession && !hasnonlocalclients()) server::startintermission();
+         else addmsg(N_FORCEINTERMISSION, "r");
+     }
+ 
+@@ -623,6 +645,7 @@
  
      void edittrigger(const selinfo &sel, int op, int arg1, int arg2, int arg3, const VSlot *vs)
      {
@@ -3216,16 +3268,31 @@
          if(m_edit) switch(op)
          {
              case EDIT_FLIP:
-@@ -791,7 +812,7 @@
+@@ -778,7 +801,7 @@
+     void pausegame(bool val)
+     {
+         if(!connected) return;
+-        if(!remote) server::forcepaused(val);
++        if(!remote && !lifesession) server::forcepaused(val);
+         else addmsg(N_PAUSEGAME, "ri", val ? 1 : 0);
+     }
+     ICOMMAND(pausegame, "i", (int *val), pausegame(*val > 0));
+@@ -789,29 +812,31 @@
+         else printvar(id, gamepaused ? 1 : 0); 
+     });
  
-     bool ispaused() { return gamepaused; }
+-    bool ispaused() { return gamepaused; }
++    bool ispaused() { return lifesession && !lifelocal ? lifepaused() : gamepaused; }
  
 -    bool allowmouselook() { return !gamepaused || !remote || m_edit; }
 +    bool allowmouselook() { return !inputlocked() && (player1->state==CS_SPECTATOR || !gamepaused || !remote || m_edit); }
  
      void changegamespeed(int val)
      {
-@@ -801,7 +822,7 @@
+         if(!connected) return;
+-        if(!remote) server::forcegamespeed(val);
++        if(!remote && !lifesession) server::forcegamespeed(val);
+         else addmsg(N_GAMESPEED, "ri", val);
      }
      ICOMMAND(gamespeed, "iN$", (int *val, int *numargs, ident *id),
      {
@@ -3234,7 +3301,11 @@
          else if(*numargs < 0) intret(gamespeed);
          else printvar(id, gamespeed);
      });
-@@ -812,6 +833,8 @@
+ 
+-    int scaletime(int t) { return t*gamespeed; }
++    int scaletime(int t) { return t*(lifesession && !lifelocal ? lifegamespeed() : gamespeed); }
+ 
+     // collect c2s messages conveniently
      vector<uchar> messages;
      int messagecn = -1, messagereliable = false;
  
@@ -3243,15 +3314,36 @@
      bool addmsg(int type, const char *fmt, ...)
      {
          if(!connected) return false;
-@@ -894,6 +917,7 @@
+@@ -862,17 +887,7 @@
+         }
+         int num = nums || numf ? 0 : numi, msgsize = server::msgsizelookup(type);
+         if(msgsize && num!=msgsize) { fatal("inconsistent msg size for %d (%d != %d)", type, num, msgsize); }
+-        if(reliable) messagereliable = true;
+-        if(mcn != messagecn)
+-        {
+-            static uchar mbuf[16];
+-            ucharbuf m(mbuf, sizeof(mbuf));
+-            putint(m, N_FROMAI);
+-            putint(m, mcn);
+-            messages.put(mbuf, m.length());
+-            messagecn = mcn;
+-        }
+-        messages.put(buf, p.length());
++        lifequeuemsg(type, buf, p.length(), mcn, reliable);
+         return true;
+     }
+ 
+@@ -894,6 +909,9 @@
  
      void gamedisconnect(bool cleanup)
      {
++        lifeend("disconnected");
++        lifedropsent();
 +        if(!remote) inputdisconnect();
          if(remote) stopfollowing();
          ignores.setsize(0);
          connected = remote = false;
-@@ -917,15 +941,17 @@
+@@ -917,15 +935,17 @@
              nextmode = gamemode = INT_MAX;
              clientmap[0] = '\0';
          }
@@ -3263,7 +3355,7 @@
      const char *chatcolorname(fpsent *d) { return teamcolorchat ? teamcolorname(d, NULL) : colorname(d); }
  
 -    void toserver(char *text) { conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
-+    void toserver(char *text) { if(!remote && hubchat(text)) return; conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
++    void toserver(char *text) { if(!remote && !lifesession && hubchat(text)) return; conoutf(CON_CHAT, "%s:\f0 %s", chatcolorname(player1), text); addmsg(N_TEXT, "rcs", player1, text); }
      COMMANDN(say, toserver, "C");
  
 -    void sayteam(char *text) { conoutf(CON_TEAMCHAT, "\fs\f8[team]\fr %s: \f8%s", chatcolorname(player1), text); addmsg(N_SAYTEAM, "rcs", player1, text); }
@@ -3271,7 +3363,7 @@
      COMMAND(sayteam, "C");
  
      ICOMMAND(servcmd, "C", (char *cmd), addmsg(N_SERVCMD, "rs", cmd));
-@@ -1016,6 +1042,7 @@
+@@ -1016,6 +1036,7 @@
  
      void sendmessages()
      {
@@ -3279,7 +3371,7 @@
          packetbuf p(MAXTRANS);
          if(sendcrc)
          {
-@@ -1041,7 +1068,8 @@
+@@ -1041,7 +1062,8 @@
              messagereliable = false;
              messagecn = -1;
          }
@@ -3289,7 +3381,23 @@
          {
              putint(p, N_PING);
              putint(p, totalmillis);
-@@ -1064,7 +1092,7 @@
+@@ -1057,6 +1079,15 @@
+         lastupdate = totalmillis;
+         sendpositions();
+         sendmessages();
++        static int lastother = -1000;
++        if(lifelocal && totalmillis - lastother >= 33)
++        {
++            lastother = totalmillis;
++            lifeleave();
++            sendpositions();
++            sendmessages();
++            lifeenter();
++        }
+         flushclient();
+     }
+ 
+@@ -1064,7 +1095,7 @@
      {
          packetbuf p(MAXTRANS, ENET_PACKET_FLAG_RELIABLE);
          putint(p, N_CONNECT);
@@ -3298,7 +3406,7 @@
          putint(p, player1->playermodel);
          string hash = "";
          if(connectpass[0])
-@@ -1298,7 +1326,7 @@
+@@ -1298,7 +1329,7 @@
  
              case N_GAMESPEED:
              {
@@ -3307,7 +3415,69 @@
                  fpsent *a = cn >= 0 ? getclient(cn) : NULL;
                  if(!demopacket) gamespeed = val;
                  extern int slowmosp;
-@@ -1477,7 +1505,9 @@
+@@ -1347,20 +1378,25 @@
+             }
+ 
+             case N_MAPCHANGE:
++            {
+                 getstring(text, p);
+                 filtertext(text, text, false);
+                 fixmapname(text);
+-                changemapserv(text, getint(p));
++                int mode = getint(p), items = getint(p);
+                 mapchanged = true;
+-                if(getint(p)) entities::spawnitems();
++                if(onlinelifemapchange(text, mode, items != 0)) break;
++                changemapserv(text, mode);
++                if(items) entities::spawnitems();
+                 else senditemstoserver = false;
+                 break;
++            }
+ 
+             case N_FORCEDEATH:
+             {
+                 int cn = getint(p);
+                 fpsent *d = cn==player1->clientnum ? player1 : newclient(cn);
+                 if(!d) break;
++                if(d==player1 && lifebeside()) { lifekilled(); break; }
+                 if(d==player1)
+                 {
+                     if(editmode) toggleedit();
+@@ -1377,7 +1413,7 @@
+                 int n;
+                 while((n = getint(p))>=0 && !p.overread())
+                 {
+-                    if(mapchanged) entities::setspawn(n, true);
++                    if(mapchanged && !lifebeside()) entities::setspawn(n, true);
+                     getint(p); // type
+                 }
+                 break;
+@@ -1447,7 +1483,7 @@
+             {
+                 if(d)
+                 {
+-                    if(d->state==CS_DEAD && d->lastpain) saveragdoll(d);
++                    if(d->state==CS_DEAD && d->lastpain && !lifebeside()) saveragdoll(d);
+                     d->respawn();
+                 }
+                 parsestate(d, p);
+@@ -1463,6 +1499,15 @@
+                 int scn = getint(p);
+                 fpsent *s = getclient(scn);
+                 if(!s) { parsestate(NULL, p); break; }
++                if(s==player1 && (lifebeside() || lifewanted(getclientmap(), gamemode)))
++                {
++                    static fpsent spawned;
++                    parsestate(&spawned, p);
++                    player1->lifesequence = spawned.lifesequence;
++                    addmsg(N_SPAWN, "rcii", player1, player1->lifesequence, spawned.gunselect);
++                    if(!lifesession) onlinelifestart(getclientmap(), gamemode);
++                    break;
++                }
+                 if(s->state==CS_DEAD && s->lastpain) saveragdoll(s);
+                 if(s==player1)
+                 {
+@@ -1477,7 +1522,9 @@
                  {
                      showscores(false);
                      lasthit = 0;
@@ -3317,7 +3487,51 @@
                  if(cmode) cmode->respawned(s);
  				ai::spawned(s);
                  addmsg(N_SPAWN, "rcii", s, s->lifesequence, s->gunselect);
-@@ -1552,6 +1582,8 @@
+@@ -1491,7 +1538,7 @@
+                 loopk(3) from[k] = getint(p)/DMF;
+                 loopk(3) to[k] = getint(p)/DMF;
+                 fpsent *s = getclient(scn);
+-                if(!s) break;
++                if(!s || lifebeside()) break;
+                 if(gun>GUN_FIST && gun<=GUN_PISTOL && s->ammo[gun]) s->ammo[gun]--;
+                 s->gunselect = clamp(gun, (int)GUN_FIST, (int)GUN_PISTOL);
+                 s->gunwait = guns[s->gunselect].attackdelay;
+@@ -1506,7 +1553,7 @@
+             {
+                 int ecn = getint(p), gun = getint(p), id = getint(p);
+                 fpsent *e = getclient(ecn);
+-                if(!e) break;
++                if(!e || lifebeside()) break;
+                 explodeeffects(gun, e, false, id);
+                 break;
+             }
+@@ -1519,7 +1566,7 @@
+                     health = getint(p);
+                 fpsent *target = getclient(tcn),
+                        *actor = getclient(acn);
+-                if(!target || !actor) break;
++                if(!target || !actor || lifebeside()) break;
+                 target->armour = armour;
+                 target->health = health;
+                 if(target->state == CS_ALIVE && actor != player1) target->lastpain = lastmillis;
+@@ -1533,7 +1580,7 @@
+                 fpsent *target = getclient(tcn);
+                 vec dir;
+                 loopk(3) dir[k] = getint(p)/DNF;
+-                if(target) target->hitpush(damage * (target->health<=0 ? deadpush : 1), dir, NULL, gun);
++                if(target && !(target==player1 && lifebeside())) target->hitpush(damage * (target->health<=0 ? deadpush : 1), dir, NULL, gun);
+                 break;
+             }
+ 
+@@ -1543,6 +1590,7 @@
+                 fpsent *victim = getclient(vcn),
+                        *actor = getclient(acn);
+                 if(!actor) break;
++                if(onlinelifedied(victim, actor, frags)) break;
+                 actor->frags = frags;
+                 if(m_teammode) setteaminfo(actor->team, tfrags);
+                 extern int hidefrags;
+@@ -1552,6 +1600,8 @@
                      particle_textcopy(actor->abovehead(), ds, PART_TEXT, 2000, 0x32FF64, 4.0f, -8);
                  }
                  if(!victim) break;
@@ -3326,7 +3540,60 @@
                  killed(victim, actor);
                  break;
              }
-@@ -1878,6 +1910,13 @@
+@@ -1590,6 +1640,13 @@
+                     int cn = getint(p);
+                     if(p.overread() || cn<0) break;
+                     fpsent *d = (cn == player1->clientnum ? player1 : newclient(cn));
++                    if(d==player1 && lifebeside())
++                    {
++                        static fpsent resumed;
++                        parsestate(&resumed, p, true);
++                        player1->lifesequence = resumed.lifesequence;
++                        continue;
++                    }
+                     parsestate(d, p, true);
+                 }
+                 break;
+@@ -1598,7 +1655,7 @@
+             case N_ITEMSPAWN:
+             {
+                 int i = getint(p);
+-                if(!entities::ents.inrange(i)) break;
++                if(!entities::ents.inrange(i) || lifebeside()) break;
+                 entities::setspawn(i, true);
+                 ai::itemspawned(i);
+                 playsound(S_ITEMSPAWN, &entities::ents[i]->o, NULL, 0, 0, 0, -1, 0, 1500);
+@@ -1614,6 +1671,7 @@
+             case N_ITEMACC:            // server acknowledges that I picked up this item
+             {
+                 int i = getint(p), cn = getint(p);
++                if(lifebeside()) break;
+                 if(cn >= 0)
+                 {
+                     fpsent *d = getclient(cn);
+@@ -1766,8 +1824,12 @@
+                 break;
+ 
+             case N_TIMEUP:
+-                timeupdate(getint(p));
++            {
++                int secs = getint(p);
++                if(secs <= 0 && remote) lifeend("intermission");
++                timeupdate(secs);
+                 break;
++            }
+ 
+             case N_SERVMSG:
+                 getstring(text, p);
+@@ -1856,6 +1918,7 @@
+                 {
+                     if(s==player1)
+                     {
++                        if(remote) lifeend("spectating");
+                         if(editmode) toggleedit();
+                         if(s->state==CS_DEAD) showscores(false);
+                         disablezoom();
+@@ -1878,6 +1941,13 @@
                  fpsent *w = getclient(wn);
                  if(!w) return;
                  filtertext(w->team, text, false, false, MAXTEAMLEN);
@@ -3340,6 +3607,24 @@
                  static const char * const fmt[2] = { "%s switched to team %s", "%s forced to team %s"};
                  if(reason >= 0 && size_t(reason) < sizeof(fmt)/sizeof(fmt[0]))
                      conoutf(fmt[reason], colorname(w), w->team);
+@@ -2012,6 +2082,7 @@
+             case N_SENDMAP:
+             {
+                 if(!m_edit) return;
++                if(remote) { lifeend("the server sent its map"); lifedropsent(); }
+                 string oldname;
+                 copystring(oldname, getclientmap());
+                 defformatstring(mname, "getmap_%d", lastmillis);
+@@ -2024,7 +2095,9 @@
+                 delete map;
+                 if(load_world(mname, oldname[0] ? oldname : NULL))
+                     entities::spawnitems(true);
++                if(onlinelifesentmap(mname, oldname)) break;
+                 remove(findfile(fname, "rb"));
++                if(remote) lifeworldsent = true;
+                 break;
+             }
+         }
 --- a/fpsgame/ctf.h
 +++ b/fpsgame/ctf.h
 @@ -328,6 +328,11 @@
@@ -3626,7 +3911,15 @@
  
          physicsframe();
          ai::navigate();
-@@ -257,8 +291,9 @@
+@@ -251,14 +285,17 @@
+         ai::update();
+         moveragdolls();
+         gets2c();
++        // a life's world only moves in sim ticks, also in the frame that started it
++        if(lifesession && !insimtick) return;
+         updatemovables(curtime);
+         updatemonsters(curtime);
+         if(connected)
          {
              if(player1->state == CS_DEAD)
              {
@@ -3637,7 +3930,7 @@
                  {
                      player1->move = player1->strafe = 0;
                      moveplayer(player1, 10, true);
-@@ -278,7 +313,9 @@
+@@ -278,7 +315,9 @@
                  else if(cmode) cmode->checkitems(player1);
              }
          }
@@ -3648,7 +3941,7 @@
      }
  
      float proximityscore(float x, float lower, float upper)
-@@ -291,6 +328,8 @@
+@@ -291,6 +330,8 @@
  
      static inline float harmonicmean(float a, float b) { return a + b > 0 ? 2 * a * b / (a + b) : 0.0f; }
  
@@ -3657,7 +3950,7 @@
      // avoid spawning near other players
      float ratespawn(dynent *d, const extentity &e)
      {
-@@ -303,7 +342,7 @@
+@@ -303,7 +344,7 @@
              const fpsent *o = players[i];
              if(o == p)
              {
@@ -3666,7 +3959,7 @@
              }
              else if(o->state != CS_ALIVE || isteam(o->team, p->team)) continue;
  
-@@ -311,7 +350,7 @@
+@@ -311,7 +352,7 @@
              float dist = dir.squaredlen();
              if(dist >= minplayerdist*minplayerdist) continue;
              dist = sqrtf(dist);
@@ -3675,7 +3968,7 @@
  
              // scale actual distance if not in line of sight
              if(raycube(loc, dir, dist) < dist) dist *= 1.5f;
-@@ -325,6 +364,7 @@
+@@ -325,6 +366,7 @@
      {
          int ent = m_classicsp && d == player1 && respawnent >= 0 ? respawnent : -1;
          int tag = cmode ? cmode->getspawngroup(d) : 0;
@@ -3683,7 +3976,7 @@
          findplayerspawn(d, ent, tag);
      }
  
-@@ -364,14 +404,24 @@
+@@ -364,14 +406,24 @@
              }
          }
      }
@@ -3709,7 +4002,7 @@
          if(!connected || intermission) return;
          if((player1->attacking = on) && attackspawn) respawn();
      }
-@@ -380,11 +430,17 @@
+@@ -380,11 +432,17 @@
  
      bool canjump()
      {
@@ -3727,7 +4020,7 @@
      bool allowmove(physent *d)
      {
          if(d->type!=ENT_PLAYER) return true;
-@@ -419,7 +475,7 @@
+@@ -419,7 +477,7 @@
  
          if(d->health<=0) { if(local) killed(d, actor); }
          else if(d==h) playsound(S_PAIN6);
@@ -3736,7 +4029,7 @@
      }
  
      VARP(deathscore, 0, 1, 1);
-@@ -441,14 +497,14 @@
+@@ -441,14 +499,14 @@
              d->attacking = false;
              //d->pitch = 0;
              d->roll = 0;
@@ -3754,7 +4047,7 @@
          }
      }
  
-@@ -599,14 +655,34 @@
+@@ -599,14 +657,34 @@
  
      VARP(showmodeinfo, 0, 1, 1);
  
@@ -3789,7 +4082,7 @@
  
          clearteaminfo();
  
-@@ -621,6 +697,7 @@
+@@ -621,6 +699,7 @@
              d->maxhealth = 100;
              d->lifesequence = -1;
              d->respawned = d->suicided = -2;
@@ -3797,7 +4090,7 @@
          }
  
          setclientmode();
-@@ -669,8 +746,12 @@
+@@ -669,8 +748,12 @@
          ai::clearwaypoints(true);
  
          respawnent = -1; // so we don't respawn at an old spot
@@ -3810,7 +4103,7 @@
          entities::resetspawns();
          copystring(clientmap, name ? name : "");
  
-@@ -732,6 +813,15 @@
+@@ -732,6 +815,15 @@
          return NULL;
      }
  
@@ -3826,7 +4119,7 @@
      bool duplicatename(fpsent *d, const char *name = NULL, const char *alt = NULL)
      {
          if(!name) name = d->name;
-@@ -806,7 +896,7 @@
+@@ -806,7 +898,7 @@
          else if(d->type==ENT_AI) suicidemonster((monster *)d);
          else if(d->type==ENT_INANIMATE) suicidemovable((movable *)d);
      }
@@ -3835,7 +4128,7 @@
  
      bool needminimap() { return m_ctf || m_protect || m_hold || m_capture || m_collect; }
  
-@@ -1089,11 +1179,21 @@
+@@ -1089,11 +1181,21 @@
  
          if(!m_edit && !m_sp)
          {
@@ -3858,7 +4151,7 @@
      int clipconsole(int w, int h)
      {
          if(cmode) return cmode->clipconsole(w, h);
-@@ -1300,6 +1400,7 @@
+@@ -1300,6 +1402,7 @@
      const char *savedconfig() { return "config.cfg"; }
      const char *restoreconfig() { return "restore.cfg"; }
      const char *defaultconfig() { return "data/defaults.cfg"; }
@@ -5259,3 +5552,47 @@
  
  extern void putint(ucharbuf &p, int n);
  extern void putint(packetbuf &p, int n);
+--- a/engine/client.cpp
++++ b/engine/client.cpp
+@@ -8,7 +8,7 @@
+ 
+ bool multiplayer(bool msg)
+ {
+-    bool val = curpeer || hasnonlocalclients(); 
++    bool val = (curpeer && !lifelocal) || hasnonlocalclients();
+     if(val && msg) conoutf(CON_ERROR, "operation not available in multiplayer");
+     return val;
+ }
+@@ -189,7 +189,7 @@
+ 
+ void sendclientpacket(ENetPacket *packet, int chan)
+ {
+-    if(curpeer) enet_peer_send(curpeer, chan, packet);
++    if(curpeer && !lifelocal) enet_peer_send(curpeer, chan, packet);
+     else localclienttoserver(chan, packet);
+ }
+ 
+@@ -207,7 +207,13 @@
+ void localservertoclient(int chan, ENetPacket *packet)   // processes any updates from the server
+ {
+     packetbuf p(packet);
+-    game::parsepacketclient(chan, p);
++    game::parsepacketlocal(chan, p);
++}
++
++static void remoteservertoclient(int chan, ENetPacket *packet)
++{
++    packetbuf p(packet);
++    game::parsepacketremote(chan, p);
+ }
+ 
+ void clientkeepalive() { if(clienthost) enet_host_service(clienthost, NULL, 0); }
+@@ -244,7 +250,7 @@
+          
+         case ENET_EVENT_TYPE_RECEIVE:
+             if(discmillis) conoutf("attempting to disconnect...");
+-            else localservertoclient(event.channelID, event.packet);
++            else remoteservertoclient(event.channelID, event.packet);
+             enet_packet_destroy(event.packet);
+             break;
+ 
