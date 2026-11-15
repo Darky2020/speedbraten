@@ -33,6 +33,11 @@ namespace game
     };
     static lifeworld lifeother; // the world that isn't active
 
+    // the life marked off the record (see onlinelifeoffrecord), -1 none; whether the console has said so this
+    // online session
+    static int offrecordlife = -1;
+    static bool offrecordwarned = false;
+
     template<class T> static void swapvector(vector<T> &a, vector<T> &b) { vector<T> t; t.move(a); a.move(b); b.move(t); }
 
     static void swapworlds()
@@ -92,6 +97,11 @@ namespace game
         if(player1->state == CS_ALIVE) queueinput(INPUT_COMMAND, 0, "suicide");
     }
 
+    // the life's own suicides the server was sent and hasn't reported back yet: by the time it does, the
+    // life may have respawned, and that death is not one to repeat. Forgotten after a while in case the
+    // server dropped one (a suicide while it still has the player dead).
+    static int suicidesechoing = 0, lastsuicidesent = 0;
+
     // where a message the life's world sends goes: its own in-process server, the real one, or both
     enum { LIFEMSG_HERE = 0, LIFEMSG_OTHER, LIFEMSG_BOTH };
     static int lifemsgdest(int type)
@@ -147,6 +157,7 @@ namespace game
         int dest = lifelocal ? lifemsgdest(type) : LIFEMSG_HERE;
         if(dest != LIFEMSG_OTHER) queuemsg(messages, messagecn, messagereliable, buf, len, mcn, reliable);
         if(dest == LIFEMSG_HERE) return;
+        if(type == N_SUICIDE) { suicidesechoing++; lastsuicidesent = totalmillis; }
         uchar stripped[MAXTRANS];
         int slen = withouthits(type, buf, len, stripped, sizeof(stripped));
         if(slen) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, stripped, slen, mcn, reliable);
@@ -219,6 +230,9 @@ namespace game
         o.lastping = 0;
         o.connected = o.remote = o.gamepaused = o.sendcrc = o.senditemstoserver = false;
         if(!listedserver(lifeserver)) lifeserver[0] = '\0';
+        offrecordlife = -1;
+        offrecordwarned = false;
+        suicidesechoing = 0;
         lifesession = true;
         lifeenter();
         server::forcemap(name, mode);
@@ -268,7 +282,9 @@ namespace game
     bool onlinelifedied(fpsent *victim, fpsent *actor, int frags)
     {
         if(!lifebeside()) return false;
-        if(victim == player1) lifekilled();
+        if(totalmillis - lastsuicidesent > 3000) suicidesechoing = 0;
+        if(victim == player1 && actor == player1 && suicidesechoing > 0) suicidesechoing--;
+        else if(victim == player1) lifekilled();
         if(actor != player1) actor->frags = frags;
         return true;
     }
@@ -282,6 +298,42 @@ namespace game
         lifeworldsent = false;
         if(player1->state == CS_ALIVE && lifewanted(name, gamemode)) onlinelifestart(name, gamemode);
         return true;
+    }
+
+    // A life that used an assist, a saved state or a start of the player's choosing is off the record: the
+    // server must not see it finish, since it times runs from the positions it is sent and keeps every
+    // finish it sees. The mark holds for the life (the life's world's lifesequence) it was made in; the
+    // console says so once per online session.
+    static int lifesequencenow() { return lifelocal ? player1->lifesequence : lifeother.lifesequence; }
+
+    void onlinelifeoffrecord(const char *why)
+    {
+        if(!lifesession) return;
+        offrecordlife = lifesequencenow();
+        if(offrecordwarned) return;
+        offrecordwarned = true;
+        conoutf(CON_WARN, "%s: the server won't see an assisted life finish", why);
+    }
+
+    // a race goal as servers judge it: the eye inside a box around a FLAG or PLAYERSTART with a negative
+    // attr2, half-size attr3 (or 24); with a margin, so that no position near one is sent either
+    static bool neargoal(const vec &eye)
+    {
+        const vector<extentity *> &ents = entities::getents();
+        loopv(ents)
+        {
+            const extentity &e = *ents[i];
+            if((e.type != FLAG && e.type != PLAYERSTART) || e.attr2 >= 0) continue;
+            float r = (e.attr3 > 0 ? e.attr3 : 24) + 1;
+            if(fabs(eye.x - e.o.x) < r && fabs(eye.y - e.o.y) < r && fabs(eye.z - e.o.z) < r) return true;
+        }
+        return false;
+    }
+
+    // whether the player's position is kept from the server this time: an off-record life near a goal
+    bool onlinelifehidepos()
+    {
+        return lifesession && offrecordlife >= 0 && offrecordlife == lifesequencenow() && neargoal(player1->o);
     }
 
     void parsepacketremote(int chan, packetbuf &p)

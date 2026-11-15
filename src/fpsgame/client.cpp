@@ -1187,7 +1187,7 @@ namespace game
         {
             lastother = totalmillis;
             lifeleave();
-            sendpositions();
+            if(!onlinelifehidepos()) sendpositions();
             sendmessages();
             lifeenter();
         }

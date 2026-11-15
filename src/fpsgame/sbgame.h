@@ -153,4 +153,6 @@ extern bool onlinelifemapchange(const char *name, int mode, bool items);
 extern bool onlinelifedied(fpsent *victim, fpsent *actor, int frags);
 extern bool onlinelifesentmap(const char *file, const char *name);
 extern const char *onlinelifeserver();
+extern void onlinelifeoffrecord(const char *why);
+extern bool onlinelifehidepos();
 extern const char *hubserverlabel(const ENetAddress &a);

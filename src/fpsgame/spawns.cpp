@@ -97,6 +97,7 @@ namespace game
         if(d != player1) return false;
         if(customspawnactive())
         {
+            onlinelifeoffrecord("a custom spawn was used");
             const customspawn &spawn = *teamspawn();
             d->o = spawn.o;
             d->yaw = spawn.yaw;
@@ -105,7 +106,11 @@ namespace game
             d->resetinterp();
             return true;
         }
-        if(racestart >= 0 && server::racerulesactive()) forceent = nthplayerstart(racestart);
+        if(racestart >= 0 && server::racerulesactive())
+        {
+            forceent = nthplayerstart(racestart);
+            onlinelifeoffrecord("a chosen race start was used");
+        }
         else if(flagrunspawn && m_ctf && server::flagrunactive()) forceent = nearestflagstart();
         return false;
     }
@@ -248,7 +253,7 @@ namespace game
         return custom || race;
     }
     ICOMMAND(racestartcount, "", (), intret(countplayerstarts()));
-    ICOMMAND(inrace, "", (), intret(!multiplayer(false) && server::racerulesactive() ? 1 : 0));
+    ICOMMAND(inrace, "", (), intret((!multiplayer(false) || lifesession) && server::racerulesactive() ? 1 : 0));
 
     // Each team's saved spawn of this map and mode is applied on the first tick, and player1 placed
     // at their own team's (the team is not known yet here). A team without a file of its own takes

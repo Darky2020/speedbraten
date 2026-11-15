@@ -374,7 +374,7 @@ namespace game
         DELETEP(nextview);
         chainpending = false;
         if(!restorestate(st.state)) return false;
-        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); }
+        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); onlinelifeoffrecord("a saved state was loaded"); }
         // back to the life the state was taken in, which may have ended since
         if(st.life && onchain(st.life->branch, st.life->tick, st.branch, st.tick)) lifestart = st.life;
         else if(lifestart && !onchain(lifestart->branch, lifestart->tick, st.branch, st.tick)) lifestart = NULL;
@@ -1955,7 +1955,7 @@ namespace game
         if(replaying || recordingoff || recording.attempts.empty() || !connected) return;
         inputattempt &a = recording.last();
         markaids(a, max(curtick, 0) + 1, aids);
-        if(tellsassistframe(aids)) witnessstop("an assist was used");
+        if(tellsassistframe(aids)) { witnessstop("an assist was used"); onlinelifeoffrecord("an assist was used"); }
         int seg = max(curtick, 0) / REPLAYSEGMENTTICKS;
         cuttiming(a, curtick);
         if(a.timing.empty() || a.timing.last().segment != seg) a.timing.add(segmenttiming(seg));
