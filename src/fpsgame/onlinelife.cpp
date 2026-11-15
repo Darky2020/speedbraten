@@ -98,10 +98,11 @@ namespace game
     {
         switch(type)
         {
-            case N_SPAWN: case N_ITEMPICKUP: case N_SHOOT: case N_EXPLODE:
+            case N_SPAWN: case N_ITEMPICKUP:
             case N_ADDBOT: case N_DELBOT: case N_BOTLIMIT: case N_BOTBALANCE:
                 return LIFEMSG_HERE;
             case N_SUICIDE: case N_TRYSPAWN: case N_GUNSELECT: case N_SOUND: case N_TAUNT:
+            case N_SHOOT: case N_EXPLODE:
                 return LIFEMSG_BOTH;
             default:
                 return LIFEMSG_OTHER;
@@ -123,12 +124,33 @@ namespace game
         q.put(buf, len);
     }
 
+    // A shot or explosion the server is shown, so that its players and spectators see it: the same message
+    // with no hits, since the hits name the life's players by the life's client numbers. Returns its length
+    // in out; 0 for other messages or one that doesn't parse.
+    static int withouthits(int type, const uchar *buf, int len, uchar *out, int size)
+    {
+        int fields = type == N_SHOOT ? 8 : type == N_EXPLODE ? 3 : -1;
+        if(fields < 0) return 0;
+        ucharbuf in((uchar *)buf, len);
+        getint(in);
+        loopi(fields) getint(in);
+        if(in.overread() || in.len + 4 > size) return 0;
+        memcpy(out, buf, in.len);
+        ucharbuf o(out + in.len, size - in.len);
+        putint(o, 0);
+        return in.len + o.len;
+    }
+
     // addmsg's queueing: outside a life everything goes to the one server; inside, by message type
     void lifequeuemsg(int type, const uchar *buf, int len, int mcn, bool reliable)
     {
         int dest = lifelocal ? lifemsgdest(type) : LIFEMSG_HERE;
         if(dest != LIFEMSG_OTHER) queuemsg(messages, messagecn, messagereliable, buf, len, mcn, reliable);
-        if(dest != LIFEMSG_HERE) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, buf, len, mcn, reliable);
+        if(dest == LIFEMSG_HERE) return;
+        uchar stripped[MAXTRANS];
+        int slen = withouthits(type, buf, len, stripped, sizeof(stripped));
+        if(slen) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, stripped, slen, mcn, reliable);
+        else if(type != N_SHOOT && type != N_EXPLODE) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, buf, len, mcn, reliable);
     }
 
     // A life loads the map from the player's own file, which must be the world the server
