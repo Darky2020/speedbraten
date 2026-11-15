@@ -1199,6 +1199,8 @@ namespace game
                     gettext(r, name, sizeof(name));
                     gettext(r, why, sizeof(why));
                     if(!r.ok) break;
+                    // a new hub session: only this hub's server list counts, none if it sends none
+                    hubservers.setsize(0);
                     hubmyid = id;
                     copystring(hubrefusal, why);
                     if(strcmp(name, hubmyname) && name[0]) { conoutf("\f0hub: you are %s", name); autolobbydue = true; }
