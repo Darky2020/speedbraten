@@ -66,6 +66,7 @@ const (
 	MsgShared           = 127
 	MsgSharedRows       = 128
 	MsgSharedData       = 129
+	MsgServers          = 130
 
 	StateMenu    = 0
 	StatePlaying = 1

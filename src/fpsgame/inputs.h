@@ -223,13 +223,14 @@ namespace game
         int simversion; // compared with REPLAYSIMVERSION: older replays will likely desync
         uint date;
         string client, player, map;
+        string server; // the online server the life was played on, "" offline
         int mode, flagrun, race, splices, finished, runtime, ticks, maps;
         int started; // the run began (flagrun: flag taken, race: 200 ticks); -1 unknown (the oldest replays)
         bool live;   // describes the run being played now, not one read from a file
 
         replayinfo() : version(0), simversion(0), date(0), mode(0), flagrun(0), race(0), splices(0), finished(0), runtime(0), ticks(0), maps(0), started(-1), live(false)
         {
-            client[0] = player[0] = map[0] = '\0';
+            client[0] = player[0] = map[0] = server[0] = '\0';
         }
     };
 

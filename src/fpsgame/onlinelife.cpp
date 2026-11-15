@@ -2,6 +2,7 @@
 
 // Online life: racing on a server while the player's own life is played and recorded offline.
 bool lifesession = false, lifelocal = false;
+extern ENetPeer *curpeer;
 
 namespace game
 {
@@ -150,9 +151,27 @@ namespace game
         return fileexists(fname, "e") || findfile(fname, "e");
     }
 
+    // the server this client is connected to, as "label (host:port)" when the hub lists it
+    static bool listedserver(string &out)
+    {
+        if(!curpeer) return false;
+        const char *label = hubserverlabel(curpeer->address);
+        if(!label) return false;
+        string ip;
+        if(enet_address_get_host_ip(&curpeer->address, ip, sizeof(ip)) < 0) copystring(ip, "?");
+        formatstring(out, "%s (%s:%d)", label, ip, curpeer->address.port);
+        return true;
+    }
+
+    // the server the current online life is played on
+    static string lifeserver = "";
+    const char *onlinelifeserver() { return lifesession ? lifeserver : ""; }
+
     bool lifewanted(const char *name, int mode)
     {
         if(!onlinelife || !remote || lifesession || !m_check(mode, M_EDIT) || player1->state == CS_SPECTATOR || !name[0]) return false;
+        string server;
+        if(!listedserver(server)) return false;
         return !lifeworldsent && lifemapfile(name);
     }
 
@@ -177,6 +196,7 @@ namespace game
         o.gamespeed = 100;
         o.lastping = 0;
         o.connected = o.remote = o.gamepaused = o.sendcrc = o.senditemstoserver = false;
+        if(!listedserver(lifeserver)) lifeserver[0] = '\0';
         lifesession = true;
         lifeenter();
         server::forcemap(name, mode);
@@ -208,7 +228,12 @@ namespace game
         lifeend("the map changed");
         lifeworldsent = false;
         lifedropsent();
-        if(onlinelife && m_check(mode, M_EDIT) && !lifemapfile(name)) conoutf(CON_WARN, "no local life: %s is not in your packages", name);
+        if(onlinelife && m_check(mode, M_EDIT))
+        {
+            string server;
+            if(!listedserver(server)) conoutf(CON_WARN, "no local life: this server isn't on the hub's list");
+            else if(!lifemapfile(name)) conoutf(CON_WARN, "no local life: %s is not in your packages", name);
+        }
         if(!lifewanted(name, mode)) return false;
         sendcrc = true;
         senditemstoserver = items;

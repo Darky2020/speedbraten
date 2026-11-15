@@ -54,6 +54,9 @@ type Config struct {
 	Legacy string
 	// Shared: where shared replays are kept (share.go); players can't share without it
 	Shared string
+	// Servers: a file listing the game servers online life may be played on (servers.go); none
+	// without it
+	Servers string
 	// Feed, if set, hears of joins, leaves, chat, records and the lobbies (feed.go)
 	Feed Feed
 	Now  func() time.Time
@@ -388,6 +391,7 @@ func (h *Hub) join(p *player, want string) {
 	h.welcome(p, refusal)
 	h.send(p, MsgFlagrunMaps, flagrunMapsMsg())
 	h.send(p, MsgRaceMaps, h.raceMapsMsg())
+	h.send(p, MsgServers, h.serversMsg())
 	if h.witness != nil {
 		h.send(p, MsgWitness, h.witness)
 	}

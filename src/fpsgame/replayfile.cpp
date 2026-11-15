@@ -277,7 +277,7 @@ namespace game
         {
             vector<uchar> p;
             sbr2::byteswriter w(p);
-            w.var(7);
+            w.var(info.server[0] ? 8 : 7);
             kvkey(w, "client", sbr2::VALUE_STR); w.str(info.client);
             kvkey(w, "date", sbr2::VALUE_VAR); w.var(info.date);
             kvkey(w, "flagrun", sbr2::VALUE_VAR); w.var(info.flagrun);
@@ -285,6 +285,7 @@ namespace game
             kvkey(w, "mode", sbr2::VALUE_SVAR); w.svar(info.mode);
             kvkey(w, "player", sbr2::VALUE_STR); utf8str(w, info.player);
             kvkey(w, "race", sbr2::VALUE_VAR); w.var(info.race);
+            if(info.server[0]) { kvkey(w, "server", sbr2::VALUE_STR); utf8str(w, info.server); }
             out.add("META", p);
         }
 
@@ -566,6 +567,7 @@ namespace game
             else if(type == sbr2::VALUE_SVAR && !strcmp(key, "mode")) info.mode = int(sv);
             else if(type == sbr2::VALUE_STR && !strcmp(key, "player")) fromutf8(info.player, s);
             else if(type == sbr2::VALUE_VAR && !strcmp(key, "race")) info.race = int(uv);
+            else if(type == sbr2::VALUE_STR && !strcmp(key, "server")) fromutf8(info.server, s);
         }
         return r.ok;
     }
@@ -1723,6 +1725,7 @@ namespace game
         info.live = true;
         copystring(info.client, SPEEDBRATEN_CLIENT);
         copystring(info.player, first.player[0] ? first.player : ownname());
+        copystring(info.server, onlinelifeserver());
         info.mode = first.mode;
         info.flagrun = first.flagrun;
         info.race = first.race;

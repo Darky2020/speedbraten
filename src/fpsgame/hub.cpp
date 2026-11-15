@@ -49,6 +49,17 @@ namespace game
     };
     // the maps flagrun boards are kept for, as the hub last sent them
     static vector<char *> flagrunmaps, racemaps;
+
+    // the servers the hub lists for online life: a life is only played on one of them
+    struct hubserver { string host, label; ENetAddress addr; bool ok; };
+    static vector<hubserver> hubservers;
+
+    // the listed server at this address, its label; NULL if it isn't listed
+    const char *hubserverlabel(const ENetAddress &a)
+    {
+        loopv(hubservers) if(hubservers[i].ok && hubservers[i].addr.host == a.host && hubservers[i].addr.port == a.port) return hubservers[i].label;
+        return NULL;
+    }
     static vector<uint> racemapcrcs; // per race map: its .ogz's and .cfg's CRC-32 on the hub, 0: not known / no .cfg
     static vector<int> racethumbsizes; // per race map: the size of its picture on the hub, 0: none
     // the board of the run being played (HUD, flag boards) and the one menus show (board page)
@@ -1485,6 +1496,22 @@ namespace game
                     racethumbsizes.setsize(0);
                     loopv(racemaps) racethumbsizes.add(r.left() ? int(r.var()) : 0);
                     if(!r.ok) { racemapcrcs.setsize(0); racethumbsizes.setsize(0); }
+                    break;
+                }
+                case HM_SERVERS:
+                {
+                    vector<hubserver> list;
+                    int n = int(r.var());
+                    for(int i = 0; i < n && r.ok && i < 1000; i++)
+                    {
+                        hubserver &s = list.add();
+                        gettext(r, s.host, sizeof(s.host));
+                        int port = int(r.var());
+                        gettext(r, s.label, sizeof(s.label));
+                        s.ok = r.ok && port > 0 && port < 65536 && enet_address_set_host(&s.addr, s.host) >= 0;
+                        s.addr.port = port;
+                    }
+                    if(r.ok) { hubservers.setsize(0); loopv(list) hubservers.add(list[i]); }
                     break;
                 }
                 case HM_THUMBDATA:
