@@ -92,8 +92,12 @@ namespace game
 
     // the server killed the player (its podium, a forced death): the life ends the same way,
     // as a recorded suicide so that the life's replay plays it back
+    // when the real server last reported the player dead, until the player's spawn there is sent; -1 not dead
+    static int serverdeadsince = -1, lastspawnretry = 0;
+
     void lifekilled()
     {
+        serverdeadsince = totalmillis;
         if(player1->state == CS_ALIVE) queueinput(INPUT_COMMAND, 0, "suicide");
     }
 
@@ -156,12 +160,71 @@ namespace game
     {
         int dest = lifelocal ? lifemsgdest(type) : LIFEMSG_HERE;
         if(dest != LIFEMSG_OTHER) queuemsg(messages, messagecn, messagereliable, buf, len, mcn, reliable);
+        if(!lifelocal && type == N_SPAWN) serverdeadsince = -1;
         if(dest == LIFEMSG_HERE) return;
         if(type == N_SUICIDE) { suicidesechoing++; lastsuicidesent = totalmillis; }
         uchar stripped[MAXTRANS];
         int slen = withouthits(type, buf, len, stripped, sizeof(stripped));
         if(slen) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, stripped, slen, mcn, reliable);
         else if(type != N_SHOOT && type != N_EXPLODE) queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, buf, len, mcn, reliable);
+    }
+
+    // Messages the life's world sends straight to its own server that the real server must also see, as the
+    // player's own (under the player's client number there).
+    static void lifetellserver(const uchar *buf, int len)
+    {
+        queuemsg(lifeother.messages, lifeother.messagecn, lifeother.messagereliable, buf, len, -1, true);
+    }
+
+    void onlinelifeteleport(fpsent *d, int tp, int td)
+    {
+        if(!lifelocal || d != player1) return;
+        uchar buf[32];
+        ucharbuf p(buf, sizeof(buf));
+        putint(p, N_TELEPORT);
+        putint(p, lifeother.clientnum);
+        putint(p, tp);
+        putint(p, td);
+        lifetellserver(buf, p.length());
+    }
+
+    void onlinelifejumppad(fpsent *d, int jp)
+    {
+        if(!lifelocal || d != player1) return;
+        uchar buf[32];
+        ucharbuf p(buf, sizeof(buf));
+        putint(p, N_JUMPPAD);
+        putint(p, lifeother.clientnum);
+        putint(p, jp);
+        lifetellserver(buf, p.length());
+    }
+
+    // The player's grenade removed without exploding: the real server still counts it as flying until it
+    // explodes, and a server may refuse to respawn a player whose grenade is in the air.
+    void onlinelifegrenadegone(fpsent *owner, int id)
+    {
+        if(!lifelocal || owner != player1) return;
+        uchar buf[32];
+        ucharbuf p(buf, sizeof(buf));
+        putint(p, N_EXPLODE);
+        putint(p, lastmillis-maptime);
+        putint(p, GUN_GL);
+        putint(p, id-maptime);
+        putint(p, 0);
+        lifetellserver(buf, p.length());
+    }
+
+    // The real server can drop a spawn request (one in the same packet as the suicide, which it applies later;
+    // one while the player's grenade flies), and the life, already alive, would never ask again.
+    void onlinelifespawncheck()
+    {
+        if(!lifelocal || serverdeadsince < 0 || player1->state != CS_ALIVE) return;
+        if(totalmillis - serverdeadsince < 500 || totalmillis - lastspawnretry < 500) return;
+        lastspawnretry = totalmillis;
+        uchar buf[8];
+        ucharbuf p(buf, sizeof(buf));
+        putint(p, N_TRYSPAWN);
+        lifetellserver(buf, p.length());
     }
 
     // A life loads the map from the player's own file, which must be the world the server
@@ -233,6 +296,7 @@ namespace game
         offrecordlife = -1;
         offrecordwarned = false;
         suicidesechoing = 0;
+        serverdeadsince = -1;
         lifesession = true;
         lifeenter();
         server::forcemap(name, mode);
@@ -283,7 +347,7 @@ namespace game
     {
         if(!lifebeside()) return false;
         if(totalmillis - lastsuicidesent > 3000) suicidesechoing = 0;
-        if(victim == player1 && actor == player1 && suicidesechoing > 0) suicidesechoing--;
+        if(victim == player1 && actor == player1 && suicidesechoing > 0) { suicidesechoing--; serverdeadsince = totalmillis; }
         else if(victim == player1) lifekilled();
         if(actor != player1) actor->frags = frags;
         return true;

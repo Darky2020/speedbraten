@@ -134,6 +134,7 @@ namespace game
             else if(player1->state == CS_DEAD) respawn();
         }
         if(armedat >= 0) checkarmedspawn();
+        onlinelifespawncheck();
     }
 
     static bool standing() { return player1->state == CS_ALIVE && player1->physstate >= PHYS_SLOPE && !player1->timeinair; }

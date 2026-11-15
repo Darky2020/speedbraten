@@ -227,6 +227,7 @@ namespace entities
             if(demorecord) recordpacket(0, p.buf, p.length());
             sendclientpacket(p.finalize(), 0);
             flushclient();
+            onlinelifeteleport(d, tp, td);
         }
     }
 
@@ -252,6 +253,7 @@ namespace entities
             if(demorecord) recordpacket(0, p.buf, p.length());
             sendclientpacket(p.finalize(), 0);
             flushclient();
+            onlinelifejumppad(d, jp);
         }
     }
 

@@ -1032,7 +1032,12 @@ namespace game
     void removeshots(fpsent *d)
     {
         removeprojectiles(d);
-        loopv(bouncers) if(bouncers[i]->owner==d && bouncers[i]->bouncetype==BNC_GRENADE) { delete bouncers[i]; bouncers.remove(i--); }
+        loopv(bouncers) if(bouncers[i]->owner==d && bouncers[i]->bouncetype==BNC_GRENADE)
+        {
+            if(bouncers[i]->local) onlinelifegrenadegone(d, bouncers[i]->id);
+            delete bouncers[i];
+            bouncers.remove(i--);
+        }
     }
 
     // The renderer's worldpos is only refreshed on drawn frames and follows the camera, so
