@@ -106,11 +106,7 @@ namespace game
             d->resetinterp();
             return true;
         }
-        if(racestart >= 0 && server::racerulesactive())
-        {
-            forceent = nthplayerstart(racestart);
-            onlinelifeoffrecord("a chosen race start was used");
-        }
+        if(racestart >= 0 && server::racerulesactive()) forceent = nthplayerstart(racestart);
         else if(flagrunspawn && m_ctf && server::flagrunactive()) forceent = nearestflagstart();
         return false;
     }
