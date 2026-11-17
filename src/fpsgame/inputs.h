@@ -323,13 +323,19 @@ namespace game
         string prev, name;
         int ticks;
     };
-    extern void splitresults(vector<splittime> &out);
-    extern bool statssplitsofreplay(const char *file, vector<splittime> &out);
+    // the split sets of the run's map and kind: 0 the shown one; their names ("" the default set) and times
+    extern int splitsetcount();
+    extern const char *splitsetname(int set);
+    extern void splitresults(int set, vector<splittime> &out);
+    extern bool statssplitsofreplay(const char *file, const char *set, vector<splittime> &out);
+    // the split set shown on a map and run kind ("" the default)
+    extern bool statssplitchoice(const char *map, const char *kind, char *set);
+    extern void statssetsplitchoice(const char *map, const char *kind, const char *set);
     // the chosen ghost when it is a replay rather than a PB: its file, samples (with the attempt
     // index of each) and run time in ms (-1 unfinished)
     extern bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&samples, const vector<int> *&maps, int &runtime);
     extern const char *ghostname();
-    extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
+    extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, const char *set, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
     // a category's runs in ms, -1 where there is none: the PB, the last finished run and the PB
     // before it
     struct runsummary

@@ -297,7 +297,7 @@ namespace game
         vector<splittime> pb;
         vector<splitsegment> best;
         int pbms = -1;
-        statssplitcompare(info.map, info.race ? "race" : info.flagrun ? "flagrun" : "sp", info.mode, info.splices > 0, pb, best, pbms);
+        statssplitcompare(info.map, info.race ? "race" : info.flagrun ? "flagrun" : "sp", info.mode, info.splices > 0, "", pb, best, pbms);
         history.svar("pbms", pbms);
         long long bestsum = best.length() ? 0 : -1;
         loopv(best) bestsum += best[i].ticks * SIMTICK;

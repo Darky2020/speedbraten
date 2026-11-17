@@ -1,8 +1,10 @@
-// Splits: named points of a run, defined per map and run kind in splits/<map>_<kind>.cfg (the
-// player's own file in the home dir wins over the one in the override dir). A split fires once
-// per run, in any order: entering a zone, picking up or using a given entity, a cubescript
-// condition turning true, or a map script calling splithere. Split times are run timer ticks.
-// The HUD compares them with the PB run's splits and the best time of each segment.
+// Splits: named points of a run, defined per map and run kind in split sets: splits/<map>_<kind>.cfg
+// is the default set, splits/<map>_<kind>@<set>.cfg the others (per file, the player's own in the
+// home dir wins over the one in the override dir). A split fires once per run, in any order:
+// entering a zone, picking up or using a given entity, a cubescript condition turning true, or a
+// map script calling splithere. Split times are run timer ticks. Every set records its times each
+// run; the HUD shows the chosen set's, compared with the PB run's splits and the best time of each
+// segment of that set.
 
 #include "game.h"
 #include "sbcompat.h"
@@ -27,6 +29,22 @@ namespace game
         int def, tick, millis; // millis: totalmillis when it fired, for the HUD fade
     };
     static vector<splithit> hits;
+
+    // defs and hits above belong to the chosen set; the map's other sets fire beside it
+    struct splitset
+    {
+        string name;
+        vector<splitdef> defs;
+        vector<splithit> hits;
+    };
+    static vector<splitset> othersets;
+    static string chosenset = ""; // "" the default set
+
+    // set 0 is the chosen one
+    static int setcount() { return 1 + othersets.length(); }
+    static vector<splitdef> &setdefs(int s) { return s ? othersets[s-1].defs : defs; }
+    static vector<splithit> &sethits(int s) { return s ? othersets[s-1].hits : hits; }
+    static const char *setname(int s) { return s ? othersets[s-1].name : chosenset; }
 
     MOD(VARP, splithud, 0, 1, 1);
     MOD(VARP, splitlist, 0, 0, 1);
@@ -72,21 +90,29 @@ namespace game
     ICOMMAND(splitwhen, "ss", (char *name, char *expr), copystring(adddef(name, SPLIT_WHEN).expr, expr));
     ICOMMAND(splitscript, "s", (char *name), adddef(name, SPLIT_SCRIPT));
 
-    static void splitfilename(char *dst, const char *map, const char *kind)
+    static void splitfilebase(char *dst, const char *map, const char *kind)
     {
         string m;
         copystring(m, map);
         for(char *c = m; *c; c++) if(*c == '/' || *c == '\\') *c = '_';
-        nformatstring(dst, MAXSTRLEN, "splits/%s_%s.cfg", m, kind);
+        nformatstring(dst, MAXSTRLEN, "%s_%s", m, kind);
     }
 
-    static void loaddefs(const char *map, const char *kind)
+    static void splitfilename(char *dst, const char *map, const char *kind, const char *set)
     {
-        defs.setsize(0);
-        copystring(splitmap, map);
-        copystring(splitkind, kind);
+        string base;
+        splitfilebase(base, map, kind);
+        if(set[0]) nformatstring(dst, MAXSTRLEN, "splits/%s@%s.cfg", base, set);
+        else nformatstring(dst, MAXSTRLEN, "splits/%s.cfg", base);
+    }
+
+    // a set's definitions, read into out
+    static void loadset(const char *map, const char *kind, const char *set, vector<splitdef> &out)
+    {
+        vector<splitdef> keep;
+        keep.move(defs);
         string file;
-        splitfilename(file, map, kind);
+        splitfilename(file, map, kind, set);
         defformatstring(home, "%s%s", homedir, file);
         if(homedir[0] && fileexists(home, "r")) execfile(home, false);
         else
@@ -94,16 +120,73 @@ namespace game
             defformatstring(shipped, "%s%s", overridedir, file);
             if(overridedir[0] && fileexists(shipped, "r")) execfile(shipped, false);
         }
+        out.move(defs);
+        defs.move(keep);
+    }
+
+    // the names of the map's sets other than the default, from the split files there are
+    static void listsets(const char *map, const char *kind, vector<char *> &names)
+    {
+        string base;
+        splitfilebase(base, map, kind);
+        defformatstring(prefix, "%s@", base);
+        int plen = strlen(prefix);
+        vector<char *> files;
+        listfiles("splits", "cfg", files);
+        loopv(files)
+        {
+            const char *f = files[i];
+            if(strncmp(f, prefix, plen) || !f[plen] || !strcmp(f + plen, "default")) continue;
+            bool dup = false;
+            loopvj(names) if(!strcmp(names[j], f + plen)) { dup = true; break; }
+            if(!dup) names.add(newstring(f + plen));
+        }
+        files.deletearrays();
+    }
+
+    static void loaddefs(const char *map, const char *kind)
+    {
+        defs.setsize(0);
+        hits.setsize(0);
+        othersets.setsize(0);
+        copystring(splitmap, map);
+        copystring(splitkind, kind);
+        vector<char *> names;
+        listsets(map, kind, names);
+        string chosen = "";
+        if(statssplitchoice(map, kind, chosen))
+        {
+            bool known = false;
+            loopv(names) if(!strcmp(names[i], chosen)) known = true;
+            if(!known) chosen[0] = '\0';
+        }
+        copystring(chosenset, chosen);
+        vector<splitdef> shown;
+        loadset(map, kind, chosenset, shown);
+        defs.move(shown);
+        if(chosenset[0])
+        {
+            splitset &d = othersets.add();
+            d.name[0] = '\0';
+            loadset(map, kind, "", d.defs);
+        }
+        loopv(names) if(strcmp(names[i], chosenset))
+        {
+            splitset &o = othersets.add();
+            copystring(o.name, names[i]);
+            loadset(map, kind, names[i], o.defs);
+        }
+        names.deletearrays();
     }
 
     ICOMMAND(splitsave, "", (),
     {
         if(!splitmap[0]) { conoutf(CON_ERROR, "splitsave: no map"); return; }
         string file;
-        splitfilename(file, splitmap, splitkind);
+        splitfilename(file, splitmap, splitkind, chosenset);
         stream *f = openutf8file(path(file, true), "w");
         if(!f) { conoutf(CON_ERROR, "splitsave: could not write %s", file); return; }
-        f->printf("// splits of %s (%s), any order\n", splitmap, splitkind);
+        f->printf("// splits of %s (%s)%s%s, any order\n", splitmap, splitkind, chosenset[0] ? ", set " : "", chosenset);
         loopv(defs)
         {
             const splitdef &d = defs[i];
@@ -164,6 +247,43 @@ namespace game
         conoutf("added %s split %s on entity %d (splitsave to keep it)", type == TELEPORT ? "teleport" : "pickup", name, n);
         intret(1);
     });
+    static bool sortsetnames(const char *a, const char *b) { return strcmp(a, b) < 0; }
+
+    // the set chooser: the default set is listed as "default", first
+    ICOMMAND(splitsets, "", (),
+    {
+        vector<const char *> names;
+        loopk(setcount()) if(setname(k)[0]) names.add(setname(k));
+        names.sort(sortsetnames);
+        vector<char> buf;
+        buf.put("default", 7);
+        loopv(names) { buf.add(' '); const char *e = escapestring(names[i]); buf.put(e, strlen(e)); }
+        buf.add('\0');
+        result(buf.getbuf());
+    });
+    ICOMMAND(splitsetchosen, "", (), result(chosenset[0] ? chosenset : "default"));
+    ICOMMAND(splitsetchoose, "s", (char *name),
+    {
+        const char *want = strcmp(name, "default") ? name : "";
+        if(!splitmap[0] || !strcmp(want, chosenset)) return;
+        int k = -1;
+        loopv(othersets) if(!strcmp(othersets[i].name, want)) { k = i; break; }
+        if(k < 0) { conoutf(CON_ERROR, "no split set %s on %s (%s)", name, splitmap, splitkind); return; }
+        splitset &o = othersets[k];
+        vector<splitdef> d;
+        vector<splithit> h;
+        d.move(defs);
+        h.move(hits);
+        defs.move(o.defs);
+        hits.move(o.hits);
+        string was;
+        copystring(was, chosenset);
+        copystring(chosenset, o.name);
+        copystring(o.name, was);
+        o.defs.move(d);
+        o.hits.move(h);
+        statssetsplitchoice(splitmap, splitkind, chosenset);
+    });
     ICOMMAND(splitremove, "i", (int *i), { if(defs.inrange(*i)) defs.remove(*i); });
     ICOMMAND(splitrename, "is", (int *i, char *name), { if(defs.inrange(*i) && name[0] && finddef(name) < 0) copystring(defs[*i].name, name); });
     ICOMMAND(splitcount, "", (), intret(defs.length()));
@@ -191,18 +311,19 @@ namespace game
 
     static int runtimerticksnow() { bool running; return runtimerticks(running); }
 
-    static bool hasfired(int def)
+    static bool hasfired(int set, int def)
     {
-        loopv(hits) if(hits[i].def == def) return true;
+        const vector<splithit> &hs = sethits(set);
+        loopv(hs) if(hs[i].def == def) return true;
         return false;
     }
 
-    static void fire(int def)
+    static void fire(int set, int def)
     {
         bool running;
         int t = runtimerticks(running);
-        if(!running || !defs.inrange(def) || hasfired(def)) return;
-        splithit &h = hits.add();
+        if(!running || !setdefs(set).inrange(def) || hasfired(set, def)) return;
+        splithit &h = sethits(set).add();
         h.def = def;
         h.tick = t;
         h.millis = totalmillis;
@@ -226,15 +347,33 @@ namespace game
             const vector<extentity *> &ents = entities::getents();
             if(ents.inrange(n)) conoutf("\f4split log: %s entity %d (%s) at %.3f s", teleport ? "teleport" : "picked up", n, entities::entname(ents[n]->type), runtimerticksnow()*SIMTICK/1000.0f);
         }
-        loopv(defs) if(defs[i].ent == n && defs[i].type == (teleport ? SPLIT_TELEPORT : SPLIT_PICKUP)) fire(i);
+        loopk(setcount())
+        {
+            const vector<splitdef> &ds = setdefs(k);
+            loopv(ds) if(ds[i].ent == n && ds[i].type == (teleport ? SPLIT_TELEPORT : SPLIT_PICKUP)) fire(k, i);
+        }
     }
 
-    // called by map scripts
+    // called by map scripts: fires in every set that has the split; the default set gets it when missing
     ICOMMAND(splithere, "s", (char *name),
     {
-        int i = finddef(name);
-        if(i < 0) { adddef(name, SPLIT_SCRIPT); i = defs.length()-1; }
-        fire(i);
+        loopk(setcount())
+        {
+            vector<splitdef> &ds = setdefs(k);
+            int i = -1;
+            loopvj(ds) if(!strcmp(ds[j].name, name)) { i = j; break; }
+            if(i < 0 && !setname(k)[0])
+            {
+                splitdef &d = ds.add();
+                copystring(d.name, name);
+                d.type = SPLIT_SCRIPT;
+                d.ent = -1;
+                d.lo = d.hi = vec(0, 0, 0);
+                d.expr[0] = '\0';
+                i = ds.length()-1;
+            }
+            if(i >= 0) fire(k, i);
+        }
     });
 
     // helpers for splitwhen conditions
@@ -247,21 +386,27 @@ namespace game
         intret(0);
     });
 
-    void splitresults(vector<splittime> &out)
+    int splitsetcount() { return setcount(); }
+    const char *splitsetname(int set) { return set >= 0 && set < setcount() ? setname(set) : ""; }
+
+    void splitresults(int set, vector<splittime> &out)
     {
         out.setsize(0);
-        loopv(hits) if(defs.inrange(hits[i].def))
+        if(set < 0 || set >= setcount()) return;
+        const vector<splitdef> &ds = setdefs(set);
+        const vector<splithit> &hs = sethits(set);
+        loopv(hs) if(ds.inrange(hs[i].def))
         {
             splittime &t = out.add();
-            copystring(t.name, defs[hits[i].def].name);
-            t.tick = hits[i].tick;
+            copystring(t.name, ds[hs[i].def].name);
+            t.tick = hs[i].tick;
         }
     }
 
     // what the HUD compares against, refreshed when the run's category or the statistics change
     static vector<splittime> pbsplits;
     static vector<splitsegment> bestsegs;
-    static string comparekey = "";
+    static string comparekey = "", comparedset = "";
     static int pbms = -1;
     static int flagpbms = -1; // a flagrun's PB from the flag of this run, -1: none or not a flagrun
 
@@ -269,12 +414,13 @@ namespace game
     {
         bool segmented = inputsplicecount() > 0;
         int side = !strcmp(kind, "flagrun") ? runtimerflagside() : 0;
-        defformatstring(key, "%s %s %d %d %d %d", map, kind, mode, segmented ? 1 : 0, side, statsversion());
+        defformatstring(key, "%s %s %d %d %d %d %s", map, kind, mode, segmented ? 1 : 0, side, statsversion(), chosenset);
         if(!strcmp(key, comparekey)) return;
         // a finished run stays compared with the PB it was run against, not with itself
-        if(runtimerfinished() && comparekey[0]) return;
+        if(runtimerfinished() && comparekey[0] && strcmp(chosenset, comparedset) == 0) return;
         copystring(comparekey, key);
-        statssplitcompare(map, kind, mode, segmented, pbsplits, bestsegs, pbms);
+        copystring(comparedset, chosenset);
+        statssplitcompare(map, kind, mode, segmented, chosenset, pbsplits, bestsegs, pbms);
         flagpbms = side > 0 ? statssidebest(map, kind, mode, segmented, side) : -1;
     }
 
@@ -340,11 +486,11 @@ namespace game
         const vector<int> *maps;
         int runtime;
         if(!ghostchosenreplay(file, samples, maps, runtime)) { ghostcompare = false; ghostcomparekey[0] = '\0'; return; }
-        defformatstring(key, "%s|%s|%d", file, defskey, statsversion());
+        defformatstring(key, "%s|%s|%d|%s", file, defskey, statsversion(), chosenset);
         if(ghostcompare && !strcmp(key, ghostcomparekey)) return;
         copystring(ghostcomparekey, key);
         ghostcompare = true;
-        if(statssplitsofreplay(file, ghostsplits)) return;
+        if(statssplitsofreplay(file, chosenset, ghostsplits)) return;
         ghostsplits.setsize(0);
         zonesfrompath(*samples, *maps);
         if(runtime >= 0)
@@ -391,7 +537,7 @@ namespace game
         }
         if(!map[0]) { defs.setsize(0); hits.setsize(0); defskey[0] = '\0'; splitmap[0] = '\0'; return; }
         defformatstring(key, "%s %s", map, kind);
-        if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(map, kind); hits.setsize(0); }
+        if(strcmp(key, defskey)) { copystring(defskey, key); loaddefs(map, kind); }
         if(editing) return;
         refreshcomparison(first->map, kind, first->mode);
         refreshghostcomparison();
@@ -402,21 +548,29 @@ namespace game
         if(t < lasttick)
         {
             havelastfeet = false;
-            if(t <= 1) hits.setsize(0);
-            else while(hits.length() && hits.last().tick > t) hits.pop();
+            loopk(setcount())
+            {
+                vector<splithit> &hs = sethits(k);
+                if(t <= 1) hs.setsize(0);
+                else while(hs.length() && hs.last().tick > t) hs.pop();
+            }
         }
         lasttick = t;
         if(!running || player1->state != CS_ALIVE) { havelastfeet = false; return; }
         vec feet = player1->feetpos();
         bool sweep = havelastfeet && lastfeet.dist(feet) <= MAXSTEP;
-        loopv(defs) if(!hasfired(i))
+        loopk(setcount())
         {
-            const splitdef &d = defs[i];
-            if(d.type == SPLIT_ZONE)
+            const vector<splitdef> &ds = setdefs(k);
+            loopv(ds) if(!hasfired(k, i))
             {
-                if(sweep ? segmenthitsbox(lastfeet, feet, d.lo, d.hi) : insidebox(feet, d.lo, d.hi)) fire(i);
+                const splitdef &d = ds[i];
+                if(d.type == SPLIT_ZONE)
+                {
+                    if(sweep ? segmenthitsbox(lastfeet, feet, d.lo, d.hi) : insidebox(feet, d.lo, d.hi)) fire(k, i);
+                }
+                else if(d.type == SPLIT_WHEN && d.expr[0] && execute(d.expr)) fire(k, i);
             }
-            else if(d.type == SPLIT_WHEN && d.expr[0] && execute(d.expr)) fire(i);
         }
         lastfeet = feet;
         havelastfeet = true;
@@ -429,7 +583,7 @@ namespace game
         loopv(defs) if(defs[i].type == SPLIT_ZONE)
         {
             const splitdef &d = defs[i];
-            int color = hasfired(i) ? 0x40FF80 : 0xFFC040;
+            int color = hasfired(0, i) ? 0x40FF80 : 0xFFC040;
             vec c[8];
             loopj(8) c[j] = vec(j&1 ? d.hi.x : d.lo.x, j&2 ? d.hi.y : d.lo.y, j&4 ? d.hi.z : d.lo.z);
             static const int edges[12][2] = { {0,1}, {2,3}, {4,5}, {6,7}, {0,2}, {1,3}, {4,6}, {5,7}, {0,4}, {1,5}, {2,6}, {3,7} };
