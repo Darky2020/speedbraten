@@ -342,7 +342,8 @@ namespace entities
     void checkitems(fpsent *d)
     {
         vec o = d->feetpos();
-        if(d->state==CS_SPECTATOR) loopv(ents)
+        // a spectator following someone is placed where they are: their teleporters aren't its own
+        if(d->state==CS_SPECTATOR && !(d==player1 && followingplayer())) loopv(ents)
         {
             extentity &e = *ents[i];
             if(e.type==TELEPORT && e.o.dist(o)<16) trypickup(i, d);

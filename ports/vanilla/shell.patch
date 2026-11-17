@@ -3803,13 +3803,14 @@
                  teleporteffects(d, n, e, true);
                  d->o = ents[e]->o;
                  d->yaw = ents[e]->attr1;
-@@ -333,14 +339,24 @@
+@@ -333,14 +339,25 @@
  
      void checkitems(fpsent *d)
      {
 -        if(d->state!=CS_ALIVE) return;
          vec o = d->feetpos();
-+        if(d->state==CS_SPECTATOR) loopv(ents)
++        // a spectator following someone is placed where they are: their teleporters aren't its own
++        if(d->state==CS_SPECTATOR && !(d==player1 && followingplayer())) loopv(ents)
 +        {
 +            extentity &e = *ents[i];
 +            if(e.type==TELEPORT && e.o.dist(o)<16) trypickup(i, d);
@@ -3830,7 +3831,7 @@
              if(dist<(e.type==TELEPORT ? 16 : 12)) trypickup(i, d);
          }
      }
-@@ -367,8 +383,11 @@
+@@ -367,8 +384,11 @@
          putint(p, -1);
      }
  
@@ -3843,10 +3844,11 @@
      void spawnitems(bool force)
      {
          if(m_noitems) return;
-@@ -447,6 +466,17 @@
+@@ -446,6 +466,17 @@
+ 
      #define validtrigger(type) (triggertypes[(type) & (NUMTRIGGERTYPES-1)]>=0)
      #define checktriggertype(type, flag) (triggertypes[(type) & (NUMTRIGGERTYPES-1)] & (flag))
- 
++
 +    // a level trigger's reach (from its centre to the player's feet, less the player's radius), whether
 +    // it is locked and whether it ends the map; false for any other entity
 +    bool leveltrigger(const extentity &e, float &reach, bool &locked, bool &endsp)
@@ -3857,10 +3859,9 @@
 +        endsp = checktriggertype(e.attr3, TRIG_ENDSP) != 0;
 +        return true;
 +    }
-+
+ 
      static inline void cleartriggerflags(extentity &e)
      {
-         e.flags &= ~(EF_ANIM | EF_NOVIS | EF_NOSHADOW | EF_NOCOLLIDE);
 --- a/fpsgame/fps.cpp
 +++ b/fpsgame/fps.cpp
 @@ -1,5 +1,7 @@
