@@ -223,6 +223,7 @@ namespace game
                     motions++;
                     sizes[bucket(abs(e.dx) + abs(e.dy), sizelimits, 7)]++;
                 }
+                else if(e.kind == rawevent::KEYDOWN && e.flags & rawevent::BUFFERED) continue;
                 else if(e.kind == rawevent::KEYDOWN && e.flags & rawevent::REPEAT) repeats++;
                 else if((e.kind == rawevent::KEYDOWN && !(e.flags & rawevent::REPEAT)) || e.kind == rawevent::BUTTONDOWN)
                 {

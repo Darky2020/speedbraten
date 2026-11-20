@@ -59,7 +59,7 @@ namespace game
     // a key that opens the chat or console prompt: its release goes to the prompt and is never recorded
     static bool opensprompt(const char *bind) { return bindhas(bind, "saycommand") || bindhas(bind, "sayteamcommand"); }
 
-    struct heldinput { int code; const char *bind; };
+    struct heldinput { int code; const char *bind; bool buffered; };
     // a key outside the fixed layout, and when it was last pressed and released
     struct extrakey { int code, down, up; string label; };
 
@@ -163,9 +163,9 @@ namespace game
                         loopv(st.extras) if(st.extras[i].code == code) st.extras[i].up = e.tick;
                         break;
                     }
-                    bool have = false;
-                    loopv(st.held) if(st.held[i].code == code) { st.held[i].bind = e.bind; have = true; }
-                    if(!have) { heldinput &h = st.held.add(); h.code = code; h.bind = e.bind; }
+                    bool have = false, buffered = e.kind == rawevent::KEYDOWN && e.flags&rawevent::BUFFERED;
+                    loopv(st.held) if(st.held[i].code == code) { st.held[i].bind = e.bind; st.held[i].buffered = buffered; have = true; }
+                    if(!have) { heldinput &h = st.held.add(); h.code = code; h.bind = e.bind; h.buffered = buffered; }
                     break;
                 }
                 case rawevent::KEYUP: case rawevent::BUTTONUP:
@@ -181,10 +181,18 @@ namespace game
         }
     }
 
-    static bool actionheld(int action)
+    enum { KEY_UP = 0, KEY_HELD, KEY_BUFFERED };
+    // KEY_BUFFERED: only held through the respawn the attempt began with, not pressed in it
+    static int actionheld(int action)
     {
-        loopv(st.held) if(st.held[i].code >= 0 && bindhas(st.held[i].bind, actionbinds[action])) return true;
-        return action == A_JUMP && st.tick - st.wheeljump < WHEELTICKS;
+        int state = KEY_UP;
+        loopv(st.held) if(st.held[i].code >= 0 && bindhas(st.held[i].bind, actionbinds[action]))
+        {
+            if(!st.held[i].buffered) return KEY_HELD;
+            state = KEY_BUFFERED;
+        }
+        if(action == A_JUMP && st.tick - st.wheeljump < WHEELTICKS) return KEY_HELD;
+        return state;
     }
 
     static bool buttonheld(int button)
@@ -250,10 +258,13 @@ namespace game
 
     static const int KEYBG = 0x101010, KEYBGALPHA = 150, KEYLIT = 0xF0F0F0, KEYLITALPHA = 230, KEYEDGE = 0xFFFFFF, KEYEDGEALPHA = 50;
 
-    static void drawkey(float x, float y, float w, float h, const char *label, bool lit, float edge)
+    // state: KEY_UP, KEY_HELD (filled) or KEY_BUFFERED (outlined)
+    static void drawkey(float x, float y, float w, float h, const char *label, int state, float edge)
     {
+        bool lit = state == KEY_HELD;
         hudfillrect(x, y, x + w, y + h, lit ? KEYLIT : KEYBG, lit ? KEYLITALPHA : KEYBGALPHA);
-        hudoutlinerect(x, y, x + w, y + h, edge, KEYEDGE, KEYEDGEALPHA);
+        if(state == KEY_BUFFERED) hudoutlinerect(x, y, x + w, y + h, edge*3, KEYLIT, KEYLITALPHA);
+        else hudoutlinerect(x, y, x + w, y + h, edge, KEYEDGE, KEYEDGEALPHA);
         int tw = 0, th = 0;
         text_bounds(label, tw, th);
         if(!tw || !th) return;
@@ -321,15 +332,15 @@ namespace game
         float totalh = layouth + (extrarows ? g + extrarows*(ek + g) - g : 0);
         float x0 = replayinputx*w - totalw/2, y0 = replayinputy*h - totalh/2;
 
-        drawkey(x0 + k + g, y0, k, k, st.labels[A_FORWARD], live && actionheld(A_FORWARD), edge);
-        drawkey(x0, y0 + k + g, k, k, st.labels[A_LEFT], live && actionheld(A_LEFT), edge);
-        drawkey(x0 + k + g, y0 + k + g, k, k, st.labels[A_BACKWARD], live && actionheld(A_BACKWARD), edge);
-        drawkey(x0 + 2*(k + g), y0 + k + g, k, k, st.labels[A_RIGHT], live && actionheld(A_RIGHT), edge);
-        drawkey(x0, y0 + 2*(k + g), keysw, k, st.labels[A_JUMP], live && actionheld(A_JUMP), edge);
+        drawkey(x0 + k + g, y0, k, k, st.labels[A_FORWARD], live ? actionheld(A_FORWARD) : KEY_UP, edge);
+        drawkey(x0, y0 + k + g, k, k, st.labels[A_LEFT], live ? actionheld(A_LEFT) : KEY_UP, edge);
+        drawkey(x0 + k + g, y0 + k + g, k, k, st.labels[A_BACKWARD], live ? actionheld(A_BACKWARD) : KEY_UP, edge);
+        drawkey(x0 + 2*(k + g), y0 + k + g, k, k, st.labels[A_RIGHT], live ? actionheld(A_RIGHT) : KEY_UP, edge);
+        drawkey(x0, y0 + 2*(k + g), keysw, k, st.labels[A_JUMP], live ? actionheld(A_JUMP) : KEY_UP, edge);
 
         float mx = x0 + keysw + 2*g;
-        drawkey(mx, y0 + 2*(k + g), k, k, "L", live && buttonheld(1), edge);
-        drawkey(mx + k + g, y0 + 2*(k + g), k, k, "R", live && buttonheld(3), edge);
+        drawkey(mx, y0 + 2*(k + g), k, k, "L", live && buttonheld(1) ? KEY_HELD : KEY_UP, edge);
+        drawkey(mx + k + g, y0 + 2*(k + g), k, k, "R", live && buttonheld(3) ? KEY_HELD : KEY_UP, edge);
 
         // the mouse: the dot is the movement of the last MOTIONTICKS, its trail the same a few ticks earlier
         float r = mousew/2, cx = mx + r, cy = y0 + r;
@@ -350,7 +361,7 @@ namespace game
             if(ex + extraw[i] > totalw) { ex = 0; ey += ek + g; }
             const extrakey &x = st.extras[i];
             bool lit = live && (x.up < x.down || t - x.up < TAPTICKS);
-            drawkey(x0 + ex, ey, extraw[i], ek, x.label, lit, edge);
+            drawkey(x0 + ex, ey, extraw[i], ek, x.label, lit ? KEY_HELD : KEY_UP, edge);
             ex += extraw[i] + g;
         }
         defformatstring(speed, "%d deg/s", live ? int(turnspeed(*a, t) + 0.5f) : 0);

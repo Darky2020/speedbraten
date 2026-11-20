@@ -331,10 +331,14 @@ namespace game
     // the split set shown on a map and run kind ("" the default)
     extern bool statssplitchoice(const char *map, const char *kind, char *set);
     extern void statssetsplitchoice(const char *map, const char *kind, const char *set);
+    extern void statsrenamesplitset(const char *map, const char *kind, const char *from, const char *to);
     // the chosen ghost when it is a replay rather than a PB: its file, samples (with the attempt
     // index of each) and run time in ms (-1 unfinished)
     extern bool ghostchosenreplay(const char *&file, const vector<ghostsample> *&samples, const vector<int> *&maps, int &runtime);
     extern const char *ghostname();
+    // the live ghost path up to now, for a state; restoring it makes it the live path again
+    extern void ghostpathmark(int &node, int &gen);
+    extern void ghostpathrestore(int node, int gen);
     extern bool statssplitcompare(const char *map, const char *kind, int mode, bool segmented, const char *set, vector<splittime> &pb, vector<splitsegment> &best, int &pbms);
     // a category's runs in ms, -1 where there is none: the PB, the last finished run and the PB
     // before it

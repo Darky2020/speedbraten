@@ -1295,7 +1295,7 @@ namespace game
                 {
                     sourced++;
                     bool backed = false;
-                    loopvj(a.raw) if(a.raw[j].tick == e.tick && a.raw[j].kind != rawevent::MOTION && a.raw[j].kind != rawevent::FOCUS) { backed = true; break; }
+                    loopvj(a.raw) if(a.raw[j].tick == e.tick && a.raw[j].kind != rawevent::MOTION && a.raw[j].kind != rawevent::FOCUS && !(a.raw[j].flags&rawevent::BUFFERED)) { backed = true; break; }
                     if(!backed) unbacked++;
                 }
             }

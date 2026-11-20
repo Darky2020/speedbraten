@@ -74,6 +74,7 @@ namespace game
     static const struct { const char *name; int absent; } latesettings[] = { { "racestart", -1 }, { "flagrunrestart", 0 }, { "flagrunspawn", 0 } };
     enum { NUMLATESETTINGS = sizeof(latesettings)/sizeof(latesettings[0]), NUMOLDSETTINGS = NUMSIMSETTINGS - NUMLATESETTINGS };
     static void readsettings(int *vals);
+    static void bufferheldkeys(inputattempt &rec);
 
     // A saved state with the setting values in effect when it was taken, and the branch of the
     // recording it was taken on.
@@ -85,10 +86,11 @@ namespace game
         statestart *life; // start of the life the state was taken in, if known
         uint date;
         bool chained; // where a run of a life starts that goes on from the run before it
+        int ghostnode, ghostgen; // the ghost path that led to the state (ghostpathmark)
 
-        statestart() : tick(-1), branch(-1), life(NULL), date(0), chained(false) {}
+        statestart() : tick(-1), branch(-1), life(NULL), date(0), chained(false), ghostnode(-1), ghostgen(-1) {}
         bool valid() const { return tick >= 0; }
-        void clear() { state.setsize(0); tick = branch = -1; life = NULL; date = 0; chained = false; }
+        void clear() { state.setsize(0); tick = branch = -1; life = NULL; date = 0; chained = false; ghostnode = ghostgen = -1; }
     };
 
     // Segmented recordings form a tree: every live load starts a new branch at the loaded
@@ -374,7 +376,7 @@ namespace game
         DELETEP(nextview);
         chainpending = false;
         if(!restorestate(st.state)) return false;
-        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); onlinelifeoffrecord("a saved state was loaded"); }
+        if(!replaying && !recordingoff) { forkrecording(st.branch, st.tick, kind); tellsload(); hubviewfrom(st); onlinelifeoffrecord("a saved state was loaded"); ghostpathrestore(st.ghostnode, st.ghostgen); }
         // back to the life the state was taken in, which may have ended since
         if(st.life && onchain(st.life->branch, st.life->tick, st.branch, st.tick)) lifestart = st.life;
         else if(lifestart && !onchain(lifestart->branch, lifestart->tick, st.branch, st.tick)) lifestart = NULL;
@@ -402,6 +404,7 @@ namespace game
             savedstart.tick = tick;
             savedstart.branch = curbranch;
             savedstart.life = lifestart;
+            ghostpathmark(savedstart.ghostnode, savedstart.ghostgen);
             readsettings(savedstart.settings);
             if(!replaying && !recordingoff) tellssave();
         }
@@ -517,6 +520,7 @@ namespace game
             st->tick = curtick;
             st->branch = curbranch;
             st->life = lifestart;
+            ghostpathmark(st->ghostnode, st->ghostgen);
             readsettings(st->settings);
             doorstate &d = doorstates.add();
             d.ent = i;
@@ -565,6 +569,7 @@ namespace game
         st->tick = curtick;
         st->branch = curbranch;
         st->life = lifestart;
+        ghostpathmark(st->ghostnode, st->ghostgen);
         readsettings(st->settings);
         autostates.add(st);
         while(autostates.length() > autostatecount) delete autostates.remove(0);
@@ -1673,6 +1678,7 @@ namespace game
             rec.events.add(e);
         }
         feedcontrols();
+        bufferheldkeys(rec);
         readsettings(cursettings);
         inputcontrols c;
         getcontrols(c);
@@ -1896,9 +1902,60 @@ namespace game
         return pool.add(newstring(s, len));
     }
 
+    // the keys physically held now, as their last key-down read them
+    static vector<rawevent> heldkeys;
+
+    static void trackheld(const rawevent &e)
+    {
+        if(e.kind == rawevent::FOCUS) { if(!(e.flags&rawevent::GAINED)) heldkeys.setsize(0); return; }
+        if(e.kind != rawevent::KEYDOWN && e.kind != rawevent::KEYUP) return;
+        if(e.flags&rawevent::TEXT) return;
+        loopvrev(heldkeys) if(heldkeys[i].code == e.code) heldkeys.remove(i);
+        if(e.kind == rawevent::KEYDOWN) heldkeys.add(e);
+    }
+
+    // movement keys held through a respawn keep moving the new life from its first tick
+    MOD(VARP, bufferkeys, 0, 0, 1);
+
+    static bool bindnames(const char *bind, const char *action)
+    {
+        if(!bind) return false;
+        int n = strlen(action);
+        for(const char *s = bind; (s = strstr(s, action)); s += n)
+            if((s == bind || !isalnum(s[-1])) && !isalnum(s[n])) return true;
+        return false;
+    }
+
+    // At the first recorded tick of every life: the held movement keys the respawn cleared are pressed
+    // again, and recorded in the raw input as BUFFERED key-downs.
+    static void bufferheldkeys(inputattempt &rec)
+    {
+        static int life = -1;
+        static const inputattempt *attempt = NULL;
+        if(player1->state != CS_ALIVE || (player1->lifesequence == life && &rec == attempt)) return;
+        life = player1->lifesequence;
+        attempt = &rec;
+        if(!bufferkeys) return;
+        loopv(heldkeys)
+        {
+            const rawevent &h = heldkeys[i];
+            bool fwd = bindnames(h.bind, "forward"), back = bindnames(h.bind, "backward"), left = bindnames(h.bind, "left"), right = bindnames(h.bind, "right");
+            if(!fwd && !back && !left && !right) continue;
+            if(fwd) { player1->k_forward = true; player1->move = 1; }
+            if(back) { player1->k_backward = true; player1->move = -1; }
+            if(left) { player1->k_left = true; player1->strafe = 1; }
+            if(right) { player1->k_right = true; player1->strafe = -1; }
+            rawevent &r = rec.raw.add(h);
+            r.tick = curtick;
+            r.us = tellsrunus();
+            r.flags = (r.flags & ~rawevent::REPEAT) | rawevent::BUFFERED;
+        }
+    }
+
     void rawinput(const rawevent &e)
     {
         hubinputseen();
+        trackheld(e);
         if(respawnonkey && (e.kind == rawevent::KEYDOWN || e.kind == rawevent::BUTTONDOWN) && !(e.flags&(rawevent::TEXT|rawevent::REPEAT)) &&
            !replaying && connected && (flagrunrules() || racerules()))
         {

@@ -26,6 +26,7 @@ namespace game
     bool statssplitsofreplay(const char *file, const char *set, vector<splittime> &out) { return false; }
     bool statssplitchoice(const char *map, const char *kind, char *set) { return false; }
     void statssetsplitchoice(const char *map, const char *kind, const char *set) {}
+    void statsrenamesplitset(const char *map, const char *kind, const char *from, const char *to) {}
     void statsrunsummary(const char *map, const char *kind, int mode, bool segmented, runsummary &out) { out = runsummary(); }
     void statsplayedmaps(const char *kind, int mode, vector<char *> &out) {}
     int statssidebest(const char *map, const char *kind, int mode, bool segmented, int side) { return -1; }
@@ -592,6 +593,27 @@ namespace game
         if(set[0]) bindtext(st, 3, set);
         if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
         sqlite3_finalize(st);
+    }
+
+    void statsrenamesplitset(const char *map, const char *kind, const char *from, const char *to)
+    {
+        sqlite3_stmt *st = prepare("UPDATE splits SET splitset = ?3 WHERE splitset = ?4 AND attempt IN (SELECT id FROM attempts WHERE map = ?1 AND kind = ?2)");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        bindtext(st, 3, to);
+        bindtext(st, 4, from);
+        if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
+        sqlite3_finalize(st);
+        st = prepare("UPDATE splitchoice SET splitset = ?3 WHERE map = ?1 AND kind = ?2 AND splitset = ?4");
+        if(!st) return;
+        bindtext(st, 1, map);
+        bindtext(st, 2, kind);
+        bindtext(st, 3, to);
+        bindtext(st, 4, from);
+        if(sqlite3_step(st) != SQLITE_DONE) conoutf(CON_ERROR, "stats: %s", sqlite3_errmsg(db));
+        sqlite3_finalize(st);
+        changes++;
     }
 
     static const char *formatms(int ms)

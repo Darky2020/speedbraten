@@ -22,6 +22,45 @@ namespace game
     static vector<ghostsample> live;
     static vector<int> livemaps;
 
+    // Every sample of the session, linked to the one before it on its path: a state remembers its path's
+    // last node, so loading it after a restart brings back the path that led to it.
+    struct pathnode { ghostsample s; int map, parent; };
+    static vector<pathnode> pathnodes;
+    static vector<int> livenodes; // the node of each live sample
+    static int pathgen = 0;       // bumped when the nodes start over; older states keep no path
+    enum { MAXPATHNODES = 1<<19 };
+
+    static int addpathnode(const ghostsample &s, int map, int parent)
+    {
+        pathnode &n = pathnodes.add();
+        n.s = s;
+        n.map = map;
+        n.parent = parent;
+        return pathnodes.length()-1;
+    }
+
+    void ghostpathmark(int &node, int &gen)
+    {
+        node = livenodes.length() ? livenodes.last() : -1;
+        gen = pathgen;
+    }
+
+    void ghostpathrestore(int node, int gen)
+    {
+        if(gen != pathgen || !pathnodes.inrange(node)) return;
+        vector<int> chain;
+        for(int n = node; n >= 0; n = pathnodes[n].parent) chain.add(n);
+        live.setsize(0);
+        livemaps.setsize(0);
+        livenodes.setsize(0);
+        loopvrev(chain)
+        {
+            live.add(pathnodes[chain[i]].s);
+            livemaps.add(pathnodes[chain[i]].map);
+            livenodes.add(chain[i]);
+        }
+    }
+
     void ghostattach(inputrun &run)
     {
         loopv(run.attempts) run.attempts[i]->trace.setsize(0);
@@ -46,9 +85,16 @@ namespace game
         int t = runtimerticks(running);
         if(!running || player1->state != CS_ALIVE || t % SAMPLETICKS) return;
         // a state load or a new run moves the clock back
-        while(live.length() && live.last().tick >= t) { live.pop(); livemaps.pop(); }
+        while(live.length() && live.last().tick >= t) { live.pop(); livemaps.pop(); livenodes.pop(); }
         sampleplayer(live.add(), t);
         livemaps.add(inputattemptindex());
+        if(pathnodes.length() >= MAXPATHNODES)
+        {
+            pathnodes.setsize(0);
+            pathgen++;
+            loopv(livenodes) livenodes[i] = addpathnode(live[i], livemaps[i], i ? livenodes[i-1] : -1);
+        }
+        livenodes.add(addpathnode(live.last(), livemaps.last(), livenodes.length() ? livenodes.last() : -1));
     }
 
     // the ghost being shown: every attempt's samples in run order, and the map of each

@@ -56,7 +56,9 @@ extern void restoremapbinds();
 struct rawevent
 {
     enum { KEYDOWN = 0, KEYUP, BUTTONDOWN, BUTTONUP, MOTION, WHEEL, FOCUS };
-    enum { REPEAT = 1<<0, GRABBED = 1<<1, GAINED = 1<<2, TEXT = 1<<3 }; // TEXT: typed into a text field, key left out
+    // TEXT: typed into a text field, key left out; BUFFERED: a key held through a respawn, recorded again
+    // at the new life's start (not a press)
+    enum { REPEAT = 1<<0, GRABBED = 1<<1, GAINED = 1<<2, TEXT = 1<<3, BUFFERED = 1<<4 };
     int tick, kind;
     long long us;      // since the run began, when the game read the event
     uint sdlms;        // SDL's event timestamp

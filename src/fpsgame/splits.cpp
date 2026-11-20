@@ -106,6 +106,18 @@ namespace game
         else nformatstring(dst, MAXSTRLEN, "splits/%s.cfg", base);
     }
 
+    static bool sortsetnames(const char *a, const char *b) { return strcmp(a, b) < 0; }
+
+    // whether the set has a file, the player's own or a shipped one
+    static bool setfileexists(const char *map, const char *kind, const char *set)
+    {
+        string file;
+        splitfilename(file, map, kind, set);
+        defformatstring(home, "%s%s", homedir, file);
+        defformatstring(shipped, "%s%s", overridedir, file);
+        return (homedir[0] && fileexists(home, "r")) || (overridedir[0] && fileexists(shipped, "r"));
+    }
+
     // a set's definitions, read into out
     static void loadset(const char *map, const char *kind, const char *set, vector<splitdef> &out)
     {
@@ -153,6 +165,9 @@ namespace game
         copystring(splitkind, kind);
         vector<char *> names;
         listsets(map, kind, names);
+        names.sort(sortsetnames);
+        // the plain file's set, "default", is there while its file is, or when the map has no sets at all
+        bool havedefault = setfileexists(map, kind, "") || names.empty();
         string chosen = "";
         if(statssplitchoice(map, kind, chosen))
         {
@@ -160,11 +175,12 @@ namespace game
             loopv(names) if(!strcmp(names[i], chosen)) known = true;
             if(!known) chosen[0] = '\0';
         }
+        if(!chosen[0] && !havedefault) copystring(chosen, names[0]);
         copystring(chosenset, chosen);
         vector<splitdef> shown;
         loadset(map, kind, chosenset, shown);
         defs.move(shown);
-        if(chosenset[0])
+        if(chosenset[0] && havedefault)
         {
             splitset &d = othersets.add();
             d.name[0] = '\0';
@@ -179,13 +195,14 @@ namespace game
         names.deletearrays();
     }
 
-    ICOMMAND(splitsave, "", (),
+    // writes the shown set to its file in the home dir
+    static bool savechosenset()
     {
-        if(!splitmap[0]) { conoutf(CON_ERROR, "splitsave: no map"); return; }
+        if(!splitmap[0]) { conoutf(CON_ERROR, "splitsave: no map"); return false; }
         string file;
         splitfilename(file, splitmap, splitkind, chosenset);
         stream *f = openutf8file(path(file, true), "w");
-        if(!f) { conoutf(CON_ERROR, "splitsave: could not write %s", file); return; }
+        if(!f) { conoutf(CON_ERROR, "splitsave: could not write %s", file); return false; }
         f->printf("// splits of %s (%s)%s%s, any order\n", splitmap, splitkind, chosenset[0] ? ", set " : "", chosenset);
         loopv(defs)
         {
@@ -201,7 +218,9 @@ namespace game
         }
         delete f;
         conoutf("saved %d splits to %s", defs.length(), file);
-    });
+        return true;
+    }
+    ICOMMAND(splitsave, "", (), savechosenset());
 
     // editing: a zone from the selection, the item or teleport under the cursor, a script split
     // the edit tools never replace an existing split
@@ -247,17 +266,16 @@ namespace game
         conoutf("added %s split %s on entity %d (splitsave to keep it)", type == TELEPORT ? "teleport" : "pickup", name, n);
         intret(1);
     });
-    static bool sortsetnames(const char *a, const char *b) { return strcmp(a, b) < 0; }
-
-    // the set chooser: the default set is listed as "default", first
+    // the set chooser: the plain file's set is listed as "default", first
     ICOMMAND(splitsets, "", (),
     {
         vector<const char *> names;
-        loopk(setcount()) if(setname(k)[0]) names.add(setname(k));
+        bool havedefault = false;
+        loopk(setcount()) { if(setname(k)[0]) names.add(setname(k)); else havedefault = true; }
         names.sort(sortsetnames);
         vector<char> buf;
-        buf.put("default", 7);
-        loopv(names) { buf.add(' '); const char *e = escapestring(names[i]); buf.put(e, strlen(e)); }
+        if(havedefault) buf.put("default", 7);
+        loopv(names) { if(buf.length()) buf.add(' '); const char *e = escapestring(names[i]); buf.put(e, strlen(e)); }
         buf.add('\0');
         result(buf.getbuf());
     });
@@ -282,6 +300,77 @@ namespace game
         copystring(o.name, was);
         o.defs.move(d);
         o.hits.move(h);
+        statssetsplitchoice(splitmap, splitkind, chosenset);
+    });
+    // the set a name stands for: "default" is the plain file's set
+    static const char *setkey(const char *name) { return strcmp(name, "default") ? name : ""; }
+
+    // a name a new or renamed set can take
+    static bool freesetname(const char *cmd, const char *name)
+    {
+        if(!splitmap[0]) { conoutf(CON_ERROR, "%s: no map", cmd); return false; }
+        if(!name[0]) { conoutf(CON_ERROR, "%s: give the set a name", cmd); return false; }
+        for(const char *c = name; *c; c++) if(!isalnum(*c) && *c != '-' && *c != '_') { conoutf(CON_ERROR, "%s: use letters, digits, - and _ only", cmd); return false; }
+        const char *key = setkey(name);
+        bool taken = !strcmp(key, chosenset);
+        loopv(othersets) if(!strcmp(othersets[i].name, key)) taken = true;
+        if(taken) { conoutf(CON_ERROR, "%s: %s exists", cmd, name); return false; }
+        return true;
+    }
+
+    // a new, empty set of the current map and kind, shown from now on; splitsave writes its file
+    ICOMMAND(splitsetnew, "s", (char *name),
+    {
+        intret(0);
+        if(!freesetname("splitsetnew", name)) return;
+        splitset &o = othersets.add();
+        copystring(o.name, chosenset);
+        o.defs.move(defs);
+        o.hits.move(hits);
+        copystring(chosenset, setkey(name));
+        statssetsplitchoice(splitmap, splitkind, chosenset);
+        conoutf("new split set %s (%s splits of %s; add splits and save them to keep it)", name, splitkind, splitmap);
+        intret(1);
+    });
+    // renames the shown set: its home file and its recorded times go with it
+    ICOMMAND(splitsetrename, "s", (char *name),
+    {
+        intret(0);
+        if(!freesetname("splitsetrename", name)) return;
+        string oldname;
+        string oldfile;
+        copystring(oldname, chosenset);
+        splitfilename(oldfile, splitmap, splitkind, oldname);
+        copystring(chosenset, setkey(name));
+        if(!savechosenset()) { copystring(chosenset, oldname); return; }
+        defformatstring(oldhome, "%s%s", homedir, oldfile);
+        if(homedir[0] && fileexists(oldhome, "r")) remove(oldhome);
+        statsrenamesplitset(splitmap, splitkind, oldname, chosenset);
+        conoutf("renamed split set %s to %s", oldname[0] ? oldname : "default", name);
+        intret(1);
+    });
+    // deletes the shown set's own file (its recorded times stay) and shows another set
+    ICOMMAND(splitsetdelete, "", (),
+    {
+        if(!splitmap[0]) return;
+        string file;
+        splitfilename(file, splitmap, splitkind, chosenset);
+        defformatstring(home, "%s%s", homedir, file);
+        if(homedir[0] && fileexists(home, "r")) remove(home);
+        const char *gone = chosenset[0] ? chosenset : "default";
+        if(setfileexists(splitmap, splitkind, chosenset)) conoutf(CON_WARN, "deleted your copy of split set %s; the shipped one is used again", gone);
+        else conoutf("deleted split set %s", gone);
+        defs.setsize(0);
+        hits.setsize(0);
+        if(othersets.length())
+        {
+            splitset &o = othersets[0];
+            copystring(chosenset, o.name);
+            defs.move(o.defs);
+            hits.move(o.hits);
+            othersets.remove(0);
+        }
+        else chosenset[0] = '\0';
         statssetsplitchoice(splitmap, splitkind, chosenset);
     });
     ICOMMAND(splitremove, "i", (int *i), { if(defs.inrange(*i)) defs.remove(*i); });
