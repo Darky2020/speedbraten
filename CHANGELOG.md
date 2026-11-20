@@ -5,6 +5,17 @@
 - Practice visualizers: "stuck exits" — while stuck building fall speed, where letting go of W (or adding a key) throws you, and whether through a wall.
 - Practice visualizers: "stuck spots" — `/practicestuckmapscan` finds the spots where holding W gets you stuck, green where a release can clip through a wall; saved per map.
 - Spectating: the scoreboard no longer opens on every reset of the player you watch.
+- Online servers: race on hub-listed servers (Speedyruns) with recorded, witnessed runs.
+- Online servers: spectators see your shots, pickups, respawns, teleports and jumppads.
+- Online servers: a run with assists can't finish on the server.
+- Online servers: changing the race start respawns you; a chosen start isn't an assist.
+- Hub: player cards show which server someone is on; "spectate" joins it.
+- Spectators following someone no longer hear teleporter sounds repeat.
+- Splits: several split sets per map, chosen, created, renamed and deleted in the splits tab.
+- Splits: "map_splits" sets for An Army Of One and Private Stan Sauer.
+- "hold keys through respawn" (keys tab): held movement keys move you right away.
+- Segmented runs: the ghost follows the earlier segments instead of flying from the spawn.
+- The vanilla build is based on Sauerbraten 2020 again.
 
 ## v0.3.15
 
